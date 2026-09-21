@@ -146,7 +146,7 @@ pub fn run_command(
     match status {
         Ok(Some(st)) if st.success() => {
             let mut out = String::new();
-            if let Some(mut s) = child.stdout.take() {
+            if let Some(s) = child.stdout.take() {
                 let _ = s.take(MAX_READ as u64).read_to_string(&mut out);
             }
             audit.commands.push(cmdline);
