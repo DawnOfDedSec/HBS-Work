@@ -346,8 +346,17 @@ evidence, not pass/fail.
 - **Locations**: a campaign contains one or more locations (name, notes,
   tags — e.g. "Mumbai DC", "DR Pune"). Campaign creation asks for the
   name + first location; more can be added any time.
-- Each campaign owns: an X25519 keypair (compartmentalized blast radius),
-  a key id, a scan token (hashed at rest) for pushes, a download token.
+- **Every issuance gets its own unique X25519 keypair** — no key is ever
+  shared between two extractors, even within the same location. Blast
+  radius of any key compromise is exactly one issued binary. Each report
+  records its `key_id`; the private key is retained (0600 file) so old
+  reports keep decrypting; deleting/revoking an issuance deletes its key.
+- The dashboard never waits on or polls for extractors: processing is
+  purely event-driven — when a sealed report arrives via upload or push,
+  the server looks up the `extractor_id`/`key_id`, decrypts, validates,
+  computes metrics, routes it, and emits an SSE event.
+- Campaigns also own a scan token (hashed at rest) for push auth and a
+  download token for direct-link downloads.
 - **Extractor issuance is per location**: downloading asks campaign →
   location, then platform. Every issued binary carries a unique
   `extractor_id`; the dashboard records
@@ -355,18 +364,20 @@ evidence, not pass/fail.
 - **Automatic host routing — no manual machine names, ever**: every sealed
   report self-identifies with `extractor_id`, hostname, and a stable
   machine ID (`/etc/machine-id` on Linux, `MachineGuid` on Windows,
-  collected read-only). On upload or push, the dashboard resolves
-  `extractor_id → location`, upserts the host by machine ID (hostname
-  changes are tracked, not duplicated), and files the report. A single
-  "drop anywhere" upload on the campaign page routes every file
+  collected read-only). Hosts are keyed internally by machine ID; the
+  display identifier is the human-friendly composite
+  **`hostname:machineid`** (first 8 chars of the machine ID) — easy to
+  read and unambiguous in lists, charts, and exports. Hostname changes are
+  tracked, not duplicated. On upload or push, the dashboard resolves
+  `extractor_id → location`, upserts the host, and files the report. A
+  single "drop anywhere" upload on the campaign page routes every file
   automatically, including mixed batches from multiple locations.
 - Campaign view: location cards → per-location host list (hostname,
   platform, OS version, last scan, score) → host's reports and diffs.
 - Expiry embedded in issued extractors; expired binaries refuse to run.
   Dashboard marks expired campaigns.
-- Key rotation per campaign: new keypair + key id; old key retained so old
-  reports still decrypt (retired, exportable, deletable). Revoking an
-  issuance (or deleting a location) blocks future reports from routing.
+- Revoking an issuance (or deleting a location) blocks future reports from
+  routing and retires that issuance's key.
 
 ### 6.3 Backend (Bun + Hono) API surface
 
@@ -377,7 +388,6 @@ GET    /api/auth/status           {initialized, user, role}
 GET/POST/PATCH/DELETE /api/users          super admin only
 GET/POST /api/campaigns  ·  PATCH /api/campaigns/{id}
 GET    /api/campaigns/{id}/summary       metrics rollup for Summary page
-POST   /api/campaigns/{id}/keys/rotate    super admin
 GET/POST/PATCH/DELETE /api/campaigns/{id}/locations
 GET    /api/campaigns/{id}/locations/{loc}/downloads    platform cards + sha256 + links
 GET    /api/campaigns/{id}/locations/{loc}/download/{platform}?t={token}   patched binary (records issuance)
@@ -390,12 +400,14 @@ GET    /api/reports · /api/reports/{id} · /api/reports/{id}/findings
 GET    /api/reports/diff?a=…&b=…
 POST   /api/annotations           accepted-risk marks
 GET    /api/export/{reportId}?format=xlsx|csv|pdf|docx
-GET    /api/keys/status · POST /api/keys/export (super admin, passphrase-wrapped bundle)
+GET    /api/keys/status                per-issuance key inventory (campaign, location, created, retired)
+POST   /api/keys/export                super admin, passphrase-wrapped bundle (campaign-filterable)
 GET    /api/events                SSE: live report arrival
 ```
 
 - Storage: SQLite (`bun:sqlite`) single file — tables include `users`,
-  `sessions`, `campaigns`, `locations`, `keys`, `issuances`
+  `sessions`, `campaigns`, `locations`, `keys` (one row per issuance,
+  never shared), `issuances`
   (`extractor_id → campaign/location`, download count, revoked flag),
   `hosts` (machine ID keyed, auto-populated), `reports`, `annotations`.
   Private keys as separate 0600 files in `data/keys/`, referenced by id.
@@ -450,8 +462,20 @@ Pages:
        impact, recommendation, references, accepted-risk control); raw
        JSON view
    - **Reports** — auto-updating list (SSE) when pushed reports land
-   - **Report detail** — exec summary, risk score, filters, findings table
-     with full-field drawer (as above)
+   - **Report detail** — enterprise-scanner conventions (Nessus/Qualys
+     pattern), including **two pivots: "By Host"** (this machine's
+     findings, severity iconography, check-ID column, state chips) and
+     **"By Check"** (one failing check → every affected host across the
+     campaign, with host counts and per-host evidence). Finding rows carry
+     the check ID (`WIN-AU-003`), severity badge, category, status, and
+     first/last-seen timestamps; the detail drawer shows the full field
+     set: description, evidence, fallback log, repro steps, impact,
+     recommendation, standards references, accepted-risk control.
+     A **telemetry panel** shows scan metadata: duration, privilege level,
+     extractor version, coverage %, errors/degraded counts, counts of
+     commands executed and files read, arrival path (upload vs push).
+     Exec summary, risk score, severity/category filters as described
+     above.
    - **Diff** — two reports side-by-side: improved/regressed per finding
    - **Locations & hosts** — location cards (create/rename at any time);
      per-location: download cards per platform (SHA-256, direct link,
@@ -476,7 +500,9 @@ Server-side generation, downloaded as files:
 - **CSV**: flat findings table.
 - **PDF (pdfkit + table plugin)**: two templates — executive summary
   (charts-as-tables, plain language, matches Presentation mode) and full
-  findings — deliverable grade.
+  findings with per-host and per-check sections in the enterprise-scanner
+  layout (severity iconography, check-ID references, remediation
+  priority ordering) — deliverable grade.
 - **Word (docx)**: same structure, editable.
 
 If any library is incompatible with Bun, the fallback is client-side
@@ -489,7 +515,7 @@ generation with identical output.
 | Sealed report interception/copy | X22519+AEAD; nothing readable, nothing forgeable |
 | Extractor shared/leaked/reverse-engineered | Public key only: encrypt-only. Logic obfuscated, stripped |
 | Target host compromised while scanning | Extractor holds no secret; read-only; self-audit log |
-| Dashboard key theft | Per-campaign keys, 0600 files, rotation, localhost bind |
+| Dashboard key theft | Unique keypair per issuance (never shared), 0600 files, revocation, localhost bind |
 | Stale scanners after engagement | Embedded expiry; refuse-to-run |
 | Bruteforce of dashboard | argon2id, rate limiting, no default credentials |
 
