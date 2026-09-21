@@ -398,7 +398,9 @@ POST   /api/reports/upload        multipart sealed report(s), batch OK (session
 GET    /api/campaigns/{id}/hosts  auto-populated host inventory per location
 GET    /api/reports · /api/reports/{id} · /api/reports/{id}/findings
 GET    /api/reports/diff?a=…&b=…
-POST   /api/annotations           accepted-risk marks
+GET    /api/campaigns/{id}/findings/treatment    treatment board (state/assignee filters)
+PATCH  /api/findings/{hostId}/{checkId}/state    {state, justification?, assignedTo?, dueDate?}
+GET/POST /api/findings/{hostId}/{checkId}/comments
 GET    /api/export/{reportId}?format=xlsx|csv|pdf|docx
 GET    /api/keys/status                per-issuance key inventory (campaign, location, created, retired)
 POST   /api/keys/export                super admin, passphrase-wrapped bundle (campaign-filterable)
@@ -409,7 +411,9 @@ GET    /api/events                SSE: live report arrival
   `sessions`, `campaigns`, `locations`, `keys` (one row per issuance,
   never shared), `issuances`
   (`extractor_id → campaign/location`, download count, revoked flag),
-  `hosts` (machine ID keyed, auto-populated), `reports`, `annotations`.
+  `hosts` (machine ID keyed, auto-populated), `reports`,
+  `finding_states` (per host+check treatment, unique on host+check),
+  `comments` (per finding thread).
   Private keys as separate 0600 files in `data/keys/`, referenced by id.
 - Binds 127.0.0.1 by default; `--host` to expose, optional auto-TLS with
   printed certificate fingerprint for verification. No outbound calls.
@@ -421,7 +425,31 @@ Defined once, computed server-side, stored with each report:
 - **Risk score (0–100, higher = safer)**:
   `score = 100 × (1 − Σ(wᵢ × failedᵢ) / Σ(wᵢ × applicableᵢ))` over
   non-informational checks, weights Critical = 10, High = 6, Medium = 3,
-  Low = 1. Accepted-risk findings are excluded from the numerator.
+  Low = 1. Findings treated as `accepted_risk` or `false_positive` are
+  excluded from the numerator.
+
+### 6.4a Finding treatment workflow (VM-style)
+
+Findings are treated like tickets in a vulnerability-management system.
+State is keyed per `(host, check_id)` and persists across re-scans of the
+same machine until changed:
+
+| State | Meaning |
+|---|---|
+| `open` | Default state from a failing check |
+| `in_progress` | Remediation assigned/underway (assignee + due date) |
+| `mitigated` | Fix claimed, awaiting verification by next scan |
+| `resolved` | System-set when a re-scan shows the check Compliant (read-only; records which scan resolved it) |
+| `accepted_risk` | Justified acceptance (required justification text + accepter; excluded from risk score) |
+| `false_positive` | Marked not-a-finding (excluded from risk score) |
+
+- **Comments thread** per finding: multiple comments (author, timestamp,
+  markdown-plain text) — auditor discussion/evidence trail.
+- State changes and comments are visible in the finding drawer, the
+  technical findings table (state chips), and a campaign **Treatment**
+  board (filter by state/assignee/severity; backlog → in-progress →
+  resolved flow).
+- Roles: `auditor`+ can change states/comment; `viewer` read-only.
 - **Coverage %** = decided checks / applicable checks (Errors and
   unreachable fallbacks reduce this — surfaced honestly, never hidden).
 - **Host score** = risk score of that host's latest report.
@@ -470,7 +498,9 @@ Pages:
      the check ID (`WIN-AU-003`), severity badge, category, status, and
      first/last-seen timestamps; the detail drawer shows the full field
      set: description, evidence, fallback log, repro steps, impact,
-     recommendation, standards references, accepted-risk control.
+     recommendation, standards references, plus the treatment controls:
+     state dropdown, assignee, due date, justification, and the comments
+     thread.
      A **telemetry panel** shows scan metadata: duration, privilege level,
      extractor version, coverage %, errors/degraded counts, counts of
      commands executed and files read, arrival path (upload vs push).
@@ -485,6 +515,10 @@ Pages:
      appear as scans land, never typed in by hand
    - **Host detail** — one machine's reports over time, per-scan trend,
      diffs between its own scans
+   - **Treatment board** — VM-style workflow: all findings with state
+     chips (open / in-progress / mitigated / accepted / false-positive /
+     resolved), filter by state, assignee, severity; bulk state changes;
+     due-date overdue highlighting
 5. **Presentation mode** — "Present" button on Campaign Summary: hides all
    navigation chrome, large typography, section-by-section keyboard
    stepping (←/→), screen-share friendly; the same content exports as the
