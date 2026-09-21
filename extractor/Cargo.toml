@@ -39,6 +39,9 @@ windows-sys = { version = "0.59", features = [
   "Win32_UI_Shell", "Win32_System_ProcessStatus",
   "Wdk_System_SystemServices" ] }
 
+[dev-dependencies]
+sha2 = "0.10"
+
 [profile.release]
 lto = "fat"
 codegen-units = 1
