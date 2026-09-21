@@ -104,6 +104,11 @@ fn main() {
         std::process::exit(2);
     }
 
+    // 1b. Offer UAC elevation (never required; declined = degraded).
+    if !args.elevated_child && hbs_extractor::elevate::request_relaunch(args.no_elevate) {
+        return; // elevated child took over; parent exits quietly
+    }
+
     // 2. Platform + privileges.
     let pinfo = platform::detect();
     let elevated = hbs_extractor::elevate::is_elevated();
