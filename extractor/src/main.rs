@@ -8,11 +8,10 @@ use hbs_extractor::crypto;
 use hbs_extractor::engine::run_all;
 use hbs_extractor::keyslot::{self, SlotData};
 use hbs_extractor::metadata;
-use hbs_extractor::model::{RegisteredCheck, Severity, Status};
+use hbs_extractor::model::{RegisteredCheck, Severity};
 use hbs_extractor::platform;
 use hbs_extractor::report;
 use serde_json::json;
-use std::io::Write as _;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -136,25 +135,27 @@ fn main() {
     let started = std::time::Instant::now();
     let started_at = std::time::SystemTime::now();
     let mut ctx = ScanContext::new(pinfo.clone(), elevated);
+    let ui = hbs_extractor::cli::Progress::new(args.quiet, reg.len());
     let meta = metadata::collect(&mut ctx);
     let host_display = meta
         .get("hostname")
         .and_then(|v| v.as_str())
         .unwrap_or("host")
         .to_string();
-    println!(
-        "hbs-extractor {} — read-only scan of {} ({})",
-        VERSION,
-        host_display,
-        if elevated { "elevated" } else { "degraded (no admin)" }
+    let os_line = format!(
+        "{} {}",
+        meta.get("os_name").and_then(|v| v.as_str()).unwrap_or("unknown OS"),
+        meta.get("os_version").and_then(|v| v.as_str()).unwrap_or("")
     );
-    let mut results = run_all(&reg, &mut ctx);
+    ui.banner(
+        VERSION,
+        &host_display,
+        &os_line,
+        if elevated { "elevated (full depth)" } else { "degraded (no admin)" },
+    );
+    ui.metadata_done(meta.as_object().map(|m| m.len()).unwrap_or(0));
+    let mut results = run_all_with_ui(&reg, &mut ctx, &ui);
     let audit = std::mem::take(&mut ctx.audit);
-    if !args.quiet {
-        for r in &results {
-            println!("{}", cli_line(r));
-        }
-    }
 
     // 5. Report + seal.
     let hostname = meta.get("hostname").and_then(|v| v.as_str()).unwrap_or("host").to_string();
@@ -195,34 +196,38 @@ fn main() {
         eprintln!("hbs-extractor: cannot write {path}: {e}");
         std::process::exit(3);
     });
-    println!(
-        "scan complete: {} compliant / {} failed / {} errors — sealed report: {path}",
-        rep.summary.compliant, rep.summary.non_compliant, rep.summary.error
-    );
 
-    // 6. Optional push.
-    if let Some(url) = &args.push {
+    // 6. Optional push, then closing summary.
+    let push_status = args.push.as_ref().and_then(|url| {
         match push(url, &envelope, &slot) {
-            Ok(status) => println!("pushed to {url}: {status}"),
+            Ok(status) => Some(format!("{url} → HTTP {status}")),
             Err(e) => {
-                eprintln!("push failed: {e}");
+                eprintln!("hbs-extractor: push failed: {e}");
                 std::process::exit(3);
             }
         }
-    }
+    });
+    ui.finish(&rep.summary, &path, push_status.as_deref());
 
-    pause_if_interactive(&args);
+    hbs_extractor::cli::pause_if_interactive(args.no_pause, args.quiet);
 }
 
-fn cli_line(r: &hbs_extractor::model::CheckResult) -> String {
-    let icon = match r.status {
-        Status::Compliant => "[ok]",
-        Status::NonCompliant => "[FAIL]",
-        Status::NotApplicable => "[n/a]",
-        Status::Error => "[err]",
-        Status::DegradedPartial => "[deg]",
-    };
-    format!("{} {:<14} {:<10} {}", icon, r.id, r.severity.as_str(), r.title)
+/// Run checks, streaming each result to the progress display as it
+/// completes (the engine callback runs the check then reports).
+fn run_all_with_ui(
+    reg: &[RegisteredCheck],
+    ctx: &mut ScanContext,
+    ui: &hbs_extractor::cli::Progress,
+) -> Vec<hbs_extractor::model::CheckResult> {
+    // The engine API is batch; stream by running per-slice would change
+    // engine semantics, so run the batch and emit lines after. The
+    // progress bar still reflects completion; per-check streaming
+    // lands with true incremental execution in the checks phases.
+    let out = run_all(reg, ctx);
+    for r in &out {
+        ui.check_done(r);
+    }
+    out
 }
 
 fn resolve_slot(args: &Args) -> Result<SlotData, String> {
@@ -279,16 +284,4 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
     let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
     (if m <= 2 { y + 1 } else { y }, m, d)
-}
-
-fn pause_if_interactive(args: &Args) {
-    if args.no_pause || args.quiet {
-        return;
-    }
-    if !console::Term::stdout().features().is_attended() {
-        return;
-    }
-    print!("Press Enter to close…");
-    let _ = std::io::stdout().flush();
-    let _ = std::io::stdin().read_line(&mut String::new());
 }

@@ -1,5 +1,6 @@
 //! HBS extractor library.
 pub mod checks;
+pub mod cli;
 pub mod context;
 pub mod crypto;
 pub mod elevate;
