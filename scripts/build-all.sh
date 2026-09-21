@@ -8,6 +8,17 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/dashboard/binaries"
 BUDGET=$((10 * 1024 * 1024))
 
+# cargo-zigbuild needs a zig: prefer one on PATH, else fall back to the
+# `ziglang` Python package's bundled binary if importable.
+if ! command -v zig >/dev/null 2>&1; then
+  ZIGPKG="$(python -c 'import ziglang,os;print(os.path.dirname(ziglang.__file__))' 2>/dev/null || true)"
+  # python prints a Windows-style path; convert for the bash PATH.
+  ZIGPKG="$(cygpath -u "$ZIGPKG" 2>/dev/null || echo "$ZIGPKG")"
+  if [ -n "$ZIGPKG" ] && [ -x "$ZIGPKG/zig.exe" -o -x "$ZIGPKG/zig" ]; then
+    export PATH="$ZIGPKG:$PATH"
+  fi
+fi
+
 mkdir -p "$OUT"
 rm -f "$OUT"/manifest.json
 

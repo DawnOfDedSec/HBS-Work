@@ -230,6 +230,7 @@ fn run_all_with_ui(
     out
 }
 
+#[cfg_attr(not(debug_assertions), allow(unused_variables))]
 fn resolve_slot(args: &Args) -> Result<SlotData, String> {
     #[cfg(debug_assertions)]
     if let Some(hexkey) = &args.dev_insecure_key {
