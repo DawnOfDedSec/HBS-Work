@@ -1,0 +1,99 @@
+//! Check runner: walks the registry, contains panics, measures
+//! durations, folds static testcase text + CheckOutcome into the
+//! final CheckResult. The scan never aborts (spec §4.3).
+
+use crate::context::ScanContext;
+use crate::model::{CheckOutcome, CheckResult, FallbackAttempt, RegisteredCheck, Status, Summary};
+
+/// Run every applicable registered check against the context.
+pub fn run_all(registry: &[RegisteredCheck], ctx: &mut ScanContext) -> Vec<CheckResult> {
+    let mut out = Vec::with_capacity(registry.len());
+    for rc in registry {
+        let started = std::time::Instant::now();
+        let (outcome, mut fallback_log) = if (rc.applies)(&ctx.platform) {
+            // AssertUnwindSafe: the context is not shared with other
+            // threads; on panic we still own it and any partial state is
+            // discarded by the next check overwriting what it uses.
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (rc.run)(ctx)));
+            match result {
+                Ok(o) => (o, Vec::new()),
+                Err(payload) => {
+                    let msg = payload
+                        .downcast_ref::<&str>()
+                        .map(|s| s.to_string())
+                        .or_else(|| payload.downcast_ref::<String>().cloned())
+                        .unwrap_or_else(|| "unknown panic".into());
+                    (
+                        CheckOutcome {
+                            status: Status::Error,
+                            evidence: format!("check panicked: {msg}"),
+                            location: String::new(),
+                            repro: String::new(),
+                            recommendation_override: None,
+                            degraded_reason: None,
+                        },
+                        vec![FallbackAttempt {
+                            source: "engine".into(),
+                            outcome: format!("check panicked: {msg}"),
+                        }],
+                    )
+                }
+            }
+        } else {
+            (
+                CheckOutcome {
+                    status: Status::NotApplicable,
+                    evidence: "not applicable on this platform".into(),
+                    location: String::new(),
+                    repro: String::new(),
+                    recommendation_override: None,
+                    degraded_reason: None,
+                },
+                Vec::new(),
+            )
+        };
+        if outcome.status == Status::Error && fallback_log.is_empty() {
+            fallback_log.push(FallbackAttempt {
+                source: "engine".into(),
+                outcome: "check completed with Error status and no fallback log".into(),
+            });
+        }
+        out.push(CheckResult {
+            id: rc.tc.id.to_string(),
+            title: rc.tc.title.to_string(),
+            status: outcome.status,
+            severity: rc.tc.severity,
+            category: rc.tc.category.to_string(),
+            description: rc.tc.description.to_string(),
+            impact: rc.tc.impact.to_string(),
+            recommendation: outcome
+                .recommendation_override
+                .unwrap_or_else(|| rc.tc.recommendation.to_string()),
+            references: rc.tc.references.iter().map(|s| s.to_string()).collect(),
+            evidence: outcome.evidence,
+            location: outcome.location,
+            repro: outcome.repro,
+            degraded_reason: outcome.degraded_reason,
+            fallback_log,
+            duration_ms: started.elapsed().as_millis() as u64,
+        });
+    }
+    out
+}
+
+pub fn summarize(results: &[CheckResult]) -> Summary {
+    let mut s = Summary::default();
+    for r in results {
+        match r.status {
+            Status::Compliant => s.compliant += 1,
+            Status::NonCompliant => s.non_compliant += 1,
+            Status::NotApplicable => s.not_applicable += 1,
+            Status::Error => s.error += 1,
+            Status::DegradedPartial => s.degraded += 1,
+        }
+        if r.severity == crate::model::Severity::Informational {
+            s.informational += 1;
+        }
+    }
+    s
+}

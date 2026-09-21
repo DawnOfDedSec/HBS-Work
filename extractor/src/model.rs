@@ -76,6 +76,18 @@ pub struct CheckOutcome {
     pub degraded_reason: Option<String>,
 }
 
+/// Signature every check function implements.
+pub type CheckFn = fn(&mut crate::context::ScanContext) -> CheckOutcome;
+
+/// One catalog entry: static testcase definition + applicability
+/// predicate + the check itself.
+#[derive(Clone)]
+pub struct RegisteredCheck {
+    pub tc: Testcase,
+    pub applies: fn(&crate::platform::PlatformInfo) -> bool,
+    pub run: CheckFn,
+}
+
 /// Full per-testcase result row as stored in the sealed report.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
