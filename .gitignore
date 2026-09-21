@@ -1,1 +1,7 @@
 .superpowers/
+target/
+node_modules/
+dist/
+dashboard/server/data/
+dashboard/binaries/
+*.hbs
