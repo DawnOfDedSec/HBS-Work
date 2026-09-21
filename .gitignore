@@ -5,3 +5,4 @@ dist/
 dashboard/server/data/
 dashboard/binaries/
 *.hbs
+!fixtures/*.hbs
