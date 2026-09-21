@@ -30,9 +30,12 @@ A two-part configuration-security review platform for servers:
 
 | Term | Meaning |
 |---|---|
-| Extractor | The Rust scanner binary issued per campaign |
+| Extractor | The Rust scanner binary issued per campaign location |
 | Dashboard | Bun server + React SPA that the auditor runs |
-| Campaign | One engagement: client, scope, own keypair, own scan token, expiry |
+| Campaign | One engagement: client, scope, own keypair, own scan token, expiry — unlimited hosts |
+| Location | A site/environment inside a campaign (e.g. "Mumbai DC", "DR site"); extractors are issued and reports are organized per location |
+| Extractor issuance | One patched binary downloaded for a location; carries a unique `extractor_id` for automatic report routing |
+| Machine ID | Stable host identity collected read-only (`/etc/machine-id`, Windows `MachineGuid`) — survives hostname changes |
 | Sealed report (`.hbs`) | Encrypted report envelope produced by the extractor |
 | Keyslot | Fixed-size placeholder inside the extractor binary that the dashboard patches with the campaign public key + metadata |
 | Fallback chain | Ordered alternative evidence sources per testcase; walked until one yields evidence |
@@ -189,7 +192,10 @@ Offset  Size  Field
   `zstd`, `serde`/`serde_json`, `getrandom`.
 
 Report JSON is schema-versioned (`schema_version` field) so new testcases
-never invalidate old reports.
+never invalidate old reports. Every report carries a self-identification
+block inside the ciphertext: `extractor_id`, machine ID, hostname, FQDN,
+platform/arch, scan timestamps, privilege level, extractor version,
+command/file self-audit log.
 
 ### 4.6 Keyslot (binary patching)
 
@@ -197,8 +203,9 @@ never invalidate old reports.
   bytes begin with magic `HBSKSLOT`; placeholder build = magic + `0xAA` fill
   + zero checksum. Referenced by code so LTO cannot strip it.
 - Patched layout: magic(8) + slot version u16 + flags u16 + key id u16 +
-  campaign id (16) + expiry (u64 unix) + issued-at (u64) + recipient public
-  key (32) + zero pad + SHA-256 of all preceding bytes.
+  campaign id (16) + extractor id (16, unique per issued binary) + expiry
+  (u64 unix) + issued-at (u64) + recipient public key (32) + zero pad +
+  SHA-256 of all preceding bytes.
 - Extractor at startup: locates its own executable, scans for the magic,
   validates the checksum. Zero checksum ⇒ "binary not issued by a dashboard"
   hard error. Expired ⇒ refuses to run with a clear message.
@@ -332,15 +339,34 @@ evidence, not pass/fail.
 - Machine endpoints (`/api/ingest`, direct download links) use per-campaign
   tokens, entirely separate from user sessions.
 
-### 6.2 Campaigns
+### 6.2 Campaigns, locations & host routing
 
-- Fields: name, client/engagement, scope notes, asset tags, expiry date.
+- **Campaign** fields: name, client/engagement, scope notes, asset tags,
+  expiry date. **Unlimited hosts per campaign.**
+- **Locations**: a campaign contains one or more locations (name, notes,
+  tags — e.g. "Mumbai DC", "DR Pune"). Campaign creation asks for the
+  name + first location; more can be added any time.
 - Each campaign owns: an X25519 keypair (compartmentalized blast radius),
   a key id, a scan token (hashed at rest) for pushes, a download token.
+- **Extractor issuance is per location**: downloading asks campaign →
+  location, then platform. Every issued binary carries a unique
+  `extractor_id`; the dashboard records
+  `extractor_id → (campaign, location)`.
+- **Automatic host routing — no manual machine names, ever**: every sealed
+  report self-identifies with `extractor_id`, hostname, and a stable
+  machine ID (`/etc/machine-id` on Linux, `MachineGuid` on Windows,
+  collected read-only). On upload or push, the dashboard resolves
+  `extractor_id → location`, upserts the host by machine ID (hostname
+  changes are tracked, not duplicated), and files the report. A single
+  "drop anywhere" upload on the campaign page routes every file
+  automatically, including mixed batches from multiple locations.
+- Campaign view: location cards → per-location host list (hostname,
+  platform, OS version, last scan, score) → host's reports and diffs.
 - Expiry embedded in issued extractors; expired binaries refuse to run.
   Dashboard marks expired campaigns.
 - Key rotation per campaign: new keypair + key id; old key retained so old
-  reports still decrypt (retired, exportable, deletable).
+  reports still decrypt (retired, exportable, deletable). Revoking an
+  issuance (or deleting a location) blocks future reports from routing.
 
 ### 6.3 Backend (Bun + Hono) API surface
 
@@ -352,10 +378,14 @@ GET/POST/PATCH/DELETE /api/users          super admin only
 GET/POST /api/campaigns  ·  PATCH /api/campaigns/{id}
 GET    /api/campaigns/{id}/summary       metrics rollup for Summary page
 POST   /api/campaigns/{id}/keys/rotate    super admin
-GET    /api/campaigns/{id}/downloads      platform cards + sha256 + links
-GET    /api/campaigns/{id}/download/{platform}?t={token}   patched binary
+GET/POST/PATCH/DELETE /api/campaigns/{id}/locations
+GET    /api/campaigns/{id}/locations/{loc}/downloads    platform cards + sha256 + links
+GET    /api/campaigns/{id}/locations/{loc}/download/{platform}?t={token}   patched binary (records issuance)
+DELETE /api/campaigns/{id}/issuances/{extractor_id}     revoke an issued extractor
 POST   /api/ingest                X-HBS-Token; body = sealed report
-POST   /api/reports/upload        multipart sealed report (session auth)
+POST   /api/reports/upload        multipart sealed report(s), batch OK (session
+                                   auth); routed automatically by extractor_id
+GET    /api/campaigns/{id}/hosts  auto-populated host inventory per location
 GET    /api/reports · /api/reports/{id} · /api/reports/{id}/findings
 GET    /api/reports/diff?a=…&b=…
 POST   /api/annotations           accepted-risk marks
@@ -364,8 +394,11 @@ GET    /api/keys/status · POST /api/keys/export (super admin, passphrase-wrappe
 GET    /api/events                SSE: live report arrival
 ```
 
-- Storage: SQLite (`bun:sqlite`) single file. Private keys as separate
-  0600 files in `data/keys/`, referenced by id.
+- Storage: SQLite (`bun:sqlite`) single file — tables include `users`,
+  `sessions`, `campaigns`, `locations`, `keys`, `issuances`
+  (`extractor_id → campaign/location`, download count, revoked flag),
+  `hosts` (machine ID keyed, auto-populated), `reports`, `annotations`.
+  Private keys as separate 0600 files in `data/keys/`, referenced by id.
 - Binds 127.0.0.1 by default; `--host` to expose, optional auto-TLS with
   printed certificate fingerprint for verification. No outbound calls.
 
@@ -420,8 +453,14 @@ Pages:
    - **Report detail** — exec summary, risk score, filters, findings table
      with full-field drawer (as above)
    - **Diff** — two reports side-by-side: improved/regressed per finding
-   - **Downloads** — per-platform cards: SHA-256, direct link,
-     curl/PowerShell copy-paste snippets
+   - **Locations & hosts** — location cards (create/rename at any time);
+     per-location: download cards per platform (SHA-256, direct link,
+     curl/PowerShell snippets), a drop-zone that accepts **batch** report
+     uploads routed automatically by `extractor_id`, and the auto-populated
+     host list (hostname, platform, OS version, last scan, score) — hosts
+     appear as scans land, never typed in by hand
+   - **Host detail** — one machine's reports over time, per-scan trend,
+     diffs between its own scans
 5. **Presentation mode** — "Present" button on Campaign Summary: hides all
    navigation chrome, large typography, section-by-section keyboard
    stepping (←/→), screen-share friendly; the same content exports as the
