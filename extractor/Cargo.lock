@@ -437,6 +437,7 @@ dependencies = [
  "indicatif",
  "libc",
  "obfstr",
+ "rand_core",
  "serde",
  "serde_json",
  "sha2",
