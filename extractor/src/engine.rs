@@ -31,11 +31,12 @@ pub fn run_all(registry: &[RegisteredCheck], ctx: &mut ScanContext) -> Vec<Check
                             repro: String::new(),
                             recommendation_override: None,
                             degraded_reason: None,
+                            fallback_log: vec![FallbackAttempt {
+                                source: "engine".into(),
+                                outcome: format!("check panicked: {msg}"),
+                            }],
                         },
-                        vec![FallbackAttempt {
-                            source: "engine".into(),
-                            outcome: format!("check panicked: {msg}"),
-                        }],
+                        Vec::new(),
                     )
                 }
             }
@@ -48,10 +49,16 @@ pub fn run_all(registry: &[RegisteredCheck], ctx: &mut ScanContext) -> Vec<Check
                     repro: String::new(),
                     recommendation_override: None,
                     degraded_reason: None,
+                    fallback_log: Vec::new(),
                 },
                 Vec::new(),
             )
         };
+        // The check's own fallback log (present on Error outcomes built
+        // by err_outcome) takes precedence over the engine's.
+        if !outcome.fallback_log.is_empty() {
+            fallback_log = outcome.fallback_log.clone();
+        }
         if outcome.status == Status::Error && fallback_log.is_empty() {
             fallback_log.push(FallbackAttempt {
                 source: "engine".into(),

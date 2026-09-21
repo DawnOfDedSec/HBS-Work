@@ -69,6 +69,7 @@ fn missing_paths_reported_as_error_with_fallback_log() {
             repro: "cat /etc/nope/x".into(),
             recommendation_override: None,
             degraded_reason: None,
+            fallback_log: log,
         }
     };
     let mut reg: Vec<RegisteredCheck> = Vec::new();
@@ -87,6 +88,7 @@ fn ok_check(_: &mut ScanContext) -> CheckOutcome {
         repro: "r".into(),
         recommendation_override: None,
         degraded_reason: None,
+        fallback_log: Vec::new(),
     }
 }
 

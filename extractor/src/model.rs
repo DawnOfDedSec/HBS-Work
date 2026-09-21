@@ -74,6 +74,7 @@ pub struct CheckOutcome {
     pub repro: String,
     pub recommendation_override: Option<String>,
     pub degraded_reason: Option<String>,
+    pub fallback_log: Vec<FallbackAttempt>,
 }
 
 /// Signature every check function implements.
