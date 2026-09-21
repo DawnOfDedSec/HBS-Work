@@ -1,1 +1,2 @@
-// HBS extractor library. Modules are added by implementation tasks.
+//! HBS extractor library.
+pub mod model;
