@@ -8,6 +8,7 @@ pub mod logging;
 pub mod network;
 pub mod pam;
 pub mod services;
+pub mod users;
 pub mod ssh;
 
 use crate::context::ScanContext;
