@@ -176,6 +176,7 @@ fn main() {
     let hostname = meta.get("hostname").and_then(|v| v.as_str()).unwrap_or("host").to_string();
     let machine_id = meta.get("machine_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
     let scan_extra = json!({
+        "peakRssKb": peak_rss_kb(),
         "extractorId": keyslot::hex_id(&slot.extractor_id),
         "campaignId": keyslot::hex_id(&slot.campaign_id),
         "keyId": slot.key_id,
@@ -257,15 +258,50 @@ fn resolve_slot(args: &Args) -> Result<SlotData, String> {
 #[cfg(debug_assertions)]
 fn dev_slot(hexkey: &str) -> Result<SlotData, String> {
     let bytes = hex::decode(hexkey).map_err(|e| format!("--dev-insecure-key: {e}"))?;
-    let key: [u8; 32] = bytes.try_into().map_err(|_| "--dev-insecure-key: need 64 hex chars".to_string())?;
+    let priv_key: [u8; 32] = bytes.try_into().map_err(|_| "--dev-insecure-key: need 64 hex chars (a PRIVATE key)".to_string())?;
     Ok(SlotData {
         key_id: 1,
         campaign_id: [0x11; 16],
         extractor_id: [0x22; 16],
         expiry_unix: 4_102_444_800,
         issued_at_unix: 0,
-        recipient_pub: key,
+        recipient_pub: hbs_extractor::crypto::pubkey_of(&priv_key),
     })
+}
+
+/// Peak resident set size of this scan, self-reported for resource
+/// transparency (spec §4.8 budget evidence).
+fn peak_rss_kb() -> u64 {
+    #[cfg(unix)]
+    {
+        std::fs::read_to_string("/proc/self/status")
+            .ok()
+            .and_then(|s| {
+                s.lines()
+                    .find(|l| l.starts_with("VmHWM:"))
+                    .and_then(|l| l.split_whitespace().nth(1).and_then(|v| v.parse::<u64>().ok()))
+            })
+            .unwrap_or(0)
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
+        // SAFETY: correctly-sized struct; GetProcessMemoryInfo only writes.
+        unsafe {
+            let mut pmc: PROCESS_MEMORY_COUNTERS = std::mem::zeroed();
+            pmc.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+            let ok = GetProcessMemoryInfo(
+                windows_sys::Win32::System::Threading::GetCurrentProcess(),
+                &mut pmc,
+                pmc.cb,
+            );
+            if ok != 0 {
+                (pmc.PeakWorkingSetSize as u64) / 1024
+            } else {
+                0
+            }
+        }
+    }
 }
 
 fn push(url: &str, envelope: &[u8], slot: &SlotData) -> Result<u16, String> {

@@ -40,7 +40,7 @@ fn rsyslog_enabled(ctx: &mut ScanContext) -> CheckOutcome {
     if ctx.exists("/etc/rsyslog.conf") {
         return degraded("rsyslog config exists but service state not queryable");
     }
-    err_outcome(log)
+    degraded("rsyslog not installed and service manager unavailable (container/minimal host)")
 }
 
 fn syslog_running(ctx: &mut ScanContext) -> CheckOutcome {

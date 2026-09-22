@@ -77,6 +77,21 @@ pub struct EvidenceBlock {
     pub col: u32,
     pub context: Vec<String>,
     pub target_index: u32,
+    /// stat metadata of the evidence file at check time (null when
+    /// unknown): mode bits, owner uid/gid (unix).
+    pub file_mode: Option<u32>,
+    pub file_uid: Option<u32>,
+    pub file_gid: Option<u32>,
+}
+
+/// Who ran the check and with what privileges — recorded per testcase
+/// so every finding carries its own trust context.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunContext {
+    pub user: String,
+    pub uid: Option<u32>,
+    pub elevated: bool,
 }
 
 /// What a check fn returns for the engine to fold into a CheckResult.
@@ -127,6 +142,7 @@ pub struct CheckResult {
     pub degraded_reason: Option<String>,
     pub fallback_log: Vec<FallbackAttempt>,
     pub evidence_blocks: Vec<EvidenceBlock>,
+    pub run_context: RunContext,
     pub duration_ms: u64,
 }
 

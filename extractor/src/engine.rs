@@ -7,6 +7,7 @@ use crate::model::{CheckOutcome, CheckResult, FallbackAttempt, RegisteredCheck, 
 
 /// Run every applicable registered check against the context.
 pub fn run_all(registry: &[RegisteredCheck], ctx: &mut ScanContext) -> Vec<CheckResult> {
+    let run_ctx = current_run_context(ctx.elevated);
     let mut out = Vec::with_capacity(registry.len());
     for rc in registry {
         let started = std::time::Instant::now();
@@ -103,10 +104,36 @@ pub fn run_all(registry: &[RegisteredCheck], ctx: &mut ScanContext) -> Vec<Check
             degraded_reason: outcome.degraded_reason,
             fallback_log,
             evidence_blocks: outcome.evidence_blocks.clone(),
+            run_context: run_ctx.clone(),
             duration_ms: started.elapsed().as_millis() as u64,
         });
     }
     out
+}
+
+/// Identity of the scanning process at check time.
+fn current_run_context(elevated: bool) -> crate::model::RunContext {
+    #[cfg(unix)]
+    {
+        let uid = unsafe { libc::getuid() };
+        let user = std::env::var("USER")
+            .ok()
+            .or_else(|| {
+                // passwd lookup without a crate: read /etc/passwd for uid
+                std::fs::read_to_string("/etc/passwd").ok().and_then(|p| {
+                    p.lines()
+                        .find(|l| l.split(':').nth(2) == Some(&uid.to_string()))
+                        .and_then(|l| l.split(':').next().map(str::to_string))
+                })
+            })
+            .unwrap_or_else(|| format!("uid:{uid}"));
+        crate::model::RunContext { user, uid: Some(uid), elevated }
+    }
+    #[cfg(not(unix))]
+    {
+        let user = std::env::var("USERNAME").unwrap_or_else(|_| "unknown".into());
+        crate::model::RunContext { user, uid: None, elevated }
+    }
 }
 
 pub fn summarize(results: &[CheckResult]) -> Summary {

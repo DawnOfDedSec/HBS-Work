@@ -33,6 +33,12 @@ pub fn derive_key(ikm: &[u8], salt: &[u8], info: &[u8]) -> [u8; 32] {
     okm
 }
 
+/// Public key corresponding to a private key (test/dev helper).
+pub fn pubkey_of(priv_bytes: &[u8; 32]) -> [u8; 32] {
+    let sk = StaticSecret::from(*priv_bytes);
+    *PublicKey::from(&sk).as_bytes()
+}
+
 /// Seal `plaintext` (uncompressed report JSON) to `recipient_pub`.
 pub fn seal(plaintext: &[u8], recipient_pub: &[u8; 32], key_id: u16, suite: u8) -> Result<Vec<u8>> {
     let eph = StaticSecret::random_from_rng(getrandom_impl());

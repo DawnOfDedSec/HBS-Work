@@ -144,10 +144,8 @@ fn scheduled_tasks(ctx: &mut ScanContext) -> CheckOutcome {
         log.push(FallbackAttempt { source: "schtasks /query".into(), outcome: format!("{} lines", out.lines().count()).into() });
         let count = out.lines().count().saturating_sub(1);
         return inv_ok(format!("{count} scheduled tasks"), "schtasks".into(), "schtasks /query /fo csv".into());
-    } else {
-        log.extend(one_fallback("schtasks /query", "unavailable"));
     }
-    err_outcome(log)
+    degraded("scheduled-task enumeration unavailable (no cron/systemd/schtasks)")
 }
 
 fn autoruns(ctx: &mut ScanContext) -> CheckOutcome {
@@ -259,7 +257,7 @@ fn time_sync(ctx: &mut ScanContext) -> CheckOutcome {
         }
         log.push(FallbackAttempt { source: "w32tm".into(), outcome: "unavailable (service stopped?)".into() });
     }
-    err_outcome(log)
+    degraded("time-sync sources not queryable (no timedatectl/chrony/w32tm)")
 }
 
 fn dns_config(ctx: &mut ScanContext) -> CheckOutcome {
@@ -310,7 +308,7 @@ fn secure_boot(ctx: &mut ScanContext) -> CheckOutcome {
         }
         log.push(FallbackAttempt { source: "Confirm-SecureBootUEFI".into(), outcome: "unavailable (BIOS or non-admin)".into() });
     }
-    err_outcome(log)
+    degraded("Secure Boot state not determinable on this host (BIOS/vm/container)")
 }
 
 fn tpm_state(ctx: &mut ScanContext) -> CheckOutcome {
@@ -396,10 +394,8 @@ fn firewall_profile(ctx: &mut ScanContext) -> CheckOutcome {
     } else if let Some(out) = ctx.cmd("netsh", &["advfirewall", "show", "allprofiles", "state"]) {
         log.push(FallbackAttempt { source: "netsh advfirewall".into(), outcome: "read".into() });
         return inv_ok(out.lines().filter(|l| l.contains("State")).collect::<Vec<_>>().join("; "), "netsh".into(), "netsh advfirewall show allprofiles state".into());
-    } else {
-        log.extend(one_fallback("netsh advfirewall", "unavailable"));
     }
-    err_outcome(log)
+    degraded("firewall state not queryable (no systemd/iptables access)")
 }
 
 fn cloud_agents(ctx: &mut ScanContext) -> CheckOutcome {
@@ -475,7 +471,7 @@ fn kernel_modules(ctx: &mut ScanContext) -> CheckOutcome {
     if let Some(out) = ctx.cmd("driverquery", &["/v"]) {
         return inv_ok(format!("driverquery: {} lines", out.lines().count()), "driverquery".into(), "driverquery /v".into());
     }
-    err_outcome(one_fallback("lsmod / driverquery", "unavailable"))
+    degraded("kernel module listing unavailable (no lsmod/driverquery)")
 }
 
 fn mgmt_services(ctx: &mut ScanContext) -> CheckOutcome {

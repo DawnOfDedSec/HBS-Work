@@ -42,13 +42,31 @@ pub fn evidence_at(ctx: &mut ScanContext, path: &str, needle: &str) -> Option<Ev
         .iter()
         .map(|l| crate::redact::redact(l))
         .collect();
+    let (file_mode, file_uid, file_gid) = stat_meta(ctx, path);
     Some(EvidenceBlock {
         path: path.to_string(),
         line: idx as u32 + 1,
         col,
         context,
         target_index: (idx - start) as u32,
+        file_mode,
+        file_uid,
+        file_gid,
     })
+}
+
+#[cfg(unix)]
+fn stat_meta(_ctx: &ScanContext, path: &str) -> (Option<u32>, Option<u32>, Option<u32>) {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::metadata(_ctx.path(path))
+        .ok()
+        .map(|md| (Some(md.mode() & 0o7777), Some(md.uid()), Some(md.gid())))
+        .unwrap_or((None, None, None))
+}
+
+#[cfg(not(unix))]
+fn stat_meta(_ctx: &ScanContext, _path: &str) -> (Option<u32>, Option<u32>, Option<u32>) {
+    (None, None, None)
 }
 
 /// Attach an evidence block (or two) to an outcome.

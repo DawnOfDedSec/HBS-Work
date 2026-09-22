@@ -20,6 +20,7 @@ fn sample_result() -> CheckResult {
         degraded_reason: None,
         fallback_log: vec![],
         evidence_blocks: vec![],
+        run_context: hbs_extractor::model::RunContext { user: "test".into(), uid: Some(1000), elevated: false },
         duration_ms: 1,
     }
 }

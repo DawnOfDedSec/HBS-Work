@@ -67,6 +67,23 @@ fn with_log(mut o: CheckOutcome, log: Vec<FallbackAttempt>) -> CheckOutcome {
     o
 }
 
+fn ssh_absent(ctx: &mut ScanContext) -> bool {
+    !ctx.exists("/etc/ssh/sshd_config") && !ctx.exists("/usr/sbin/sshd") && !ctx.exists("/etc/ssh")
+}
+
+fn na_no_ssh() -> CheckOutcome {
+    CheckOutcome {
+        status: crate::model::Status::NotApplicable,
+        evidence: "sshd not installed on this host".into(),
+        location: String::new(),
+        repro: String::new(),
+        recommendation_override: None,
+        degraded_reason: None,
+        fallback_log: Vec::new(),
+        evidence_blocks: Vec::new(),
+    }
+}
+
 fn ssh_kv(ctx: &mut ScanContext, key: &str, good: &[&str], bad: &str) -> CheckOutcome {
     let mut log = Vec::new();
     let block = crate::checks::evidence_at(ctx, "/etc/ssh/sshd_config", key);
@@ -83,6 +100,9 @@ fn ssh_kv(ctx: &mut ScanContext, key: &str, good: &[&str], bad: &str) -> CheckOu
             }
         }
         None => {
+            if ssh_absent(ctx) {
+                return na_no_ssh();
+            }
             if log.iter().any(|f| f.source == "/etc/ssh/sshd_config" && f.outcome == "read") {
                 degraded(&format!("{key} not explicitly set — OpenSSH default applies; verify default is acceptable"))
             } else {
@@ -105,6 +125,9 @@ fn ssh_kv_contains_any(ctx: &mut ScanContext, key: &str, want_any: &[&str]) -> C
             }
         }
         None => {
+            if ssh_absent(ctx) {
+                return na_no_ssh();
+            }
             if log.iter().any(|f| f.outcome == "read") {
                 degraded(&format!("{key} not set — OpenSSH defaults apply (modern defaults are strong; verify version)"))
             } else {
@@ -127,6 +150,9 @@ fn ssh_num_max(ctx: &mut ScanContext, key: &str, max: u64) -> CheckOutcome {
             }
         }
         None => {
+            if ssh_absent(ctx) {
+                return na_no_ssh();
+            }
             if log.iter().any(|f| f.outcome == "read") {
                 degraded(&format!("{key} not set — OpenSSH default applies"))
             } else {
@@ -168,6 +194,9 @@ fn ssh_banner(ctx: &mut ScanContext) -> CheckOutcome {
         Some(v) if v != "none" && !v.is_empty() => ok(format!("Banner {v}"), "/etc/ssh/sshd_config".into(), "sshd -T | grep -i banner".into()),
         Some(_) => nok("Banner disabled (none)".into(), "/etc/ssh/sshd_config".into(), "sshd -T | grep -i banner".into()),
         None => {
+            if ssh_absent(ctx) {
+                return na_no_ssh();
+            }
             if log.iter().any(|f| f.outcome == "read") {
                 degraded("Banner not set — OpenSSH default (none)")
             } else {

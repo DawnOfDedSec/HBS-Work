@@ -154,8 +154,16 @@ fn bootloader_password(ctx: &mut ScanContext) -> CheckOutcome {
     let candidates = ["/boot/grub2/grub.cfg", "/boot/grub/grub.cfg"];
     let mut log = Vec::new();
     let Some(path) = super::first_existing(ctx, &candidates) else {
-        log.push(FallbackAttempt { source: "grub.cfg".into(), outcome: "not found".into() });
-        return err_outcome(log);
+        return CheckOutcome {
+            status: crate::model::Status::NotApplicable,
+            evidence: "no grub.cfg on this host (non-grub or container boot)".into(),
+            location: String::new(),
+            repro: String::new(),
+            recommendation_override: None,
+            degraded_reason: None,
+            fallback_log: Vec::new(),
+            evidence_blocks: Vec::new(),
+        };
     };
     let Some(cfg) = ctx.read(path) else {
         log.push(FallbackAttempt { source: path.into(), outcome: "unreadable".into() });
