@@ -5,6 +5,7 @@ pub mod audit;
 pub mod defender;
 pub mod event_logs;
 pub mod sec_options;
+pub mod services;
 pub mod user_rights;
 
 use crate::context::ScanContext;

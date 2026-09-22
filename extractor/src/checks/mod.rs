@@ -18,6 +18,7 @@ pub fn register_all(reg: &mut Vec<RegisteredCheck>) {
     windows::defender::register(reg);
     windows::event_logs::register(reg);
     windows::user_rights::register(reg);
+    windows::services::register(reg);
     linux::containers::register(reg);
     linux::firewall::register(reg);
     linux::fsck::register(reg);
