@@ -9,6 +9,7 @@ pub mod toy;
 use crate::model::{CheckOutcome, FallbackAttempt, RegisteredCheck, Status};
 
 pub fn register_all(reg: &mut Vec<RegisteredCheck>) {
+    linux::auditd::register(reg);
     linux::firewall::register(reg);
     linux::fsck::register(reg);
     linux::logging::register(reg);

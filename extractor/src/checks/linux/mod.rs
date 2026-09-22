@@ -2,6 +2,7 @@
 //! section below.
 
 pub mod firewall;
+pub mod auditd;
 pub mod fsck;
 pub mod logging;
 pub mod network;
