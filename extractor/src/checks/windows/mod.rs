@@ -8,6 +8,7 @@ pub mod network;
 pub mod perms;
 pub mod sec_options;
 pub mod services;
+pub mod threat_creds;
 pub mod user_rights;
 
 use crate::context::ScanContext;
@@ -36,11 +37,18 @@ fn powershell_registry_path(path: &str) -> String {
 
 fn reg_query_value(output: &str, name: &str) -> Option<String> {
     output.lines().find_map(|line| {
-        let fields: Vec<_> = line.split_whitespace().collect();
-        let index = fields
-            .iter()
-            .position(|field| field.eq_ignore_ascii_case(name))?;
-        let value = fields.get(index + 2..)?.join(" ");
+        let line = line.trim();
+        let prefix = line.get(..name.len())?;
+        if !prefix.eq_ignore_ascii_case(name) {
+            return None;
+        }
+        let rest = line.get(name.len()..)?.trim_start();
+        let mut fields = rest.split_whitespace();
+        let kind = fields.next()?;
+        if !kind.starts_with("REG_") {
+            return None;
+        }
+        let value = fields.collect::<Vec<_>>().join(" ");
         (!value.is_empty()).then_some(value)
     })
 }
@@ -150,7 +158,11 @@ pub fn reg_query_sz_with_log(ctx: &mut ScanContext, path: &str, name: &str) -> Q
             &["-NoProfile", "-NonInteractive", "-Command", &script],
         )
         .map(|value| value.trim().to_owned())
-        .filter(|value| !value.is_empty());
+        .filter(|value| {
+            !value.is_empty()
+                && !value.to_ascii_lowercase().contains("unable to find")
+                && !value.to_ascii_lowercase().starts_with("error:")
+        });
     attempts.push(attempt(
         "PowerShell Get-ItemProperty",
         if value.is_some() {
