@@ -1,597 +1,527 @@
 # HBS — Host Baseline Security Review Platform: Design Spec
 
 Date: 2026-09-21
-Status: Approved design, pending implementation plan
+Status: Approved design, updated source of truth
 Repo: `d:\Github-Repo\HBS-Work`
 
 ## 1. Purpose
 
-A two-part configuration-security review platform for servers:
+Two-part configuration-security review platform for enterprise servers:
 
-- **Extractor** (Rust): a single-file, read-only scanner run on the target host
-  (any Linux distro or Windows version, amd64/arm64). It collects a detailed
-  system fingerprint and evaluates **~325 hardening testcases** (CIS-benchmark
-  based, plus a threat-informed layer covering recent attack patterns not yet
-  in the standards, plus informational inventory), then writes a **sealed
-  report** that only the issuing dashboard can decrypt.
-- **Dashboard/Processor** (Bun + Hono + Vite/React/TypeScript): creates
-  **campaigns**, issues per-campaign extractors for download (UI or direct
-  link), receives sealed reports via upload or `--push`, decrypts them, and
-  presents findings with severity filtering, diffing, and Excel/CSV/PDF/Word
-  export.
+- **Extractor** (Rust): single-file, strictly read-only scanner executed on target host (Linux distros or Windows versions, amd64/arm64). Collects detailed system fingerprint, evaluates **~325 hardening testcases** (CIS benchmarks, threat-informed attack-surface layer, and shared informational inventory), and writes a **sealed report** (`.hbs` v2 envelope) decryptable only by issuing dashboard.
+- **Dashboard/Processor** (Bun + Hono + Vite/React/TypeScript): creates **campaigns**, organizes locations, issues unique single-key extractors for download (UI or direct link), receives sealed reports via batch upload or optional `--push`, decrypts and verifies reports, routes hosts automatically, and presents Nessus-style findings with live filtering, diffing, treatment workflows, and deliverable exports (Excel, CSV, PDF, Word).
 
-### Non-goals
+### Non-goals (Strict Boundaries)
 
-- No active exploitation, no network scanning of other hosts, no changes to
-  the target system. Read-only by construction.
-- No agent/daemon/persistence: the extractor runs once and exits.
+- Strictly read-only: no active exploitation, no network port scanning, no remote probes, no configuration changes, no temp file exports on target (including `secedit /export`).
+- No persistence, no background daemon, no scheduled service, no agent architecture: extractor runs once and terminates.
+- Offline by default: zero socket, DNS, or network calls unless `--push <url>` explicitly provided by operator. Local scan and report sealing operate fully air-gapped.
+- No auto-update, no cloud dependencies, no external telemetry.
 
 ## 2. Glossary
 
 | Term | Meaning |
 |---|---|
-| Extractor | The Rust scanner binary issued per campaign location |
-| Dashboard | Bun server + React SPA that the auditor runs |
-| Campaign | One engagement: client, scope, own keypair, own scan token, expiry — unlimited hosts |
-| Location | A site/environment inside a campaign (e.g. "Mumbai DC", "DR site"); extractors are issued and reports are organized per location |
-| Extractor issuance | One patched binary downloaded for a location; carries a unique `extractor_id` for automatic report routing |
-| Machine ID | Stable host identity collected read-only (`/etc/machine-id`, Windows `MachineGuid`) — survives hostname changes |
-| Sealed report (`.hbs`) | Encrypted report envelope produced by the extractor |
-| Keyslot | Fixed-size placeholder inside the extractor binary that the dashboard patches with the campaign public key + metadata |
-| Fallback chain | Ordered alternative evidence sources per testcase; walked until one yields evidence |
+| Extractor | Standalone Rust scanner binary issued per campaign location |
+| Dashboard | Bun server + React SPA run by auditing team on trusted machine |
+| Campaign | Top-level audit engagement: client, scope, expiry, scan push token, download token |
+| Location | Operational site/environment within campaign (e.g. "DC-East", "PCI-Zone"); soft-retirable |
+| Extractor Issuance | Immutable patched binary download artifact with unique random `extractor_id` and dedicated single-use X25519 keypair |
+| Machine ID | Stable host identifier collected read-only (`/etc/machine-id` on Linux, `MachineGuid` on Windows) |
+| Host Locations | Mapping table allowing identical host to appear across multiple locations or campaigns over time |
+| Sealed Report (`.hbs` v2) | Authenticated, encrypted report envelope (magic `HBS2`, version 2, AEAD AAD header, zstd-compressed JSON payload) |
+| Keyslot | 512-byte `.rodata` slot in extractor binary patched with recipient public key, campaign/extractor IDs, and integrity checksum |
+| Fallback Chain | Ordered list of alternative read-only evidence sources per testcase, executed until authoritative evidence obtained |
+| Evidence Depth | Level of evidence obtained: `AuthoritativePrimary`, `AuthoritativeFallback`, or `DegradedPartial` |
+| Discriminated Evidence Block | Pinpoint evidence struct (`sourceType`, `source`, `line`, `col`, `contextBefore`, `offendingValue`, `contextAfter`, file metadata, `redacted`) |
+| Treatment Workflow | Vulnerability-management state tracking (`open`, `in_progress`, `mitigated`, `accepted_risk`, `false_positive`, `resolved`) |
 
-## 3. Architecture
+## 3. Architecture & Monorepo Layout
 
-Monorepo:
+Monorepo layout:
 
 ```
 HBS-Work/
-├── extractor/               # Cargo workspace — the scanner
+├── extractor/               # Cargo workspace — scanner binary & library
 │   ├── Cargo.toml
 │   └── src/
-│       ├── main.rs          # CLI args, privilege handling, orchestration
-│       ├── cli/             # terminal UX (progress, colors, non-TTY mode)
-│       ├── metadata.rs      # system fingerprint
-│       ├── engine/          # registry macro, runner, result model
+│       ├── main.rs          # CLI args, two-phase privilege orchestration, runner
+│       ├── cli.rs           # Terminal UX (indicatif + console, non-TTY mode)
+│       ├── elevate.rs       # Least-privilege handling (UAC / elevation consent)
+│       ├── metadata.rs      # System fingerprint (read-only system probes)
+│       ├── engine.rs        # Testcase catalog runner, panic containment, fallback log
+│       ├── model.rs         # Results, discriminated evidence blocks, report schema
+│       ├── context.rs       # ScanContext (read-only caches, audit log, injectors)
+│       ├── evidence.rs      # Bounded read-only file/command executors (allowlist)
+│       ├── redact.rs        # Secret masking applied prior to serialization
 │       ├── checks/
-│       │   ├── linux/       # ~110 testcases, one module per CIS section
-│       │   ├── windows/     # ~110 testcases, same structure
-│       │   └── shared/      # ~15 informational inventory checks
-│       ├── crypto.rs        # X25519 + HKDF + ChaCha20-Poly1305 envelope
-│       ├── keyslot.rs       # reads its own patched slot (pubkey, campaign, expiry)
-│       └── platform.rs      # arch/distro detection, read-only helpers, priority
+│       │   ├── mod.rs       # Catalog registry, outcome constructors, evidence builder
+│       │   ├── linux/       # ~110 CIS testcases + ~40 threat testcases
+│       │   ├── windows/     # ~110 CIS testcases + ~40 threat testcases
+│       │   └── shared.rs    # ~25 shared informational inventory checks
+│       ├── crypto.rs        # Envelope v2 sealing/unsealing, HKDF-SHA256, AEAD AAD
+│       ├── keyslot.rs       # 512-byte keyslot parsing, strict validation, checksum
+│       └── platform.rs      # Capability detection (distro family, OS, arch, nice)
 ├── dashboard/
-│   ├── server/              # Bun + Hono: auth, campaigns, patcher, ingest, store, exports
-│   ├── src/                 # Vite + React + TS SPA
+│   ├── server/              # Bun + Hono backend: auth, ingest pipeline, SQLite store
+│   │   ├── index.ts         # Server boot, route registration, 127.0.0.1 bind
+│   │   ├── db.ts            # SQLite migrations, schema, indexes, audit log
+│   │   ├── auth.ts          # Setup wizard, argon2id, sessions, rate-limiting
+│   │   ├── keys.ts          # Dedicated per-issuance X25519 key management, 0600 storage
+│   │   ├── patcher.ts       # Binary keyslot patcher, strict slot validation
+│   │   ├── envelope.ts      # Envelope v2 decryption (AAD) + legacy v1 migration ingest
+│   │   ├── ingest.ts        # Unified validateAndIngestEnvelope pipeline (push + upload)
+│   │   ├── metrics.ts       # Server-authoritative risk score, coverage, aggregations
+│   │   ├── sse.ts           # Server-sent events for real-time report arrival
+│   │   └── exports/         # Excel, CSV, PDF, Word report generators
+│   ├── src/                 # Vite + React 18 + TypeScript strict SPA
 │   └── package.json
 ├── scripts/
-│   ├── build-all.sh         # cargo-zigbuild matrix → dashboard binaries dir
-│   └── docker-test/         # Linux validation matrix
-├── docs/
+│   ├── build-all.sh         # Cross-compilation matrix with 10 MB budget gate
+│   └── docker-test/         # Linux distro validation matrix (root & non-root)
+├── docs/                    # Design specs, implementation plans
 └── README.md
 ```
 
-### Build & platform matrix
+### Capability-Based Platform Matrix
 
-| Target | Covers | Status |
-|---|---|---|
-| `x86_64-unknown-linux-musl` | any Linux distro, amd64 (fully static) | required |
-| `aarch64-unknown-linux-musl` | ARM64 Linux (Graviton, Ampere, Pi) | required |
-| `x86_64-pc-windows-msvc` | Windows Server 2016–2025, Win 10/11 | required |
-| `aarch64-pc-windows-msvc` | Windows ARM64 | stretch |
-| `armv7-unknown-linux-musleabihf` | 32-bit ARM Linux | stretch |
+Detection uses capability probes (kernel interfaces, syscall availability, service managers, registry paths) rather than rigid OS-version string assumptions.
 
-Cross-compiled from the Windows dev machine with `cargo-zigbuild`. Static
-musl ⇒ no glibc floor, no DLLs, no installer. Distro behavior differences are
-handled at runtime (detection + fallback chains), never by separate builds.
+| Target | Architecture / OS | Distro / Version Support | Status |
+|---|---|---|---|
+| `x86_64-unknown-linux-musl` | amd64 Linux | Fully static musl; kernel ≥ 3.10; RHEL/CentOS 7-9, Ubuntu 16.04-24.04, Debian 9-12, Alpine 3.x, SUSE, Arch | Required |
+| `aarch64-unknown-linux-musl` | arm64 Linux | Fully static musl; AWS Graviton, Ampere, Raspberry Pi 64-bit | Required |
+| `x86_64-pc-windows-msvc` | amd64 Windows | Windows Server 2016, 2019, 2022, 2025; Windows 10, Windows 11 | Required |
+| `aarch64-pc-windows-msvc` | arm64 Windows | Windows 11 ARM64, Windows Server on ARM | Stretch |
+| `armv7-unknown-linux-musleabihf` | 32-bit armv7 Linux | Embedded / legacy Linux appliances | Stretch |
+
+Cross-compilation runs from dev workstation using `cargo-zigbuild`. Static musl binaries have zero external glibc/musl library dependencies. Unsupported architectures exit cleanly with code 3 without altering target.
 
 ## 4. Extractor
 
-### 4.1 CLI / terminal UX
+### 4.1 CLI / Terminal UX & Push Handling
 
-Identical experience on every OS/arch. Built with `indicatif` + `console`
-(ANSI/VirtualTerminal enabled programmatically for classic conhost):
+- Clean terminal output using `indicatif` and `console` (virtual terminal emulation enabled programmatically for classic conhost).
+- Top banner: version, target host, OS, detected privilege level, air-gapped status.
+- Streaming check progress: check ID, short title, status icon (`✓` Compliant, `✗` NonCompliant, `⚠` Degraded, `–` N/A, `!` Error), severity badge.
+- Live metric footer: counts for Critical, High, Medium, Low, Info, Degraded, Errors.
+- Closing summary: total duration, peak RSS (from OS getrusage/GetProcessMemoryInfo), sealed report path, push status.
+- **Non-TTY mode**: when stdout is piped/redirected or `--quiet`, emits clean line-by-line machine/CI readable text without cursor movement or ANSI escapes.
+- **Windows interactive run**: console opens in dedicated window and pauses on exit; suppressed via `--no-pause`.
+- **Command-line flags**:
+  `--list-checks`, `--only <ids>`, `--category <name>`, `--min-severity <level>`, `--out <path>`, `--push <url>`, `--push-token-file <path>`, `--no-elevate`, `--no-pause`, `--quiet`, `--elevated-child` (internal).
+- **Offline by default & Push Security**:
+  - Without `--push`, extractor opens zero network sockets, sends no DNS queries, and performs no HTTP operations.
+  - When `--push <url>` is provided: report is first sealed and written to local disk. Local report file remains intact regardless of push outcome.
+  - Network push uses bounded timeout (connect 5s, transfer 15s) and max 2 retries with exponential backoff.
+  - Push authentication token must NEVER appear on command line (`argv`) or URL query parameters. Token is sourced solely from `HBS_PUSH_TOKEN` environment variable or read-only `--push-token-file <path>`. Redaction engine scrubs push token from all logs, self-audit, and report payload.
 
-- Banner panel: version, target host, OS, detected privilege level.
-- Metadata phase, then per-check streaming lines under an overall progress
-  bar: check ID, short title, status icon (✓ compliant / ✗ failed / ⚠
-  degraded / – N/A / ! error), severity tag for failures.
-- Live counters row (Critical/High/Medium/Low/Info/Errors).
-- Closing summary + sealed report path + push status if `--push` used.
-- **Non-TTY mode**: when stdout is piped/redirected or `--quiet`, emit plain
-  one-line-per-check text; no cursor control, CI-friendly.
-- **Windows double-click**: console-subsystem binary opens its own window and
-  pauses at the end when launched interactively; `--no-pause` for scripts.
-- Flags: `--list-checks`, `--only <ids>`, `--category <name>`,
-  `--min-severity <level>`, `--out <path>`, `--push <url>`, `--no-elevate`,
-  `--no-pause`, `--quiet`. Polished `--help`.
+### 4.2 Least Privilege Model
 
-### 4.2 Privilege model (never fails, only degrades)
+The extractor adheres to strict least privilege:
+1. **Always starts unprivileged**: binary executes as current user; it never prompts for elevation on startup merely because admin checks exist.
+2. **Phase 1 (Unprivileged execution)**: runs all checks that are nonprivileged or fallback-capable. Records findings with full or fallback evidence depth.
+3. **Elevation consent gate**:
+   - If (and only if) selected checks remain that require privileged access to achieve authoritative primary evidence, AND `--no-elevate` was not supplied:
+   - **Windows**: presents one explicit prompt informing user why elevation is requested, then requests single UAC elevation via `ShellExecuteW` (`runas`). Child process receives `--elevated-child` to prevent relaunch loops. If user declines or cancels UAC, scan continues unprivileged.
+   - **Linux**: never invokes `sudo` or re-executes itself. If running as non-root, scan proceeds using non-root read-only fallbacks. Closing summary provides explicit operator-controlled re-run guidance (`sudo ./hbs-extractor ...`) only when privileged primary evidence remains unresolved.
+4. **Graceful degradation**:
+   - Denied or cancelled elevation does NOT abort scan.
+   - Checks lacking permission execute alternative read-only fallbacks.
+   - Checks unable to reach authoritative resolution are marked `Status::DegradedPartial` with explicit `degraded_reason` ("elevation denied/absent; primary evidence unavailable"). Never marked false pass or hard Error.
+5. **Privilege auditing**: report records `privilegeRequested`, `privilegeGranted`, `privilegeRefused`, and per-check `runContext` (`user`, `uid`, `elevated`, `evidenceDepth`).
 
-- **Windows**: on start, checks token elevation via Win32
-  (`OpenProcessToken` → `TokenElevation`). If not elevated and `--no-elevate`
-  was not given, relaunches itself via `ShellExecuteW` with the `runas` verb
-  (standard UAC prompt, no bypass); the child runs with `--elevated-child` so
-  it never re-prompts. If the user declines, the scan continues
-  unprivileged; checks that lost depth are marked `Degraded` with the reason.
-- **Linux**: runs as a normal user; root-only evidence sources use
-  non-root-visible fallbacks (`getent`, world-readable metadata, permission
-  bits) and are marked degraded where applicable. `sudo` is never required
-  and never invoked silently.
-- Privilege level at runtime is recorded in the report.
+### 4.3 Engine, Fallbacks & Result Model
 
-### 4.3 Engine & result model
+Testcases are immutable static structs registered into a compile-time catalog. The runner manages execution order, caches shared context (parsed `/etc/passwd`, read-only registry views), and isolates failures.
 
-Every testcase is a struct registered by a macro into a compile-time catalog
-(stable ordering, no runtime parsing). Runner caches shared context (parsed
-`/etc/passwd`, registry snapshots, distro info) once.
+#### Ordered Fallback Requirements
+Every testcase must define ordered fallback descriptors:
+- **Fallback 1 (Primary)**: authoritative primary read-only source (e.g. system API, direct configuration file).
+- **Fallback 2 (Secondary)**: independent read-only source (e.g. allowlisted query tool, effective runtime state query).
+- **Fallback 3+ (Tertiary)**: fallback heuristic (e.g. process argument inspection, filesystem permissions inspection).
+- *Single-source exception*: allowed only when platform architecture provides exactly one source (e.g. unique kernel sysctl); must document manual verification rationale in check definition.
 
-Testcase definition fields:
+Catalog validation verifies fallback metadata at startup. During execution:
+- The runner records every attempted source and outcome in `fallback_log`.
+- Execution stops as soon as authoritative evidence is achieved.
+- If fallbacks disagree, the check resolves conservatively to `DegradedPartial` with conflict details in evidence.
+- If all fallbacks are unavailable or denied, check returns `DegradedPartial`.
+- `Status::Error` is reserved strictly for unexpected internal invariants, panics (caught via `catch_unwind`), or unparseable corrupted buffers.
+
+#### Result Fields
 
 | Field | Content |
 |---|---|
-| `id` | Stable, section-prefixed: `LIN-SU-014`, `WIN-AU-003`, `GEN-INV-002` |
-| `title`, `description` | What the test is and does |
-| `severity` | Critical / High / Medium / Low / Informational |
-| `references` | CIS section + ISO 27001 / NIST 800-53 / PCI-DSS mappings where they exist |
-| `category` | CIS section grouping |
-| `applicability` | OS version / distro-family constraints |
-| `fallbacks` | Ordered evidence sources for this check |
+| `id` | Stable identifier: `LIN-FS-001`, `WIN-AU-003`, `GEN-INV-001` |
+| `title`, `description` | Testcase purpose and description |
+| `severity` | `Critical` (10), `High` (6), `Medium` (3), `Low` (1), `Informational` (0) |
+| `status` | `Compliant`, `NonCompliant`, `NotApplicable`, `Error`, `DegradedPartial` |
+| `evidenceDepth` | `AuthoritativePrimary`, `AuthoritativeFallback`, `DegradedPartial` |
+| `evidence` | Human-readable string summary of finding |
+| `location` | Specific source path, registry key, or query identifier |
+| `repro` | Exact read-only CLI or inspection command to reproduce finding |
+| `impact`, `recommendation` | Technical impact explanation and exact remediation steps |
+| `references` | CIS benchmark items, NIST 800-53, ISO 27001, PCI-DSS controls |
+| `fallback_log` | Ordered array of `{source, outcome, depth}` |
+| `evidence_blocks` | Discriminated pinpoint evidence blocks |
+| `run_context` | `{user, uid, elevated}` at check execution time |
+| `duration_ms` | Execution duration in milliseconds |
 
-Per-run result fields:
+#### Discriminated Evidence Block Contract
 
-| Field | Content |
-|---|---|
-| `status` | Compliant / NonCompliant / NotApplicable / Error / Degraded-partial |
-| `evidence` | Exact values found: file excerpts, command output, parsed values |
-| `location` | File path / registry key / command source |
-| `repro` | Steps to reproduce the check manually |
-| `impact`, `recommendation` | Why it matters; how to fix |
-| `fallback_log` | Every fallback attempted, in order, with per-attempt outcome |
-| `duration_ms` | Per-check timing |
+Every locatable `NonCompliant` finding attaches one or more discriminated evidence blocks:
 
-Failure containment: each check runs under `catch_unwind` + `Result`; any
-panic/IO error becomes an `Error` result documenting all attempts. The scan
-never aborts. Path-missing and permission-denied are surfaced explicitly in
-the fallback log, with what the other fallbacks showed.
+```json
+{
+  "sourceType": "file",
+  "source": "/etc/ssh/sshd_config",
+  "line": 42,
+  "col": 1,
+  "contextBefore": [
+    "# Port 22",
+    "# AddressFamily any"
+  ],
+  "offendingValue": "PermitRootLogin yes",
+  "contextAfter": [
+    "AuthorizedKeysFile .ssh/authorized_keys",
+    "PasswordAuthentication yes"
+  ],
+  "fileMode": 420,
+  "fileUid": 0,
+  "fileGid": 0,
+  "redacted": true
+}
+```
 
-### 4.4 Read-only guarantee
+- `sourceType`: `file` | `registry` | `command` | `api`.
+- `source`: exact redacted path, hive path, command string, or API symbol.
+- `line` & `col`: 1-based start location. Column is computed using Unicode scalar / grapheme offsets (not naive byte slices or line-split drift). Missing source or non-file findings show ordered fallback attempts; never emit artificial line 0.
+- `contextBefore`: up to 3 lines preceding offending content.
+- `offendingValue`: the exact violating configuration or value line.
+- `contextAfter`: up to 3 lines following offending content.
+- `fileMode`, `fileUid`, `fileGid`: optional filesystem metadata (Unix permissions mode and owner IDs).
+- `redacted`: boolean flag confirming all strings passed through secret redaction before report serialization.
 
-- All file helpers open read-only.
-- External commands come from an internal allowlist of query-style commands
-  (e.g. `auditpol /get:*`, `secedit /export` to stdout only, `ss -tulpn`,
-  `systeminfo`); no command writes to the system.
-- The only write anywhere is the sealed report (to CWD or `--out`).
-- Every command executed and file read is recorded in the report's
-  self-audit section (blue-team transparency).
+### 4.4 Strict Read-Only Guarantee
 
-### 4.5 Sealed report format (`.hbs` v1)
+1. Target files opened strictly `O_RDONLY`. File writes, creations, and truncations on target are blocked at compile time and runtime.
+2. Allowlisted query-only commands only: all executed processes must match `COMMAND_ALLOWLIST` and restricted verb filters.
+3. Prohibited tools: `secedit /export`, temporary file redirects, configuration changers, remediation commands, and active exploit probes are strictly forbidden.
+4. Sole disk write: the requested sealed `.hbs` report written to `--out` (or CWD) is the single allowed write on the target host.
+5. Self-audit log: every attempted file read and command request is recorded before validation/open/spawn, including denied, missing, failed, and timed-out attempts with redacted locator/arguments and outcome. Cache hits retain the original attempt record. No secret or push token may enter `self_audit`.
 
-Little-endian unless noted:
+### 4.5 Sealed Report Envelope (`.hbs` v2)
+
+The `.hbs` report format is upgraded from v1 to **v2** for reliable upload routing and AEAD integrity over header routing data.
+
+#### Envelope Layout (v2)
+
+Header length: 93 bytes (little-endian throughout):
 
 ```
 Offset  Size  Field
-0       4     Magic "HBS1"
-4       2     format version (u16 = 1)
+0       4     Magic "HBS2"
+4       2     format version (u16 = 2)
 6       1     cipher suite (0 = X25519+HKDF-SHA256+ChaCha20-Poly1305,
-              1 = X25519+HKDF-SHA256+AES-256-GCM)
-7       2     key id (u16, campaign key version)
-9       16    scan id (random)
-25      32    ephemeral X25519 public key
-57      12    nonce
-69      8     ciphertext length (u64)
-77      ..    ciphertext = AEAD(zstd-compressed JSON report), tag appended
+                            1 = X25519+HKDF-SHA256+AES-256-GCM)
+7       2     key id (u16, issuance key version)
+9       16    extractor_id (16 raw bytes, uniquely identifying the issuance)
+25      16    scan_id (16 random bytes)
+41      32    ephemeral X25519 public key
+73      12    nonce (12 random bytes)
+85      8     ciphertext length (u64)
+93      ..    ciphertext = AEAD(zstd(report JSON)), 16-byte Poly1305/GCM tag appended
 ```
 
-- Key schedule: `ikm = X25519(ephemeral_secret, recipient_pub)`;
-  `salt = scan_id || ephemeral_pub`; `info = "HBS-report-v1" || suite || key_id`;
-  HKDF-SHA256 → 32-byte AEAD key.
-- Nothing readable outside the ciphertext — hostnames, timestamps, everything
-  is inside. The header holds only what is required to parse and decrypt.
-- Crates: `x25519-dalek`, `hkdf`, `sha2`, `chacha20poly1305`, `aes-gcm`,
-  `zstd`, `serde`/`serde_json`, `getrandom`.
+#### Cryptographic Specification
+- **AEAD Additional Authenticated Data (AAD)**: bytes `0..93` (entire header from magic through `ciphertext_len`) are fed as AAD into the AEAD cipher. Any tampering with `extractor_id`, `key_id`, `version`, or `scan_id` causes authentication failure and immediate rejection.
+- **Key Derivation**:
+  - `ikm = X25519(ephemeral_secret, recipient_pub)` (32 bytes)
+  - `salt = scan_id || ephemeral_pub` (48 bytes)
+  - `info = "HBS-report-v2" || suite_u8 || key_id_u16_le || extractor_id` (32 bytes)
+  - `aead_key = HKDF-SHA256(ikm, salt, info)` (32 bytes)
+- **Inner Identity Cross-Binding**: report JSON contains internal `extractorId`, `campaignId`, `keyId`, `machineId`, and `hostname`. At ingest, dashboard verifies inner IDs match outer header envelope and issuance records exactly.
+- **Legacy v1 Migration**:
+  - Dashboard retains bounded backward compatibility for v1 reports (`HBS1`, 77-byte header).
+  - V1 reports route by looking up key using legacy unique `key_id`, decrypting, and matching inner `extractor_id`.
+  - Dashboard never issues new v1 extractors. If legacy v1 `key_id` is ambiguous or revoked, ingest rejects.
 
-Report JSON is schema-versioned (`schema_version` field) so new testcases
-never invalidate old reports. Every report carries a self-identification
-block inside the ciphertext: `extractor_id`, machine ID, hostname, FQDN,
-platform/arch, scan timestamps, privilege level, extractor version,
-command/file self-audit log.
+### 4.6 Keyslot Specification & Strict Validation
 
-### 4.6 Keyslot (binary patching)
-
-- Fixed 512-byte slot in `.rodata`, emitted via a `#[used]` static whose
-  bytes begin with magic `HBSKSLOT`; placeholder build = magic + `0xAA` fill
-  + zero checksum. Referenced by code so LTO cannot strip it.
-- Patched layout: magic(8) + slot version u16 + flags u16 + key id u16 +
-  campaign id (16) + extractor id (16, unique per issued binary) + expiry
-  (u64 unix) + issued-at (u64) + recipient public key (32) + zero pad +
-  SHA-256 of all preceding bytes.
-- Extractor at startup: locates its own executable, scans for the magic,
-  validates the checksum. Zero checksum ⇒ "binary not issued by a dashboard"
-  hard error. Expired ⇒ refuses to run with a clear message.
-- Dashboard patcher (TypeScript) implements the identical layout; patched
-  binary's SHA-256 is recomputed and displayed alongside the download.
-
-### 4.7 Hardening profile
-
-Release profile: `lto = "fat"`, `codegen-units = 1`, `panic = "abort"`,
-`strip = true`, `opt-level = "z"`. Sensitive string literals are
-compile-time obfuscated (const XOR) so a `strings` dump shows nothing
-meaningful. Honest limitation, restated: reports are cryptographically
-unbreakable; the binary's *logic* is made expensive to reverse, not
-impossible (see §8).
-
-### 4.8 Resource budget
-
-| Budget | Commitment | Mechanism |
-|---|---|---|
-| RAM | < 200 MB (expected ~20–40 MB) | bounded reads (≤ 1 MB per file), streaming serialization, no unbounded buffers |
-| Binary | < 10 MB (expected ~5–8 MB) | `opt-level=z`, strip, static musl, no runtime deps |
-| CPU | < 0.5 core sustained | max 2 worker threads; per-command timeout 2–5 s (killed); process self-lowers priority (`BelowNormal` on Windows, `nice(10)` on Linux) |
-| Disk writes | 1 file | the sealed report only |
-
-### 4.9 Safety properties
-
-- 100% safe Rust except small, documented `unsafe` blocks for Win32 queries.
-- All parsed input (config files, command output) is length-capped and
-  schema-validated before use.
-- Zero telemetry: the extractor contacts nothing unless `--push <url>` is
-  explicitly given. Enforced and stated in README.
-
-## 5. Testcase catalog (~325)
-
-Three layers: **standards-based** (CIS core, ~110 per OS), **threat-informed**
-(~40 per OS — recent attack patterns and defensive controls not yet required
-by the benchmarks), and **shared informational inventory** (~25). Counts are
-targets for v1; the template makes adding more trivial.
-
-### Linux (~110, `LIN-*`)
-
-| Section | ~Count | Examples |
-|---|---|---|
-| Filesystem & partitions | 15 | tmp/dev/shm mounts + nodev/nosuid/noexec, fstab options, bootloader perms, /var, /home separation |
-| Legacy services & MTA | 8 | inetd/xinetd disabled, exotic services off |
-| Network parameters | 20 | ip_forward, icmp redirects, SYN cookies, rp_filter, log_martians, accept_source_route, ipv6 equivalents |
-| Firewall | 5 | firewalld/ufw/nftables/iptables — default-deny verification |
-| Logging & auditing | 14 | rsyslog/journald config, auditd rules (identity, logins, time, perms), log file perms, logrotate |
-| SSHd | 14 | root login, protocol, ciphers/MACs/Kex, MaxAuthTries, ClientAlive, banner, X11, AllowTcpForwarding |
-| PAM & passwords | 14 | pwquality, pam_faillock, history, expiry, hashing algos, sudo timeout, tty tickets |
-| System maintenance & users | 20 | /etc/passwd & friends perms, crontab perms, root path, home dirs, umask, default shells, SUID inventory |
-
-### Windows (~110, `WIN-*`)
-
-| Section | ~Count | Examples |
-|---|---|---|
-| Account policies | 12 | password length/age/history/complexity, lockout duration/threshold |
-| Audit policy | 10 | advanced audit (logon, policy change, privilege use, object access…) via `auditpol` |
-| Security options | 22 | LANMAN level, SMB signing, UAC sliders, session idle, shutdown rights, guest status, Ctrl+Alt+Del, clear pagefile |
-| User rights | 16 | SeDebug, SeTcb, network/remote logon, act-as-system rights |
-| Event logs | 6 | sizes, retention, access |
-| Defender & updates | 10 | AV enabled/up-to-date, real-time protection, Windows Update config, last-patch age |
-| Services | 20 | Telnet/TFTP/RemoteRegistry/PrintSpooler etc. states |
-| Registry & FS permissions | 10 | system dir ACLs, registry ACLs on sensitive keys |
-| Network hardening | ~10 | firewall profiles, RDP (NLA, encryption level), SMBv1, LDAP signing, mDNS, WPAD, LLMNR |
-
-### Threat-informed Linux (~40, `LIN-TH-*`)
-
-Grounded in current exploitation research: unprivileged user namespaces are
-the precondition of most recent kernel LPE chains (nf_tables et al.) and
-expand kernel attack surface substantially; io_uring bypasses the normal
-syscall path (Google disabled it in production); the xz backdoor
-(CVE-2024-3094) rewrote supply-chain expectations.
-
-| Group | ~Count | Checks |
-|---|---|---|
-| Kernel attack-surface | 12 | `unprivileged_bpf_disabled`, userns restrictions (incl. Ubuntu AppArmor policy), `io_uring_disabled`, `kptr_restrict`/`dmesg_restrict` (KASLR leaks), Yama `ptrace_scope`, `perf_event_paranoid`, `modules_disabled`/kexec, BPF JIT hardening, lockdown mode + Secure Boot, module signature enforcement, protected_hardlinks/symlinks/fifos, `suid_dumpable`/core limits |
-| Persistence hunting | 14 | `ld.so.preload` empty/absent; systemd units/timers not owned by any package or with temp-dir ExecStart; udev rule anomalies; rc.local/init.d strays; all five cron locations incl. at-jobs, flagging /tmp, /dev/shm, /proc targets; shell rc tampering for root/users; root `authorized_keys` presence; PAM module substitution; SUID/SGID + file-capability inventory vs package ownership; hidden/duplicate-UID accounts; `NOPASSWD: ALL` sudo grants; OpenSSH version currency (regreSSHion-class CVEs); xz/liblzma version + provenance |
-| Container & escape surfaces | 5 | docker group membership; docker/containerd/podman socket perms; privileged daemon flags; `hidepid` on /proc; privileged-container detection where daemon is queryable read-only |
-| EOL & currency (supply-chain) | 9 | EOL distro detection; security-patch backlog + update staleness; kernel currency vs distro latest; old/EOL service versions (OpenSSH, nginx, apache); third-party repo surface; package-integrity spot check (rpm -V/debsums, bounded); Secure Boot; signing-key trust surface informational |
-
-### Threat-informed Windows (~40, `WIN-TH-*`)
-
-Grounded in current ransomware tradecraft: credential theft via LSASS,
-LOLBAS execution, WMI fileless persistence, vulnerable signed drivers to
-bypass PPL, and the ASR rule set that addresses them.
-
-| Group | ~Count | Checks |
-|---|---|---|
-| Credential protection | 7 | RunAsPPL (LSA protection) enforced; Credential Guard/VBS state; memory integrity (HVCI) + Microsoft vulnerable-driver blocklist (closes known PPL bypasses); WDigest cached logon creds; AutoAdminLogon; stored-credential inventory (cmdkey); LSA security packages tampering |
-| Ransomware posture (Defender/ASR) | 7 | full ASR rule-set state with emphasis on WMI-persistence block, LSASS-theft block, vulnerable-driver block, ransomware behavior protection; Controlled Folder Access; tamper protection; engine/signature age; SmartScreen/Smart App Control; WSH/AppLocker/WDAC application-control presence |
-| Persistence hunting | 10 | RUN keys + Image File Execution Options debugger hijacks; startup folders (all users); non-Microsoft/odd-path scheduled tasks; services with temp-dir or unquoted binPath; weak service ACLs; WMI permanent event subscriptions; hosts-file anomalies; inbound firewall rules to temp paths; NETSH helper DLLs; Print Spooler state (PrintNightmare-class) |
-| Protocol & network abuse | 9 | NTLM restriction/audit level; RPC `RpcAuthnLevelPrivacy`; RDP NLA + restricted-admin + device redirection + minimum TLS; LDAP signing + channel binding; WPAD/LLMNR/mDNS; Schannel TLS 1.0/1.1 disabled + strong-cipher order; WinRM encryption + TrustedHosts scope; SMB encryption; IPv6 attack surface informational |
-| EOL & currency | 7 | OS EOL detection (2012r2/2016-era); patch staleness + missing cumulatives; Defender platform currency; LAPS presence (classic + modern); local admin inventory; pending-reboot age; hotfix history coverage |
-
-### Shared informational (~25, `GEN-INV-*`)
-
-Listening ports, installed software inventory, users/groups inventory,
-scheduled tasks, autoruns, open shares (Win), patch/last-update age,
-virtualization detection, timezone/locale, uptime — plus: EDR/AV agent
-presence, backup agent + last-success age, time-sync source & drift, DNS
-resolver config, logging/forwarding agent presence, Secure Boot + TPM state,
-FIPS mode, audit-subsystem coverage score, sudo/admin group inventory,
-effective firewall profile, cloud-agent/cloud-init presence — context
-evidence, not pass/fail.
-
-### Research sources for the threat-informed layer
-
-- [Microsoft — Attack surface reduction rules reference](https://learn.microsoft.com/en-us/defender-endpoint/attack-surface-reduction-rules-reference)
-- [Microsoft — Additional LSA protection (RunAsPPL)](https://learn.microsoft.com/en-us/windows-server/security/credentials-protection-and-management/configuring-additional-lsa-protection)
-- [itm4n — Do You Really Know About LSA Protection (RunAsPPL)?](https://itm4n.github.io/lsass-runasppl/)
-- [Edera — Linux user namespaces: 262% more kernel attack surface](https://edera.dev/blog/linux-user-namespaces-262-more-kernel-attack-surface)
-- [Ubuntu — AppArmor restriction of unprivileged user namespaces](https://discourse.ubuntu.com/t/apparmor-restriction-of-unprivileged-user-namespaces/29660)
-- [bigiron.cc — Hunting Linux persistence: cron, systemd timers, preload tricks](https://bigiron.cc/hunting-linux-persistence/)
-- [Akamai — XZ Utils backdoor (CVE-2024-3094)](https://www.akamai.com/blog/security-research/critical-linux-backdoor-xz-utils-discovered-threat-intelligence)
-- [SentinelOne — CVE-2022-24122 unprivileged userns exploitation](https://www.sentinelone.com/blog/lucas-leaks-the-saga-of-a-linux-kernel-exploit-cve-2022-24122/)
-
-## 6. Dashboard
-
-### 6.1 Auth & user management
-
-- **First-run wizard**: with no users in the DB, every route redirects to
-  "Create super admin" (username + password). No defaults, no bypass.
-  Passwords hashed with argon2id (`Bun.password`).
-- **Roles**: `super_admin` (users, keys, everything), `auditor` (campaigns,
-  reports, exports, annotations), `viewer` (read-only).
-- **Sessions**: HttpOnly cookie, server-side session store in SQLite with
-  expiry; login rate-limiting (per-IP + per-user backoff).
-- **User management page** (super admin): create/deactivate users, reset
-  passwords, role assignment, last-login view.
-- Machine endpoints (`/api/ingest`, direct download links) use per-campaign
-  tokens, entirely separate from user sessions.
-
-### 6.2 Campaigns, locations & host routing
-
-- **Campaign** fields: name, client/engagement, scope notes, asset tags,
-  expiry date. **Unlimited hosts per campaign.**
-- **Locations**: a campaign contains one or more locations (name, notes,
-  tags — e.g. "Mumbai DC", "DR Pune"). Campaign creation asks for the
-  name + first location; more can be added any time.
-- **Every issuance gets its own unique X25519 keypair** — no key is ever
-  shared between two extractors, even within the same location. Blast
-  radius of any key compromise is exactly one issued binary. Each report
-  records its `key_id`; the private key is retained (0600 file) so old
-  reports keep decrypting; deleting/revoking an issuance deletes its key.
-- The dashboard never waits on or polls for extractors: processing is
-  purely event-driven — when a sealed report arrives via upload or push,
-  the server looks up the `extractor_id`/`key_id`, decrypts, validates,
-  computes metrics, routes it, and emits an SSE event.
-- Campaigns also own a scan token (hashed at rest) for push auth and a
-  download token for direct-link downloads.
-- **Extractor issuance is per location**: downloading asks campaign →
-  location, then platform. Every issued binary carries a unique
-  `extractor_id`; the dashboard records
-  `extractor_id → (campaign, location)`.
-- **Automatic host routing — no manual machine names, ever**: every sealed
-  report self-identifies with `extractor_id`, hostname, and a stable
-  machine ID (`/etc/machine-id` on Linux, `MachineGuid` on Windows,
-  collected read-only). Hosts are keyed internally by machine ID; the
-  display identifier is the human-friendly composite
-  **`hostname:machineid`** (first 8 chars of the machine ID) — easy to
-  read and unambiguous in lists, charts, and exports. Hostname changes are
-  tracked, not duplicated. On upload or push, the dashboard resolves
-  `extractor_id → location`, upserts the host, and files the report. A
-  single "drop anywhere" upload on the campaign page routes every file
-  automatically, including mixed batches from multiple locations.
-- Campaign view: location cards → per-location host list (hostname,
-  platform, OS version, last scan, score) → host's reports and diffs.
-- Expiry embedded in issued extractors; expired binaries refuse to run.
-  Dashboard marks expired campaigns.
-- Revoking an issuance (or deleting a location) blocks future reports from
-  routing and retires that issuance's key.
-
-### 6.3 Backend (Bun + Hono) API surface
+Fixed 512-byte `.rodata` slot emitted via `#[used]` static, starting with magic `HBSKSLOT`.
 
 ```
-POST   /api/auth/setup            first-run super admin creation
-POST   /api/auth/login|logout
-GET    /api/auth/status           {initialized, user, role}
-GET/POST/PATCH/DELETE /api/users          super admin only
-GET/POST /api/campaigns  ·  PATCH /api/campaigns/{id}
-GET    /api/campaigns/{id}/summary       metrics rollup for Summary page
-GET/POST/PATCH/DELETE /api/campaigns/{id}/locations
-GET    /api/campaigns/{id}/locations/{loc}/downloads    platform cards + sha256 + links
-GET    /api/campaigns/{id}/locations/{loc}/download/{platform}?t={token}   patched binary (records issuance)
-DELETE /api/campaigns/{id}/issuances/{extractor_id}     revoke an issued extractor
-POST   /api/ingest                X-HBS-Token; body = sealed report
-POST   /api/reports/upload        multipart sealed report(s), batch OK (session
-                                   auth); routed automatically by extractor_id
-GET    /api/campaigns/{id}/hosts  auto-populated host inventory per location
-GET    /api/reports · /api/reports/{id} · /api/reports/{id}/findings
-GET    /api/reports/diff?a=…&b=…
-GET    /api/campaigns/{id}/findings/treatment    treatment board (state/assignee filters)
-PATCH  /api/findings/{hostId}/{checkId}/state    {state, justification?, assignedTo?, dueDate?}
-GET/POST /api/findings/{hostId}/{checkId}/comments
-GET    /api/export/{reportId}?format=xlsx|csv|pdf|docx
-GET    /api/keys/status                per-issuance key inventory (campaign, location, created, retired)
-POST   /api/keys/export                super admin, passphrase-wrapped bundle (campaign-filterable)
-GET    /api/events                SSE: live report arrival
+Offset  Size  Field
+0       8     Magic "HBSKSLOT"
+8       2     slot_version (u16 = 1)
+10      2     flags (u16 = 0)
+12      2     key_id (u16)
+14      2     reserved (u16 = 0)
+16      16    campaign_id (16 bytes)
+32      16    extractor_id (16 bytes, unique per issuance)
+48      8     expiry_unix (u64 unix timestamp)
+56      8     issued_at_unix (u64 unix timestamp)
+64      32    recipient_public_key (32 raw X25519 bytes)
+96      384   reserved zero pad
+480     32    sha256 checksum over bytes [0..480]
 ```
 
-- Storage: SQLite (`bun:sqlite`) single file — tables include `users`,
-  `sessions`, `campaigns`, `locations`, `keys` (one row per issuance,
-  never shared), `issuances`
-  (`extractor_id → campaign/location`, download count, revoked flag),
-  `hosts` (machine ID keyed, auto-populated), `reports`,
-  `finding_states` (per host+check treatment, unique on host+check),
-  `comments` (per finding thread).
-  Private keys as separate 0600 files in `data/keys/`, referenced by id.
-- Binds 127.0.0.1 by default; `--host` to expose, optional auto-TLS with
-  printed certificate fingerprint for verification. No outbound calls.
+#### Strict Slot Validation Rules
+At boot, extractor scans own binary image and validates:
+1. Exactly one keyslot exists. Multiple slots or absent slot causes immediate exit.
+2. `slot_version == 1` and `flags == 0`.
+3. Reserved fields (`14..16` and `96..480`) must be strictly zero.
+4. `campaign_id` and `extractor_id` must not be nil/all-zero.
+5. `recipient_public_key` must not be nil/all-zero.
+6. `issued_at_unix < expiry_unix`. If `now > expiry_unix`, exit with clear expiry error.
+7. `sha256(bytes[0..480]) == bytes[480..512]`. All-zero checksum indicates unpatched placeholder binary.
+*Checksum is corruption detection, not security trust.*
 
-### 6.4 Metrics model (what the charts plot)
+### 4.7 Hardening Profile & Honest Security Statement
 
-Defined once, computed server-side, stored with each report:
+- Release build: `lto = "fat"`, `codegen-units = 1`, `panic = "abort"`, `strip = true`, `opt-level = "z"`.
+- Sensitive internal strings and path constants obfuscated via compile-time XOR (`obfstr`).
+- **Honest Security Statement**:
+  - Sealed reports provide confidentiality and tamper-proof integrity under modern cryptography (X25519, HKDF-SHA256, ChaCha20-Poly1305 / AES-256-GCM).
+  - Security depends on dashboard private-key protection, system RNG quality, endpoint integrity, and implementation correctness. Never claim 'nobody can break it'.
+  - Extractor binary itself contains ONLY public encryption key; it cannot decrypt reports. Binary cannot be encrypted while executable; logic reverse engineering remains possible despite stripping and obfuscation.
 
-- **Risk score (0–100, higher = safer)**:
-  `score = 100 × (1 − Σ(wᵢ × failedᵢ) / Σ(wᵢ × applicableᵢ))` over
-  non-informational checks, weights Critical = 10, High = 6, Medium = 3,
-  Low = 1. Findings treated as `accepted_risk` or `false_positive` are
-  excluded from the numerator.
+### 4.8 Resource Budgets
 
-### 6.4a Finding treatment workflow (VM-style)
+| Metric | Budget | Enforcement Mechanism |
+|---|---|---|
+| RAM (peak RSS) | < 200 MB (expected 20–40 MB) | Bounded file reads (≤ 1 MB), streaming JSON serialization, single-pass buffers |
+| Binary size | < 10 MB (expected 5–8 MB) | Static musl, `opt-level="z"`, LTO fat, strip, CI build-gate failure if ≥ 10 MB |
+| CPU usage | < 0.5 core sustained | Sequential check execution, max 2 threads, 2–5s command timeouts, process priority lowering (`nice(10)` / `BELOW_NORMAL_PRIORITY_CLASS`) |
+| Disk writes | Exactly 1 file | Sealed `.hbs` report only. Zero temporary exports, zero debug dumps |
 
-Findings are treated like tickets in a vulnerability-management system.
-State is keyed per `(host, check_id)` and persists across re-scans of the
-same machine until changed:
+## 5. Testcase Catalog (~325)
 
-| State | Meaning |
-|---|---|
-| `open` | Default state from a failing check |
-| `in_progress` | Remediation assigned/underway (assignee + due date) |
-| `mitigated` | Fix claimed, awaiting verification by next scan |
-| `resolved` | System-set when a re-scan shows the check Compliant (read-only; records which scan resolved it) |
-| `accepted_risk` | Justified acceptance (required justification text + accepter; excluded from risk score) |
-| `false_positive` | Marked not-a-finding (excluded from risk score) |
+Structured into CIS benchmarks (~110 per OS), threat-informed modern attack patterns (~40 per OS), and shared informational inventory (~25).
 
-- **Comments thread** per finding: multiple comments (author, timestamp,
-  markdown-plain text) — auditor discussion/evidence trail.
-- State changes and comments are visible in the finding drawer, the
-  technical findings table (state chips), and a campaign **Treatment**
-  board (filter by state/assignee/severity; backlog → in-progress →
-  resolved flow).
-- Roles: `auditor`+ can change states/comment; `viewer` read-only.
-- **Coverage %** = decided checks / applicable checks (Errors and
-  unreachable fallbacks reduce this — surfaced honestly, never hidden).
-- **Host score** = risk score of that host's latest report.
-- **Campaign score** = check-weighted mean over host scores.
-- **Remediation rate** = fixed / (fixed + regressed) between two
-  consecutive reports for the same host (powers Diff and progress bars).
-- **Trend** = per-host and campaign score over scan date.
+### Linux CIS (~110, `LIN-*`)
+- **Filesystem & Partitions (`LIN-FS-*`)**: `/tmp`, `/dev/shm`, `/var`, `/var/tmp`, `/home` mount separation and options (`nodev`, `nosuid`, `noexec`); fstab consistency; bootloader permissions (grub.cfg ≤ 0600); core dumps disabled.
+- **Legacy Services (`LIN-SV-*`)**: inetd/xinetd disabled; legacy servers (telnet, rsh, tftp, talk, NIS) absent; MTA not listening externally.
+- **Network Parameters (`LIN-NET-*`)**: sysctl parameters: `ip_forward=0`, `icmp_echo_ignore_broadcasts=1`, `rp_filter=1`, `accept_source_route=0`, `accept_redirects=0`, `log_martians=1`, `tcp_syncookies=1`, IPv6 equivalents.
+- **Firewall (`LIN-FW-*`)**: active status and default-deny policies for firewalld, ufw, nftables, or iptables.
+- **Logging & Auditing (`LIN-LOG-*`, `LIN-AU-*`)**: rsyslog/journald configuration, remote log forwarding, logfile permissions (≤ 0640), auditd daemon rules (identity changes, login events, system calls, immutable flag).
+- **SSH Hardening (`LIN-SSH-*`)**: `sshd_config` checks: `PermitRootLogin no/prohibit-password`, strong ciphers/MACs/KEX, `MaxAuthTries ≤ 4`, `ClientAliveInterval ≤ 900`, `X11Forwarding no`.
+- **PAM & Passwords (`LIN-PAM-*`)**: `pwquality.conf` (minlen ≥ 14, complexity), `pam_faillock` lockout, `pam_pwhistory`, password age limits in `/etc/login.defs`, SHA-512 hashing, sudo timeout ≤ 15m.
+- **Users & Permissions (`LIN-USER-*`)**: permissions on `/etc/passwd`, `/etc/shadow`, `/etc/group`; UID 0 uniqueness; default umask 027; cron permissions; home directory permissions.
 
-### 6.5 Frontend (Vite + React + TS)
+### Linux Threat-Informed (~40, `LIN-TH-*`)
+- **Kernel Attack Surface**: unprivileged eBPF disabled (`unprivileged_bpf_disabled=1`), unprivileged user namespace restrictions (`kernel.unprivileged_userns_clone=0` or AppArmor restrict), `io_uring_disabled ≥ 1`, `kptr_restrict=2`, `dmesg_restrict=1`, `yama.ptrace_scope ≥ 1`, kernel module signature enforcement, Secure Boot lockdown mode.
+- **Persistence Hunting**: empty/absent `ld.so.preload`; unowned systemd units with temp-dir `ExecStart`; suspicious udev rules; cron entries targeting `/tmp` or `/dev/shm`; root `authorized_keys` anomalies; PAM module tampering; unowned SUID/SGID binaries; `NOPASSWD: ALL` sudo grants; OpenSSH CVE currency; xz/liblzma provenance check.
+- **Containers & Supply Chain**: docker group memberships; container socket permissions (`docker.sock`); privileged daemon flags; `hidepid` on `/proc`; EOL distribution detection; package integrity spot-checks (`rpm -V`, `debsums`).
 
-Dark auditor-console theme. Tailwind + shadcn-style components + Magic UI
-(animated gradient panels, number-ticker KPIs, smooth page transitions).
-Charts (Recharts): every chart is interactive — hover tooltips with exact
-values and counts, animated transitions, and **click-through drill-down**
-(donut segment → filtered findings table). Color-blind-safe palette,
-consistent scales, keyboard-accessible charts, skeleton loaders, SSE-driven
-live updates. A strict data-viz design checklist is applied at build time.
+### Windows CIS (~110, `WIN-*`)
+- **Account Policies (`WIN-ACC-*`)**: evaluated strictly via read-only APIs (`NetUserModalsGet`), `net accounts` query, and policy registry: min password length ≥ 14, max password age ≤ 365, lockout threshold ≤ 50, lockout duration ≥ 15, blank password restriction (`LimitBlankPasswordUse=1`), anonymous restrictions (`RestrictAnonymous=1`).
+- **Audit Policies (`WIN-AU-*`)**: evaluated strictly via `auditpol /get /category:* /r` CSV queries mapping subcategory GUIDs: Logon/Logoff, Account Logon, Account Management, Policy Change, Privilege Use, Process Tracking, Object Access. Never uses `secedit /export`.
+- **Security Options (`WIN-SEC-*`)**: registry evaluations: LANMAN level (`LmCompatibilityLevel ≥ 5`), SMB signing required, UAC sliders (`EnableLUA=1`, `ConsentPromptBehaviorAdmin ≥ 2`), idle session lock, clear pagefile on shutdown, legal notice text.
+- **User Rights (`WIN-UR-*`)**: evaluated strictly via Windows LSA policy APIs (`LsaOpenPolicy` + `LsaEnumerateAccountsWithUserRight`), resolving SIDs read-only: `SeDebugPrivilege`, `SeTcbPrivilege`, `SeAssignPrimaryToken`, `SeNetworkLogonRight`, `SeRemoteShutdown`. Never uses `secedit /export`.
+- **Event Logs & Services (`WIN-EVT-*`, `WIN-SVC-*`)**: `wevtutil gl` log sizes (≥ 32 MB), retention, access ACLs; services disabled: Telnet, TFTP, RemoteRegistry, PrintSpooler (PrintNightmare hardening), SMBv1.
+- **Defender & Network (`WIN-DEF-*`, `WIN-NET-*`)**: Defender AV real-time protection, signature currency, ASR rule configuration, Windows Firewall profiles enabled with default inbound deny, RDP NLA (`UserAuthentication=1`), SMBv1 disabled, LDAP signing.
 
-**App shell**: persistent sidebar (Overview, Campaigns, Reports, Admin),
-breadcrumbs, `Ctrl+K` command palette for quick navigation, responsive
-layout.
+### Windows Threat-Informed (~40, `WIN-TH-*`)
+- **Credential Protection**: LSA protection (`RunAsPPL=1`), Credential Guard / VBS active, HVCI memory integrity, Microsoft vulnerable-driver blocklist active, `WDigest` disabled (`UseLogonCredential=0`), `AutoAdminLogon=0`, stored credentials sweep (`cmdkey /list`).
+- **Ransomware & Persistence Hunting**: ASR rules (WMI persistence, LSASS credential theft, ransomware behaviors); Controlled Folder Access; Tamper Protection; RUN keys & IFEO debugger hijacks; scheduled tasks with user-writable actions; WMI permanent event subscriptions (`CommandLineEventConsumer`); hosts-file redirection anomalies; NETSH helper DLLs; OS EOL status; LAPS presence.
 
-Pages:
+### Shared Informational Inventory (~25, `GEN-INV-*`)
+Listening ports (`ss` / `netstat`), installed software list, user/group accounts, scheduled tasks, active shares, patch staleness, virtualization platform (`systemd-detect-virt` / WMI), time-sync source and drift (`chrony` / `w32tm`), DNS resolvers, EDR/AV agent presence, backup agent state, Secure Boot and TPM status, FIPS mode, effective firewall summary.
 
-1. **First-run setup** (wizard, when uninitialized)
-2. **Login**
-3. **Global overview** — KPI tiles (campaigns, hosts, open criticals, avg
-   risk), risk trend line, campaign status table
-4. **Campaign workspace** (tabbed, per campaign):
-   - **Summary** — dual-view toggle:
-     - *Executive*: hero animated risk gauge; severity donut (hover for
-       counts/percentages, click to drill); compliance-by-category bars;
-       hosts × category heat-map; score trend line; Top-10 failing checks;
-       remediation progress; auto-generated plain-language callouts
-       ("3 urgent actions this week"); coverage banner
-     - *Technical*: full findings table with severity/category/status
-       filters → detail drawer (evidence, fallback log, repro steps,
-       impact, recommendation, references, accepted-risk control); raw
-       JSON view
-   - **Reports** — auto-updating list (SSE) when pushed reports land
-   - **Report detail** — enterprise-scanner conventions (Nessus/Qualys
-     pattern), including **two pivots: "By Host"** (this machine's
-     findings, severity iconography, check-ID column, state chips) and
-     **"By Check"** (one failing check → every affected host across the
-     campaign, with host counts and per-host evidence). Finding rows carry
-     the check ID (`WIN-AU-003`), severity badge, category, status, and
-     first/last-seen timestamps; the detail drawer shows the full field
-     set: description, evidence, fallback log, repro steps, impact,
-     recommendation, standards references, plus the treatment controls:
-     state dropdown, assignee, due date, justification, and the comments
-     thread.
-     A **telemetry panel** shows scan metadata: duration, privilege level,
-     extractor version, coverage %, errors/degraded counts, counts of
-     commands executed and files read, arrival path (upload vs push).
-     Exec summary, risk score, severity/category filters as described
-     above.
-   - **Diff** — two reports side-by-side: improved/regressed per finding
-   - **Locations & hosts** — location cards (create/rename at any time);
-     per-location: download cards per platform (SHA-256, direct link,
-     curl/PowerShell snippets), a drop-zone that accepts **batch** report
-     uploads routed automatically by `extractor_id`, and the auto-populated
-     host list (hostname, platform, OS version, last scan, score) — hosts
-     appear as scans land, never typed in by hand
-   - **Host detail** — one machine's reports over time, per-scan trend,
-     diffs between its own scans
-   - **Treatment board** — VM-style workflow: all findings with state
-     chips (open / in-progress / mitigated / accepted / false-positive /
-     resolved), filter by state, assignee, severity; bulk state changes;
-     due-date overdue highlighting
-5. **Presentation mode** — "Present" button on Campaign Summary: hides all
-   navigation chrome, large typography, section-by-section keyboard
-   stepping (←/→), screen-share friendly; the same content exports as the
-   branded PDF executive template
-6. **Admin: Users & Keys** — role management, key status/rotate/export
+## 6. Dashboard Platform
 
-### 6.6 Exports
+### 6.1 Authentication, Access Control & Audit Trail
 
-Server-side generation, downloaded as files:
+- **First-run initialization**: if zero users exist in SQLite DB, all HTTP requests redirect to `/setup` wizard to create initial `super_admin`. Passwords hashed with `argon2id` (`Bun.password.hash`).
+- **Role Hierarchy**:
+  - `super_admin`: system settings, user management, key export, retention configuration, all audit actions.
+  - `auditor`: create campaigns/locations, issue extractors, ingest reports, adjust treatment states, add comments, export deliverables.
+  - `viewer`: read-only access to campaigns, findings, reports, and dashboards.
+- **Session Management**: secure HttpOnly cookies (`SameSite=Lax`), server-side token session tracking, per-IP and per-username rate-limiting with progressive delay.
+- **Audit Logging (`audit_log`)**: append-only audit trail logging every administrative, key, issuance, and treatment action (actor, timestamp, IP, action, resource, details).
 
-- **Excel (exceljs)**: styled summary sheet + findings sheet(s) grouped by
-  severity.
-- **CSV**: flat findings table.
-- **PDF (pdfkit + table plugin)**: two templates — executive summary
-  (charts-as-tables, plain language, matches Presentation mode) and full
-  findings with per-host and per-check sections in the enterprise-scanner
-  layout (severity iconography, check-ID references, remediation
-  priority ordering) — deliverable grade.
-- **Word (docx)**: same structure, editable.
+### 6.2 Campaign Hierarchy & Routing
 
-If any library is incompatible with Bun, the fallback is client-side
-generation with identical output.
+Hierarchy: **Campaign -> Location -> Issuance -> Host/Report**
 
-## 7. Threat model summary
+```
+Campaign (e.g. "Acme Q3 Audit")
+ ├── Location: "DC-East"
+ │    ├── Issuance: extractor_id_A (Keypair A, x86_64 Linux) ──> Report 1 (Host X)
+ │    └── Issuance: extractor_id_B (Keypair B, x86_64 Windows) ──> Report 2 (Host Y)
+ └── Location: "Branch-London"
+      └── Issuance: extractor_id_C (Keypair C, x86_64 Linux) ──> Report 3 (Host X)
+```
+
+1. **Dedicated Keypairs**: every issuance generates an independent X25519 keypair. The private key is saved with `0600` permissions in `server/data/keys/<issuance_id>.key`. Keys are NEVER shared between issuances. DB enforces `keys.issuance_id UNIQUE NOT NULL`.
+2. **Immutable Issuance**:
+   - `POST /api/campaigns/:id/locations/:loc/issuances`: generates issuance record, unique random extractor_id, dedicated X25519 keypair, patches pre-compiled template with issuance keyslot, and atomically saves immutable artifact under `server/data/binaries/<issuance_id>`. Returns issuance metadata and download URL.
+   - `GET /api/issuances/:id/download`: streams stored immutable pre-patched binary artifact, verifies active/unexpired/unrevoked issuance, and increments download count. Does NOT generate a new identity or re-patch binary. (Also accessible via alias `GET /api/campaigns/:id/locations/:loc/issuances/:issuance_id/download`).
+3. **Automatic Host Routing & Multi-Location Tracking**:
+   - On upload or optional extractor push, dashboard derives campaign and location solely from authenticated issuance/extractor identity; it never accepts routing ownership from request fields or report JSON.
+   - Host identity is keyed by normalized stable `machine_id` (`/etc/machine-id` or `MachineGuid`). Hostname is mutable display metadata: preserve hostname history, rename one machine rather than duplicating it, and keep distinct machine IDs separate even when hostnames match.
+   - Upsert the machine under issuance-derived Campaign -> Location, persist host detail and testcase results, and use `host_locations` so one machine can appear at multiple locations/campaigns over time without losing history.
+   - Successful ingest immediately updates that location's host inventory, summary, findings, freshness, and telemetry. Response includes resolved campaign/location/host/report links for visible UI confirmation.
+   - A mixed upload batch routes each envelope independently. Unknown, revoked, or outer/inner-mismatched issuance rejects atomically and creates no orphan host/report/location mapping.
+4. **Soft-Retirement & Revocation**:
+   - Locations can be soft-retired (`retired_at`), hiding them from active issuance while preserving historical reports.
+   - Issuance revocation marks `issuances.revoked = 1`. Ingest pipeline rejects future reports from revoked issuances, but retains private key to allow decrypting past reports. Destructive purge is a separate explicit admin action.
+
+### 6.3 Unified Ingestion Pipeline (`validateAndIngestEnvelope`)
+
+Both HTTP push (`POST /api/ingest`) and multipart file upload (`POST /api/reports/upload`) funnel through a single validation and ingestion engine:
+
+```
+Raw Envelope Bytes (Push or Upload)
+  │
+  ├── 1. Size & Header Gate: length ≥ 93, Magic "HBS2", format == 2
+  ├── 2. Issuance Resolution: extract extractor_id & key_id; verify active issuance & campaign
+  ├── 3. Push Token Authentication: if push, constant-time compare against campaign scan token
+  ├── 4. AEAD Decryption: compute AAD (bytes 0..93), derive key via HKDF, decrypt & decompress zstd
+  ├── 5. Schema & Cross-Binding Verification:
+  │      - JSON schema validates
+  │      - inner extractorId, campaignId, keyId match envelope & DB exactly
+  │      - machineId and hostname non-empty and normalized
+  │      - check IDs unique and match catalog format
+  ├── 6. Deduplication & Replay Guard:
+  │      - Check (extractor_id, scan_id) uniqueness in DB
+  │      - If duplicate scan_id, return idempotent 200 OK without re-inserting
+  ├── 7. Server-Authoritative Metrics Calculation:
+  │      - Recompute Risk Score, Coverage %, Summary counts from raw results
+  ├── 8. Atomic Database Transaction:
+  │      - Upsert host and host_locations
+  │      - Insert report row
+  │      - Auto-resolve treatment states (previously NonCompliant -> now Compliant)
+  │      - Record ingest_event (success, bytes, duration, arrival path)
+  └── 9. Event Dispatch: emit SSE `report-arrived` to connected clients
+```
+
+#### Fixed Ingest Bounds
+
+Reject before expensive parsing when any bound is exceeded: raw HTTP body **64 MiB**, multipart batch **32 files**, each envelope **16 MiB**, decompressed report JSON **64 MiB**, JSON nesting depth **32**, any string **1 MiB**, any array **10,000 elements**, and report results **1,000 checks**. Require exactly one raw body for push; upload accepts only file parts. Parsed ciphertext length must equal remaining bytes exactly; trailing bytes are rejected.
+
+- **Batch Upload Isolation**: uploading multiple files processes each file in an isolated transaction. One corrupt or revoked report returns an error for that file while allowing valid reports in the batch to ingest successfully.
+- **Typed Rejection & Atomicity**: every failure has a stable rejection code, writes no report/finding/host state, and records only a redacted `ingest_events` row. Duplicate `(extractor_id, scan_id)` replay returns the original report ID idempotently.
+- **Ingest Audit Trail (`ingest_events`)**: logs `received_at`, arrival method (`push` vs `upload`), envelope size, processing duration, accepted/rejected status, and rejection code without evidence, decrypted findings, or credentials.
+
+### 6.4 Metrics & Treatment Workflow
+
+- **Server-Authoritative Risk Score (0–100, higher = safer)**:
+  `score = 100 * (1 - Σ(weight_i * failed_i) / Σ(weight_i * applicable_i))`
+  Weights: Critical = 10, High = 6, Medium = 3, Low = 1, Info = 0.
+  Findings marked `accepted_risk` or `false_positive` are excluded from the numerator.
+- **Coverage %**:
+  `coverage = (decided_checks / applicable_checks) * 100`
+  Checks ending in `Error` or unreached fallbacks reduce coverage; surfaced honestly.
+- **Finding Treatment States**:
+  `open` -> `in_progress` -> `mitigated` -> `accepted_risk` -> `false_positive` -> `resolved`.
+  - State changes require user attribution and optional due dates / assignees.
+  - `accepted_risk` and `false_positive` require non-empty justification text.
+  - `resolved` is set automatically by ingestion when subsequent scan verifies compliance.
+  - Append-only table `finding_state_history` preserves audit history of all status changes.
+  - Discussion comments thread supported per finding (`comments` table).
+
+### 6.5 Enterprise Dashboard UI
+
+Dark auditor console built with React, Vite, Tailwind, Lucide icons, and Recharts.
+
+#### Core Pages & Views
+1. **Global Overview**: enterprise KPI stat tiles (campaign count, active hosts, open criticals, weighted risk score), risk score trend line, active campaign list.
+2. **Campaign Summary**:
+   - Scope Selector: toggle between `Latest Campaign State`, `Single Report`, or `Date Range`.
+   - Executive View: animated risk gauge, severity donut, category compliance bars, host × category heatmap, top 10 failing checks table, automated plain-language summary sentences.
+   - Technical Findings Explorer: full findings grid with filter chips and search bar.
+3. **Report Detail & Enterprise Pivots**:
+   - **Pivot "By Host"**: select a machine to view all evaluated testcases, severity icons, check IDs, status, and treatment chips.
+   - **Pivot "By Check"**: select a check ID (`WIN-AU-003`) to view every host failing that check across the scope, with per-host evidence excerpts.
+   - **Telemetry Panel**: scan duration, ingest latency, privilege level, coverage %, error/degraded counts, commands run, files read, peak RSS, arrival method.
+4. **Nessus-Style Evidence Drawer**:
+   - Path/source header with copy button.
+   - 1-based line and column indicator.
+   - Offending value line highlighted with exact 3 lines of context before and after.
+   - Redaction badge verifying client-side secret scrubbing.
+   - Ordered fallback attempt log.
+   - Exact CLI reproduction command block.
+   - Impact, remediation recommendations, and compliance references.
+   - Treatment controls (state selector, assignee, due date, justification) and comments thread.
+5. **Locations & Hosts**: location cards, platform download cards (SHA-256, curl/PowerShell snippets), batch report drop-zone, auto-populated host list.
+6. **Host Detail**: host history, score over time, diff between scans.
+7. **Diff View**: side-by-side comparison of two scans (Fixed, Regressed, Unchanged).
+8. **Treatment Board**: Kanban/grid view by treatment state (`open`, `in_progress`, `mitigated`, `accepted_risk`, `resolved`).
+9. **Standards & References**: mapping of findings to CIS Controls, NIST 800-53, ISO 27001, PCI-DSS.
+10. **Telemetry & Freshness**: aggregate scan metrics, agent version adoption, stale scan warnings, data quality banners.
+11. **Admin Workspace**: user management, per-issuance key inventory, key export, data retention settings, audit trail explorer.
+
+#### Filter & Chart Interaction Model
+- **Canonical URL & API Parameters**:
+  `severity`, `category`, `status`, `treatment`, `locationId`, `hostId`, `checkId`, `reportId`, `standard`, `from`, `to`, `via`, `privilege`, `extractorVersion`, `platform`, `evidenceDepth`, `q`.
+  URL query string is the single source of truth; reloads, back buttons, and shared links preserve active filter state. Visible chips with one-click clear.
+- **Saved Views (`saved_views`)**: auditors can save, rename, and share specific filter combinations with personal or team visibility.
+- **Exact Chart Click Matrix**:
+  - Open critical KPI stat tile -> sets `status=NonCompliant&severity=Critical`.
+  - Severity donut segment -> sets `status=NonCompliant&severity=<segment>`.
+  - Category bar -> sets `status=NonCompliant&category=<category>`.
+  - Host heatmap cell -> sets `status=NonCompliant&hostId=<host>&category=<category>`.
+  - Top failing check bar -> sets `status=NonCompliant&checkId=<checkId>`.
+  - Trend line node -> sets the exact `reportId=<reportId>` and matching `from=<timestamp>&to=<timestamp>` scope.
+  - Remediation segment -> sets `treatment=<state>`.
+  - Location, platform, arrival-route, privilege, extractor-version, or evidence-depth segment -> sets its corresponding canonical filter (`locationId`, `platform`, `via`, `privilege`, `extractorVersion`, `evidenceDepth`).
+  - Keyboard accessible: Enter / Space triggers behavior identical to click.
+  - Data-viz standards: every chart provides exact-value tooltip, visible keyboard focus, and linked tabular twin. KPIs are stat tiles; trends are line charts; categories are bars; host/category is a heatmap; severity is a stacked bar, or a donut only at ≤ 6 segments. No dual axes. Entity colors are stable, categorical palettes use ≤ 8 classes, and status always has icon plus label. Light/dark palettes pass accessibility checks. Refetch preserves the previous frame.
+
+#### XSS & Hostile Input Sanitization
+All report content (evidence, hostname, command output, config lines) is treated as untrusted text. The UI escapes all text content, forbids raw `dangerouslySetInnerHTML`, rejects ANSI/control characters, and permits only safe URL schemes (`https:`, `http:`).
+
+### 6.6 Deliverable Exports
+
+Server-side export generation producing professional deliverables:
+- **Excel (`.xlsx`, via `exceljs`)**: Executive Summary sheet (KPIs, risk scores) + Findings sheet (severity color coding, autofilters, frozen headers).
+- **CSV (`.csv`)**: flat tabular export of all findings, locations, machine IDs, and fallback statuses.
+- **PDF (`.pdf`, via `pdfkit`)**:
+  - *Executive Template*: high-level score gauge, summary tables, top findings, plain-language callouts.
+  - *Technical Audit Template*: complete deliverable with per-host and per-check sections, severity badges, and remediation instructions.
+- **Word (`.docx`, via `docx`)**: editable deliverable report mirroring technical PDF.
+- **Diagnostic Download**: super-admin bundle containing redacted ingest logs, self-audit summaries, and error events for platform troubleshooting.
+
+## 7. Threat Model & Security Posture
 
 | Threat | Mitigation |
 |---|---|
-| Sealed report interception/copy | X22519+AEAD; nothing readable, nothing forgeable |
-| Extractor shared/leaked/reverse-engineered | Public key only: encrypt-only. Logic obfuscated, stripped |
-| Target host compromised while scanning | Extractor holds no secret; read-only; self-audit log |
-| Dashboard key theft | Unique keypair per issuance (never shared), 0600 files, revocation, localhost bind |
-| Stale scanners after engagement | Embedded expiry; refuse-to-run |
-| Bruteforce of dashboard | argon2id, rate limiting, no default credentials |
+| Sealed report intercepted in transit / at rest | X25519 + ChaCha20-Poly1305 / AES-256-GCM AEAD encryption. Plaintext never touches network or unencrypted storage. |
+| Extractor binary stolen or disassembled | Extractor holds ONLY public key (encrypt-only). Cannot decrypt past or future reports. Logic stripped and obfuscated. |
+| Compromised target system attempts tampering | Extractor is read-only; records self-audit of all commands and files. Envelope header AAD prevents routing tampering. |
+| Dashboard server compromised | Every issuance uses unique random X25519 keypair. Private keys stored in `0600` files. Localhost bind by default. |
+| Stale extractor execution | Embedded expiry timestamp in keyslot; binary refuses to execute past expiration. |
+| Ingest replay / denial of service | Max payload bounds, rate-limiting, constant-time token comparison, unique `(extractor_id, scan_id)` replay rejection. |
+| Secrets leaked in reports | Extractor-side regex/entropy secret redaction masks credentials, passwords, and tokens before report encryption. |
 
-## 8. Honest security statement
+## 8. Honest Cryptography & Capability Statement
 
-2²⁵⁶ keyspace: a hypothetical machine testing 10¹⁸ keys/second needs on the
-order of 10⁵¹ years — sealed reports are unbreakable by any real computer.
-The realistic weak points are key storage and endpoint compromise, which
-§7 mitigations address. The extractor binary's *logic* can only be made
-expensive to reverse, never impossible. The README will state exactly this.
+- Sealed reports use modern, audited cryptography: X25519 Diffie-Hellman key exchange, HKDF-SHA256 key derivation, and ChaCha20-Poly1305 or AES-256-GCM AEAD encryption.
+- Confidentiality and integrity hold under standard cryptographic assumptions: the dashboard's private keys must remain protected, the operating system RNG must be sound, and endpoint memory must be secure.
+- We make no pseudoscientific claim of 'unbreakable' security. Binary reverse engineering cannot be made impossible on client executables; binary logic is made expensive to reverse through stripping and obfuscation, while encryption guarantees data-in-transit confidentiality.
 
-## 9. Testing & validation
+## 9. Telemetry & Observability (Local-Only)
 
-- **Crypto vectors**: shared JSON fixtures; Rust encrypt → Bun decrypt and
-  vice versa; tamper-detected (bit-flip) cases must fail.
-- **Engine unit tests**: fallback chains against fixture filesystems
-  (missing path, permission denied, garbage content); catch_unwind behavior.
-- **Keyslot round-trip**: placeholder → patch → extractor validates.
-- **Docker matrix**: `ubuntu:24.04`, `debian:12`, `alpine`, `rockylinux/ubi9`
-  — root and non-root; assert exit 0, report decrypts, schema validates,
-  measure peak RSS (`/usr/bin/time -v`) and binary size against budget.
-- **Windows**: full runs on the dev machine, elevated and non-elevated
-  (UAC decline) paths.
-- **Dashboard**: Bun unit tests (auth, campaigns, patcher, ingest, exports),
-  Playwright smoke for all pages, export files verified to open.
-- **Resource assertions** in CI/scripts: RSS < 200 MB, size < 10 MB.
+All telemetry is strictly local and never leaves the auditor's dashboard:
+- Per-scan and aggregate scan count/rate, `received_at`, arrival method (`push` vs `upload`), envelope bytes, scan duration and ingest duration p50/p95.
+- Scan metadata: peak RSS, coverage, authoritative-decided/error/degraded counts, commands/files read, privilege requested/granted/refused, and evidence-depth distribution.
+- Dimensions: platform, architecture, OS, location, extractor version adoption, last seen/freshness, and configurable SLA (default stale threshold 30 days).
+- Ingest events: accepted/rejected counts and stable rejection reasons with no evidence or secrets.
+- Freshness/SLA and data-quality banners surface stale scans, low coverage, degraded evidence, and stale extractor versions.
 
-## 10. Build phases
+## 10. Product Quality Ideas (Binding v1)
 
-1. Extractor core: engine, result model, keyslot, crypto, CLI/UX + crypto
-   round-trip tests
-2. Linux testcases + Docker validation matrix
-3. Windows testcases + local validation
-4. Dashboard backend: auth/user mgmt, campaigns, patcher, ingest, store,
-   metrics computation
-5. Dashboard frontend + Magic UI + interactive charts + SSE live view +
-   Campaign Summary (executive/technical) + presentation mode
-6. Exports (both PDF templates), diff view, annotations, polish
-7. README + docs
-
-## 11. Future extensions (explicitly out of v1)
-
-macOS support, per-check remediation scripts, multi-auditor teams with
-assignment workflows, scheduled re-scans via issued links, report signing
-for third-party verification.
+Concrete product features implemented in v1:
+1. **Audit Trail (`audit_log`)**: persistent tracking of all admin actions, key operations, user logins, and treatment changes (Task 41, 42, 49, 56).
+2. **Deterministic Catalog Fingerprint**: SHA-256 hash of testcase IDs, versions, and check logic embedded in report for audit reproducibility (Task 2, 11, 48).
+3. **Standards Coverage Page**: matrix mapping current testcases and findings to CIS, NIST 800-53, and ISO 27001 controls (Task 49, 55).
+4. **Saved Views**: custom named filter presets with personal or team scope (Task 41, 49, 54).
+5. **Compare Baselines / Diff**: side-by-side visual diff of two scans on the same machine or between two distinct baselines (Task 49, 55).
+6. **Stale Extractor Warning**: dashboard banner highlighting extractors nearing expiry or older versions (Task 46, 53).
+7. **Data Retention Policies**: automatic purging or archiving of old scans based on retention settings (Task 41, 49, 56).
+8. **Encrypted Backup & Restore**: passphrase-encrypted export of SQLite DB and private key storage (Task 43, 56).
+9. **Accessibility & Table Twins**: every chart provides an accessible, focusable data table alternative (Task 54).
+10. **Diagnostic Download**: downloadable archive of redacted error logs and ingest statistics (Task 49, 56).

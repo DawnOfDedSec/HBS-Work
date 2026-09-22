@@ -44,6 +44,10 @@ impl ScanContext {
         self
     }
 
+    pub(crate) fn has_injector(&self) -> bool {
+        self.injector.is_some()
+    }
+
     /// Join the root prefix onto an absolute path.
     pub fn path(&self, abs_path: &str) -> PathBuf {
         let p = Path::new(abs_path);

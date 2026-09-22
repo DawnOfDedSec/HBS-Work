@@ -25,24 +25,17 @@ pub const COMMAND_ALLOWLIST: &[&str] = &[
     "chronyc", "showmount", "lsmod", "crontab", "realm",
     "sshd", "ssh", "zgrep", "stat", "sha256sum", "gpg", "openssl", "lspci", "lsusb",
     // windows
-    "systeminfo", "reg", "auditpol", "secedit", "net", "wmic", "sc",
+    "systeminfo", "reg", "auditpol", "net", "wmic", "sc",
     "wevtutil", "powershell", "pwsh", "manage-bde", "dsregcmd",
     "cmdkey", "tzutil", "driverquery", "schtasks", "netsh", "whoami",
-    "arp", "route", "nslookup", "qwinsta",
+    "arp", "route", "qwinsta",
 ];
 
 /// Programs whose FIRST argument must be one of the listed verbs.
 const RESTRICTED_VERBS: &[(&str, &[&str])] = &[
-    ("reg", &["query"]),
-    ("auditpol", &["/get"]),
-    ("secedit", &["/export"]),
     ("sc", &["qc", "query", "queryex"]),
     ("wevtutil", &["gl", "el", "qe", "gli"]),
     ("docker", &["ps", "inspect", "version", "info"]),
-    ("net", &["accounts", "share", "user", "localgroup", "group", "session", "stop", "start", "use"]),
-    ("netsh", &["advfirewall", "interface", "winhttp", "rpc", "http"]),
-    ("powershell", &["-NoProfile"]),
-    ("pwsh", &["-NoProfile"]),
     ("schtasks", &["/query"]),
     ("apt-get", &["-s"]),
     ("manage-bde", &["-status"]),
@@ -73,10 +66,9 @@ const RESTRICTED_VERBS: &[(&str, &[&str])] = &[
     ("findmnt", &["-l", "-n", "-T", "--target", "-rn"]),
     ("mount", &["-l"]),
     ("lsmod", &[]),
-    ("at", &["-l"]),
     ("atq", &[]),
     ("id", &["-u", "-g", "-n", "-G"]),
-    ("whoami", &[]),
+    ("whoami", &["/priv", "/all", "/user", "/groups"]),
     ("uname", &["-s", "-r", "-m", "-a", "-n"]),
     ("hostname", &["-f", "-s", "-A", "-I"]),
     ("systemd-detect-virt", &[]),
@@ -100,12 +92,7 @@ const RESTRICTED_VERBS: &[(&str, &[&str])] = &[
     ("arp", &["-a"]),
     ("route", &["print"]),
     ("qwinsta", &[]),
-    ("whoami", &["/priv", "/all", "/user", "/groups"]),
-    ("cmdkey", &["/list"]),
-    ("manage-bde", &["-status"]),
-    ("dsregcmd", &["/status"]),
     ("tzutil", &["/g"]),
-    ("nslookup", &[]),
     ("ip", &["addr", "link", "route", "-br", "a"]),
     ("sysctl", &["-n", "-a", "-e"]),
 ];
@@ -148,15 +135,238 @@ fn allowed(program: &str, args: &[&str]) -> bool {
     if !COMMAND_ALLOWLIST.contains(&program) {
         return false;
     }
-    for (p, verbs) in RESTRICTED_VERBS {
-        if *p == program {
-            return match args.first() {
-                Some(a) => verbs.contains(a),
-                None => false,
-            };
+    match program {
+        "powershell" | "pwsh" => powershell_query_only(args),
+        "net" => net_query_only(args),
+        "netsh" => netsh_query_only(args),
+        "reg" => reg_query_only(args),
+        "auditpol" => auditpol_query_only(args),
+        _ => {
+            for (p, verbs) in RESTRICTED_VERBS {
+                if *p == program {
+                    if verbs.is_empty() {
+                        return args.is_empty();
+                    }
+                    if program == "whoami" && args.is_empty() {
+                        return true;
+                    }
+                    return matches!(args.first(), Some(a) if verbs.contains(a));
+                }
+            }
+            true
         }
     }
+}
+
+fn reg_query_only(args: &[&str]) -> bool {
+    if !matches!(args.first(), Some(&"query")) {
+        return false;
+    }
+    !args.iter().any(|arg| {
+        let l = arg.to_ascii_lowercase();
+        l.contains('>') || l.contains('<') || l.contains('|') || l.contains('&') || l.contains(';')
+    })
+}
+
+fn auditpol_query_only(args: &[&str]) -> bool {
+    if !matches!(args.first(), Some(&"/get")) {
+        return false;
+    }
+    !args.iter().any(|arg| {
+        let l = arg.to_ascii_lowercase();
+        l.contains('>') || l.contains('<') || l.contains('|') || l.contains('&') || l.contains(';')
+    })
+}
+
+fn net_query_only(args: &[&str]) -> bool {
+    match args.first().copied() {
+        Some("accounts") => args.len() == 1,
+        Some("user") => {
+            args.len() == 1
+                || (args.len() == 2 && !args[1].starts_with('/') && !args[1].contains('='))
+        }
+        Some("share") => {
+            args.len() == 1
+                || (args.len() == 2 && !args[1].starts_with('/') && !args[1].contains('='))
+        }
+        Some("localgroup") => {
+            args.len() == 1
+                || (args.len() == 2 && !args[1].starts_with('/') && !args[1].contains('='))
+        }
+        Some("group") => {
+            args.len() == 1
+                || (args.len() == 2 && !args[1].starts_with('/') && !args[1].contains('='))
+        }
+        Some("session") => args.len() == 1,
+        _ => false,
+    }
+}
+
+fn netsh_query_only(args: &[&str]) -> bool {
+    let Some(subsystem) = args.first().copied() else {
+        return false;
+    };
+    if !matches!(
+        subsystem,
+        "advfirewall" | "interface" | "winhttp" | "rpc" | "http"
+    ) {
+        return false;
+    }
+    if !args.iter().any(|arg| arg.eq_ignore_ascii_case("show")) {
+        return false;
+    }
+    !args.iter().any(|arg| {
+        let l = arg.to_ascii_lowercase();
+        matches!(
+            l.as_str(),
+            "set" | "add" | "delete" | "del" | "reset" | "export" | "dump" | "install" | "uninstall"
+        ) || l.contains('>') || l.contains('<') || l.contains('|') || l.contains('&') || l.contains(';')
+    })
+}
+
+fn powershell_query_only(args: &[&str]) -> bool {
+    let mut command_idx = None;
+    for (i, arg) in args.iter().enumerate() {
+        if arg.eq_ignore_ascii_case("-command") || arg.eq_ignore_ascii_case("-c") {
+            command_idx = Some(i);
+            break;
+        }
+        let lower = arg.to_ascii_lowercase();
+        if !matches!(
+            lower.as_str(),
+            "-noprofile" | "-noninteractive" | "-executionpolicy" | "bypass"
+        ) {
+            return false;
+        }
+    }
+    let Some(idx) = command_idx else {
+        return false;
+    };
+    if idx + 2 != args.len() {
+        return false;
+    }
+    let script = args[idx + 1].trim();
+    validate_powershell_script(script)
+}
+
+fn validate_powershell_script(script: &str) -> bool {
+    if script.is_empty() {
+        return false;
+    }
+    if script.contains('>')
+        || script.contains('<')
+        || script.contains('`')
+        || script.contains(';')
+        || script.contains('\n')
+        || script.contains('\r')
+    {
+        return false;
+    }
+    let lower = script.to_ascii_lowercase();
+    if lower.contains("http:")
+        || lower.contains("https:")
+        || lower.contains("ftp:")
+        || lower.contains(r"\\")
+    {
+        return false;
+    }
+    if let Some(var) = lower.strip_prefix("$env:") {
+        return !var.is_empty() && var.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+    }
+
+    let inner = if script.starts_with('(') {
+        let mut depth = 0;
+        let mut close_idx = None;
+        for (i, c) in script.char_indices() {
+            if c == '(' {
+                depth += 1;
+            } else if c == ')' {
+                depth -= 1;
+                if depth == 0 {
+                    close_idx = Some(i);
+                    break;
+                }
+            }
+        }
+        let Some(c_idx) = close_idx else {
+            return false;
+        };
+        let remainder = script[c_idx + 1..].trim();
+        if !remainder.is_empty() {
+            if !remainder.starts_with('.') {
+                return false;
+            }
+            let prop = &remainder[1..];
+            let prop_clean = prop.trim_matches('\'').trim_matches('"');
+            if prop_clean.is_empty()
+                || !prop_clean
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+            {
+                return false;
+            }
+        }
+        &script[1..c_idx]
+    } else {
+        script
+    };
+
+    let stages: Vec<&str> = inner.split('|').map(str::trim).collect();
+    if stages.is_empty() {
+        return false;
+    }
+
+    const ALLOWED_HEADS: &[&str] = &[
+        "get-itemproperty",
+        "get-ciminstance",
+        "get-wmiobject",
+        "get-hotfix",
+        "get-tpm",
+        "confirm-securebootuefi",
+        "get-service",
+        "get-acl",
+        "get-process",
+        "get-mppreference",
+        "get-mpcomputerstatus",
+        "get-netfirewallprofile",
+        "get-netfirewallrule",
+        "test-path",
+    ];
+
+    const ALLOWED_TRANSFORMERS: &[&str] = &[
+        "select-object",
+        "sort-object",
+        "where-object",
+        "foreach-object",
+        "convertto-json",
+        "convertto-csv",
+        "measure-object",
+        "group-object",
+        "out-string",
+    ];
+
+    let stage0_cmd = stage_command_name(stages[0]);
+    if !ALLOWED_HEADS.contains(&stage0_cmd.as_str()) {
+        return false;
+    }
+
+    for stage in &stages[1..] {
+        let cmd = stage_command_name(stage);
+        if !ALLOWED_TRANSFORMERS.contains(&cmd.as_str()) {
+            return false;
+        }
+    }
+
     true
+}
+
+fn stage_command_name(stage: &str) -> String {
+    stage
+        .trim_start_matches('(')
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase()
 }
 
 /// Run an allowlisted program with a hard timeout; kill on expiry.

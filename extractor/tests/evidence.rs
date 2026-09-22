@@ -59,23 +59,78 @@ fn injector_canned_output_used_for_allowlisted_command() {
 }
 
 #[test]
-fn restricted_verb_blocked_and_allowed() {
+fn evidence_allowlist_blocks_export_and_state_changes() {
     let mut audit = SelfAudit::default();
     let injector: Option<Box<dyn Fn(&str, &[&str]) -> Option<String>>> =
         Some(Box::new(|_, _| Some("ok".into())));
-    // reg: only query is allowed
-    assert!(run_command("reg", &["delete", "HKLM\\X"], 1000, &mut audit, &injector).is_none());
     assert!(run_command("reg", &["query", "HKLM\\X"], 1000, &mut audit, &injector).is_some());
-    // secedit: only /export
-    assert!(run_command("secedit", &["/import"], 1000, &mut audit, &injector).is_none());
-    assert!(run_command("secedit", &["/export"], 1000, &mut audit, &injector).is_some());
+    for (program, args) in [
+        ("reg", &["delete", "HKLM\\X"][..]),
+        ("secedit", &["/export", "/cfg", "policy.inf"][..]),
+        ("net", &["stop", "Spooler"][..]),
+        ("net", &["start", "Spooler"][..]),
+        ("net", &["use", "Z:", r"\\server\\share"][..]),
+        ("net", &["accounts", "/minpwlen:7"][..]),
+        ("net", &["user", "attacker", "Pass123!", "/add"][..]),
+        ("netsh", &["advfirewall", "set", "allprofiles", "state", "off"][..]),
+        ("netsh", &["interface", "ip", "set", "dns", "name=Ethernet", "static", "1.1.1.1"][..]),
+        ("nslookup", &["example.com"][..]),
+    ] {
+        assert!(run_command(program, args, 1000, &mut audit, &injector).is_none(),
+            "state-changing/network command passed allowlist: {program} {}", args.join(" "));
+    }
+    for script in [
+        "secedit /export /cfg $env:TEMP\\policy.inf",
+        "Export-Csv -Path policy.csv",
+        "Out-File policy.txt",
+        "Set-ItemProperty -Path HKLM:\\Software\\X -Name Y -Value 1",
+        "Remove-Item C:\\evidence.txt",
+        "New-Item C:\\evidence.txt",
+        "Invoke-WebRequest -Uri http://example.com",
+        "Invoke-RestMethod -Uri https://example.com/api",
+        "Resolve-DnsName example.com",
+        "Get-Process > C:\\evidence.txt",
+        "Get-Service | Out-File C:\\services.txt",
+        "Start-Service -Name Spooler",
+        "Get-Process; Remove-Item C:\\evidence.txt",
+    ] {
+        assert!(run_command("powershell", &["-NoProfile", "-NonInteractive", "-Command", script],
+            1000, &mut audit, &injector).is_none(),
+            "write/network-capable PowerShell passed allowlist: {script}");
+    }
+    assert_eq!(audit.commands, ["reg query HKLM\\X"]);
+}
+
+#[test]
+fn legitimate_query_commands_pass_allowlist() {
+    let mut audit = SelfAudit::default();
+    let injector: Option<Box<dyn Fn(&str, &[&str]) -> Option<String>>> =
+        Some(Box::new(|_, _| Some("ok".into())));
+    for (program, args) in [
+        ("net", &["accounts"][..]),
+        ("net", &["user"][..]),
+        ("net", &["share"][..]),
+        ("netsh", &["advfirewall", "show", "allprofiles"][..]),
+        ("netsh", &["interface", "ip", "show", "dns"][..]),
+        ("reg", &["query", r"HKLM\SYSTEM\CurrentControlSet\Control\Lsa", "/v", "LimitBlankPasswordUse"][..]),
+        ("powershell", &["-NoProfile", "-NonInteractive", "-Command", "$env:COMPUTERNAME"][..]),
+        ("powershell", &["-NoProfile", "-NonInteractive", "-Command", "Confirm-SecureBootUEFI"][..]),
+        ("powershell", &["-NoProfile", "-NonInteractive", "-Command", "Get-HotFix | Select-Object HotFixID,InstalledOn | ConvertTo-Json -Compress"][..]),
+        ("powershell", &["-NoProfile", "-NonInteractive", "-Command", "(Get-ItemProperty -LiteralPath 'Registry::HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa' -Name 'LimitBlankPasswordUse' -ErrorAction SilentlyContinue).'LimitBlankPasswordUse'"][..]),
+        ("powershell", &["-NoProfile", "-NonInteractive", "-Command", "(Get-CimInstance -Namespace 'root\\rsop\\computer' -ClassName RSOP_SecuritySettingBoolean -Filter \"KeyName='PasswordComplexity'\" -ErrorAction SilentlyContinue | Sort-Object Precedence | Select-Object -First 1 -ExpandProperty Setting)"][..]),
+    ] {
+        assert!(run_command(program, args, 1000, &mut audit, &injector).is_some(),
+            "legitimate query command blocked by allowlist: {program} {}", args.join(" "));
+    }
 }
 
 #[test]
 fn allowlist_contains_required_programs() {
-    for p in ["uname", "ss", "systemctl", "auditpol", "reg", "secedit", "wevtutil", "powershell", "docker", "sc", "net"] {
+    for p in ["uname", "ss", "systemctl", "auditpol", "reg", "wevtutil", "powershell", "docker", "sc", "net"] {
         assert!(COMMAND_ALLOWLIST.contains(&p), "missing {p}");
     }
+    assert!(!COMMAND_ALLOWLIST.contains(&"secedit"));
+    assert!(!COMMAND_ALLOWLIST.contains(&"nslookup"));
 }
 
 #[cfg(unix)]

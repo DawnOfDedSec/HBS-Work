@@ -3,6 +3,7 @@
 //! in a module via the `check!` macro (spec §4.3).
 
 pub mod linux;
+pub mod windows;
 pub mod shared;
 pub mod toy;
 
@@ -11,6 +12,12 @@ use crate::model::{CheckOutcome, EvidenceBlock, FallbackAttempt, RegisteredCheck
 
 pub fn register_all(reg: &mut Vec<RegisteredCheck>) {
     linux::auditd::register(reg);
+    windows::account::register(reg);
+    windows::audit::register(reg);
+    windows::sec_options::register(reg);
+    windows::defender::register(reg);
+    windows::event_logs::register(reg);
+    windows::user_rights::register(reg);
     linux::containers::register(reg);
     linux::firewall::register(reg);
     linux::fsck::register(reg);
