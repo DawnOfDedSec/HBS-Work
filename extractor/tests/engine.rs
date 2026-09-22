@@ -83,6 +83,7 @@ fn admin_only_check_runs_when_elevated() {
             recommendation_override: None,
             degraded_reason: None,
             fallback_log: Vec::new(),
+            evidence_blocks: Vec::new(),
         }
     }
     let mut reg: Vec<RegisteredCheck> = Vec::new();
@@ -112,6 +113,7 @@ fn missing_paths_reported_as_error_with_fallback_log() {
             recommendation_override: None,
             degraded_reason: None,
             fallback_log: log,
+            evidence_blocks: Vec::new(),
         }
     };
     let mut reg: Vec<RegisteredCheck> = Vec::new();
@@ -131,6 +133,7 @@ fn ok_check(_: &mut ScanContext) -> CheckOutcome {
         recommendation_override: None,
         degraded_reason: None,
         fallback_log: Vec::new(),
+        evidence_blocks: Vec::new(),
     }
 }
 

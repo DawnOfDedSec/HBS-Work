@@ -27,6 +27,7 @@ fn check_result_serializes_all_fields() {
             source: "file".into(),
             outcome: "ok".into(),
         }],
+        evidence_blocks: vec![],
         duration_ms: 3,
     };
     let v: serde_json::Value = serde_json::to_value(&r).unwrap();

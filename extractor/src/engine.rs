@@ -20,6 +20,7 @@ pub fn run_all(registry: &[RegisteredCheck], ctx: &mut ScanContext) -> Vec<Check
                     recommendation_override: None,
                     degraded_reason: None,
                     fallback_log: Vec::new(),
+                    evidence_blocks: Vec::new(),
                 },
                 Vec::new(),
             )
@@ -37,6 +38,7 @@ pub fn run_all(registry: &[RegisteredCheck], ctx: &mut ScanContext) -> Vec<Check
                     recommendation_override: None,
                     degraded_reason: Some("requires elevation (skipped: unprivileged run)".into()),
                     fallback_log: Vec::new(),
+                    evidence_blocks: Vec::new(),
                 },
                 Vec::new(),
             )
@@ -65,6 +67,7 @@ pub fn run_all(registry: &[RegisteredCheck], ctx: &mut ScanContext) -> Vec<Check
                                 source: "engine".into(),
                                 outcome: format!("check panicked: {msg}"),
                             }],
+                            evidence_blocks: Vec::new(),
                         },
                         Vec::new(),
                     )
@@ -94,11 +97,12 @@ pub fn run_all(registry: &[RegisteredCheck], ctx: &mut ScanContext) -> Vec<Check
                 .recommendation_override
                 .unwrap_or_else(|| rc.tc.recommendation.to_string()),
             references: rc.tc.references.iter().map(|s| s.to_string()).collect(),
-            evidence: outcome.evidence,
+            evidence: crate::redact::redact(&outcome.evidence),
             location: outcome.location,
             repro: outcome.repro,
             degraded_reason: outcome.degraded_reason,
             fallback_log,
+            evidence_blocks: outcome.evidence_blocks.clone(),
             duration_ms: started.elapsed().as_millis() as u64,
         });
     }

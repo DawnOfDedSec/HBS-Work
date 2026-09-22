@@ -1,7 +1,7 @@
 //! LIN-SSH: sshd hardening (CIS 5.2.x). Effective-value resolution:
 //! /etc/ssh/sshd_config last-wins, `sshd -T` fallback for includes.
 
-use crate::checks::{degraded, err_outcome, nok, ok};
+use crate::checks::{degraded, err_outcome, nok, ok, with_block};
 use crate::context::ScanContext;
 use crate::model::{CheckOutcome, FallbackAttempt, RegisteredCheck};
 use crate::platform::Os;
@@ -69,16 +69,17 @@ fn with_log(mut o: CheckOutcome, log: Vec<FallbackAttempt>) -> CheckOutcome {
 
 fn ssh_kv(ctx: &mut ScanContext, key: &str, good: &[&str], bad: &str) -> CheckOutcome {
     let mut log = Vec::new();
+    let block = crate::checks::evidence_at(ctx, "/etc/ssh/sshd_config", key);
     match sshd_effective(ctx, key, &mut log) {
         Some(v) => {
             let loc = "/etc/ssh/sshd_config".to_string();
             let lv = v.to_lowercase();
             if good.iter().any(|g| lv == *g) {
-                with_log(ok(format!("{key} {v}"), loc, format!("sshd -T | grep -i {key}")), log)
+                with_log(with_block(ok(format!("{key} {v}"), loc, format!("sshd -T | grep -i {key}")), block), log)
             } else if lv == bad.to_lowercase() {
-                with_log(nok(format!("{Key} {v} (expected {expect})", Key = key, expect = good.join("/")), loc, format!("sshd -T | grep -i {key}")), log)
+                with_log(with_block(nok(format!("{Key} {v} (expected {expect})", Key = key, expect = good.join("/")), loc, format!("sshd -T | grep -i {key}")), block), log)
             } else {
-                with_log(nok(format!("{Key} {v} (expected {expect})", Key = key, expect = good.join("/")), loc, format!("sshd -T | grep -i {key}")), log)
+                with_log(with_block(nok(format!("{Key} {v} (expected {expect})", Key = key, expect = good.join("/")), loc, format!("sshd -T | grep -i {key}")), block), log)
             }
         }
         None => {

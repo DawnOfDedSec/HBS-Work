@@ -65,6 +65,20 @@ pub struct FallbackAttempt {
     pub outcome: String,
 }
 
+/// Nessus-style pinpoint evidence: the file path (rendered as a header
+/// above the block), 1-based line and column where the issue starts,
+/// and the surrounding context window (target line ±3, already
+/// redacted extractor-side).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EvidenceBlock {
+    pub path: String,
+    pub line: u32,
+    pub col: u32,
+    pub context: Vec<String>,
+    pub target_index: u32,
+}
+
 /// What a check fn returns for the engine to fold into a CheckResult.
 #[derive(Clone, Debug)]
 pub struct CheckOutcome {
@@ -75,6 +89,7 @@ pub struct CheckOutcome {
     pub recommendation_override: Option<String>,
     pub degraded_reason: Option<String>,
     pub fallback_log: Vec<FallbackAttempt>,
+    pub evidence_blocks: Vec<EvidenceBlock>,
 }
 
 /// Signature every check function implements.
@@ -111,6 +126,7 @@ pub struct CheckResult {
     pub repro: String,
     pub degraded_reason: Option<String>,
     pub fallback_log: Vec<FallbackAttempt>,
+    pub evidence_blocks: Vec<EvidenceBlock>,
     pub duration_ms: u64,
 }
 

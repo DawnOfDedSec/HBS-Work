@@ -19,6 +19,7 @@ fn sample_result() -> CheckResult {
         repro: "rp".into(),
         degraded_reason: None,
         fallback_log: vec![],
+        evidence_blocks: vec![],
         duration_ms: 1,
     }
 }

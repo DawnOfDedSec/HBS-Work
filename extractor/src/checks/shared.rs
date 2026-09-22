@@ -65,7 +65,7 @@ fn listening_ports(ctx: &mut ScanContext) -> CheckOutcome {
                 .map(|p| u16::from_str_radix(p, 16).map(|v| v.to_string()).unwrap_or_default())
                 .filter(|s| !s.is_empty())
                 .collect();
-            return CheckOutcome { status: crate::model::Status::DegradedPartial, evidence: format!("listening TCP ports (no process info): {}", ports.join(", ")), location: "/proc/net/tcp".into(), repro: "cat /proc/net/tcp".into(), recommendation_override: None, degraded_reason: Some("ss unavailable; /proc/net/tcp lacks process attribution".into()), fallback_log: log };
+            return CheckOutcome { status: crate::model::Status::DegradedPartial, evidence: format!("listening TCP ports (no process info): {}", ports.join(", ")), location: "/proc/net/tcp".into(), repro: "cat /proc/net/tcp".into(), recommendation_override: None, degraded_reason: Some("ss unavailable; /proc/net/tcp lacks process attribution".into()), fallback_log: log, evidence_blocks: Vec::new() };
         }
         log.push(FallbackAttempt { source: "/proc/net/tcp".into(), outcome: "missing".into() });
     }

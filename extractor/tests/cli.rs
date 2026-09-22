@@ -17,6 +17,7 @@ fn res(id: &str, status: Status, sev: Severity) -> CheckResult {
         repro: String::new(),
         degraded_reason: None,
         fallback_log: vec![],
+        evidence_blocks: vec![],
         duration_ms: 0,
     }
 }

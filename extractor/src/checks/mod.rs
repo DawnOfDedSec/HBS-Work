@@ -6,7 +6,8 @@ pub mod linux;
 pub mod shared;
 pub mod toy;
 
-use crate::model::{CheckOutcome, FallbackAttempt, RegisteredCheck, Status};
+use crate::context::ScanContext;
+use crate::model::{CheckOutcome, EvidenceBlock, FallbackAttempt, RegisteredCheck, Status};
 
 pub fn register_all(reg: &mut Vec<RegisteredCheck>) {
     linux::auditd::register(reg);
@@ -22,6 +23,39 @@ pub fn register_all(reg: &mut Vec<RegisteredCheck>) {
     // Further Phase 2/3 modules register here as they land.
 }
 
+// ---- Nessus-style pinpoint evidence (target line +/- 3, redacted) ----
+
+/// Build an EvidenceBlock for the first line in `path` containing
+/// `needle`: 1-based line + column, three context lines each side,
+/// every line redacted before it enters the report.
+pub fn evidence_at(ctx: &mut ScanContext, path: &str, needle: &str) -> Option<EvidenceBlock> {
+    let text = ctx.read(path)?;
+    let lines: Vec<&str> = text.lines().collect();
+    let idx = lines.iter().position(|l| l.contains(needle))?;
+    let col = lines[idx].find(needle).map(|b| text[..b].chars().count()).unwrap_or(0) as u32 + 1;
+    let start = idx.saturating_sub(3);
+    let end = (idx + 3).min(lines.len().saturating_sub(1));
+    let context: Vec<String> = lines[start..=end]
+        .iter()
+        .map(|l| crate::redact::redact(l))
+        .collect();
+    Some(EvidenceBlock {
+        path: path.to_string(),
+        line: idx as u32 + 1,
+        col,
+        context,
+        target_index: (idx - start) as u32,
+    })
+}
+
+/// Attach an evidence block (or two) to an outcome.
+pub fn with_block(mut o: CheckOutcome, b: Option<EvidenceBlock>) -> CheckOutcome {
+    if let Some(b) = b {
+        o.evidence_blocks.push(b);
+    }
+    o
+}
+
 // ---- shared outcome helpers (the recipe every check uses) ----
 
 /// Compliant outcome with evidence.
@@ -34,6 +68,7 @@ pub fn ok(evidence: String, location: String, repro: String) -> CheckOutcome {
         recommendation_override: None,
         degraded_reason: None,
         fallback_log: Vec::new(),
+        evidence_blocks: Vec::new(),
     }
 }
 
@@ -47,6 +82,7 @@ pub fn nok(evidence: String, location: String, repro: String) -> CheckOutcome {
         recommendation_override: None,
         degraded_reason: None,
         fallback_log: Vec::new(),
+        evidence_blocks: Vec::new(),
     }
 }
 
@@ -61,6 +97,7 @@ pub fn degraded(reason: &str) -> CheckOutcome {
         recommendation_override: None,
         degraded_reason: Some(reason.to_string()),
         fallback_log: Vec::new(),
+        evidence_blocks: Vec::new(),
     }
 }
 
@@ -80,5 +117,6 @@ pub fn err_outcome(log: Vec<FallbackAttempt>) -> CheckOutcome {
         recommendation_override: None,
         degraded_reason: None,
         fallback_log: log,
+        evidence_blocks: Vec::new(),
     }
 }
