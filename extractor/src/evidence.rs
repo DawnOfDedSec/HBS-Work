@@ -23,7 +23,7 @@ pub const COMMAND_ALLOWLIST: &[&str] = &[
     "iptables", "auditctl", "package", "at", "atq", "getcap", "debsums",
     "dnf", "apt-get", "mount", "findmnt", "mokutil", "bootctl",
     "chronyc", "showmount", "lsmod", "crontab", "realm",
-    "sshd", "ssh", "zgrep", "stat", "sha256sum", "gpg", "openssl",
+    "sshd", "ssh", "zgrep", "stat", "sha256sum", "gpg", "openssl", "lspci", "lsusb",
     // windows
     "systeminfo", "reg", "auditpol", "secedit", "net", "wmic", "sc",
     "wevtutil", "powershell", "pwsh", "manage-bde", "dsregcmd",
@@ -61,6 +61,8 @@ const RESTRICTED_VERBS: &[(&str, &[&str])] = &[
     ("mokutil", &["--sb-state"]),
     ("last", &["-n", "-F"]),
     ("sshd", &["-T", "-V"]),
+    ("lspci", &["-mm", "-nn", "-v"]),
+    ("lsusb", &["-v", "-t"]),
     ("ssh", &["-V"]),
     ("stat", &["-c", "-f", "--format"]),
     ("sha256sum", &["-c", "--check"]),

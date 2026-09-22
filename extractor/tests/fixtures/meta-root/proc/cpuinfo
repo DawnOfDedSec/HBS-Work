@@ -1,0 +1,29 @@
+processor	: 0
+vendor_id	: GenuineIntel
+cpu family	: 6
+model	: 79
+model name	: Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz
+microcode	: 0xb40006a3
+cache size	: 35840 KB
+processor	: 1
+vendor_id	: GenuineIntel
+model name	: Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz
+microcode	: 0xb40006a3
+processor	: 2
+model name	: Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz
+microcode	: 0xb40006a3
+processor	: 3
+model name	: Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz
+microcode	: 0xb40006a3
+processor	: 4
+model name	: Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz
+microcode	: 0xb40006a3
+processor	: 5
+model name	: Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz
+microcode	: 0xb40006a3
+processor	: 6
+model name	: Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz
+microcode	: 0xb40006a3
+processor	: 7
+model name	: Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz
+microcode	: 0xb40006a3

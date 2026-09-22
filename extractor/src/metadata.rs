@@ -65,33 +65,155 @@ fn collect_linux(ctx: &mut ScanContext, m: &mut Map<String, Value>) {
     set(m, "install_date_unix", json!(null_first_boot(ctx)));
 
     // memory
-    let mem = ctx.read("/proc/meminfo").and_then(|s| {
-        s.lines().find_map(|l| {
-            let (k, rest) = l.split_once(':')?;
-            (k == "MemTotal").then(|| {
-                rest.trim()
-                    .split_whitespace()
-                    .next()
-                    .and_then(|n| n.parse::<u64>().ok())
-                    .map(|kb| kb / 1024)
-            })?
+    let meminfo = ctx.read("/proc/meminfo");
+    let mem_field = |key: &str| -> Option<u64> {
+        meminfo.as_ref().and_then(|s| {
+            s.lines().find_map(|l| {
+                let (k, rest) = l.split_once(':')?;
+                (k == key)
+                    .then(|| rest.trim().split_whitespace().next().and_then(|n| n.parse::<u64>().ok()).map(|kb| kb / 1024))
+                    .flatten()
+            })
         })
-    });
+    };
+    let mem = mem_field("MemTotal");
     set(m, "memory_mb", json!(mem));
+    set(m, "memory", json!({
+        "total_mb": mem_field("MemTotal"),
+        "free_mb": mem_field("MemFree"),
+        "available_mb": mem_field("MemAvailable"),
+        "swap_total_mb": mem_field("SwapTotal"),
+        "swap_free_mb": mem_field("SwapFree"),
+    }));
 
     // cpu
     let cpuinfo = ctx.read("/proc/cpuinfo");
-    let cpu_model = cpuinfo.as_ref().and_then(|s| {
-        s.lines()
-            .find(|l| l.starts_with("model name"))
-            .and_then(|l| l.split(':').nth(1))
-            .map(|v| v.trim().to_string())
-    });
+    let cpu_field = |key: &str| -> Option<String> {
+        cpuinfo.as_ref().and_then(|s| {
+            s.lines()
+                .find(|l| l.starts_with(key))
+                .and_then(|l| l.split(':').nth(1))
+                .map(|v| v.trim().to_string())
+        })
+    };
+    let cpu_model = cpu_field("model name");
     let cpu_cores = cpuinfo.as_ref().map(|s| {
         s.lines().filter(|l| l.starts_with("processor")).count() as u64
     });
-    set(m, "cpu_model", json!(cpu_model));
+    set(m, "cpu_model", json!(cpu_model.clone()));
     set(m, "cpu_cores", json!(cpu_cores));
+    set(m, "cpu", json!({
+        "model": cpu_model,
+        "vendor": cpu_field("vendor_id"),
+        "cores": cpu_cores,
+        "microcode": cpu_field("microcode"),
+        "cache": cpu_field("cache size"),
+        "flags": cpu_field("flags").map(|f| f.split_whitespace().count()),
+    }));
+
+    // motherboard / BIOS / product (DMI)
+    let mut dmi = |f: &str| trimmed(ctx, &format!("/sys/class/dmi/id/{f}"));
+    set(m, "motherboard", json!({
+        "vendor": dmi("board_vendor"),
+        "name": dmi("board_name"),
+        "version": dmi("board_version"),
+    }));
+    set(m, "bios", json!({
+        "vendor": dmi("bios_vendor"),
+        "version": dmi("bios_version"),
+        "date": dmi("bios_date"),
+    }));
+    set(m, "product", json!({
+        "name": dmi("product_name"),
+        "vendor": dmi("sys_vendor"),
+        "family": dmi("product_family"),
+        "sku": dmi("product_sku"),
+    }));
+
+    // GPU (lspci when present; /sys/class/drm count as fallback)
+    let mut gpus = Vec::new();
+    if let Some(pci) = ctx.cmd("lspci", &["-mm"]) {
+        for line in pci.lines() {
+            let low = line.to_lowercase();
+            if low.contains("vga") || low.contains("3d controller") || low.contains("display controller") {
+                // plain lspci: "slot Class [code]: Vendor Device [ven:dev]"
+                // -mm mode: quoted fields — handle both.
+                let name = match line.split_once(": ") {
+                    Some((_, rest)) => rest.to_string(),
+                    None => line.split('"').nth(3).unwrap_or(line).to_string(),
+                };
+                gpus.push(json!({"name": name, "source": "lspci"}));
+            }
+        }
+    }
+    if gpus.is_empty() {
+        let drm = list_dir(ctx, "/sys/class/drm");
+        let cards = drm.iter().filter(|d| d.starts_with("card") && !d.contains('-')).count();
+        if cards > 0 {
+            gpus.push(json!({"name": format!("{cards} DRM card(s) (names need lspci)"), "source": "/sys/class/drm"}));
+        }
+    }
+    set(m, "gpu", Value::Array(gpus));
+
+    // storage block devices
+    let mut storage = Vec::new();
+    for dev in list_dir(ctx, "/sys/block") {
+        let model = trimmed(ctx, &format!("/sys/block/{dev}/device/model"));
+        let size_sectors = trimmed(ctx, &format!("/sys/block/{dev}/size"))
+            .and_then(|s| s.parse::<u64>().ok());
+        let ro = trimmed(ctx, &format!("/sys/block/{dev}/ro"));
+        storage.push(json!({
+            "device": dev,
+            "model": model,
+            "size_gb": size_sectors.map(|s| s * 512 / (1024 * 1024 * 1024)),
+            "removable": ro.as_deref().map(|r| r == "1"),
+        }));
+    }
+    set(m, "storage", Value::Array(storage));
+
+    // network interfaces
+    let mut interfaces = Vec::new();
+    for n in list_dir(ctx, "/sys/class/net") {
+        let mac = trimmed(ctx, &format!("/sys/class/net/{n}/address"));
+        let state = trimmed(ctx, &format!("/sys/class/net/{n}/operstate"));
+        interfaces.push(json!({"name": n, "mac": mac, "state": state}));
+    }
+    let dns_servers: Vec<String> = ctx
+        .read("/etc/resolv.conf")
+        .map(|s| {
+            s.lines()
+                .filter_map(|l| l.strip_prefix("nameserver ").map(str::trim).map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    set(m, "network", json!({
+        "interfaces": interfaces,
+        "dns": dns_servers,
+        "hostname_fqdn": m.get("fqdn").cloned().unwrap_or(Value::Null),
+    }));
+
+    // kernel details
+    let kernel_version = trimmed(ctx, "/proc/version");
+    let modules_count = ctx.read("/proc/modules").map(|s| s.lines().filter(|l| !l.trim().is_empty()).count() as u64);
+    let taint = trimmed(ctx, "/proc/sys/kernel/tainted");
+    set(m, "kernel_info", json!({
+        "release": m.get("kernel").cloned().unwrap_or(Value::Null),
+        "version": kernel_version,
+        "cmdline": ctx.read("/proc/cmdline").map(|s| s.trim().to_string()),
+        "modules": modules_count,
+        "tainted": taint,
+    }));
+
+    // system activity counts
+    let processes = ctx.read("/proc/stat").and_then(|s| {
+        s.lines()
+            .find_map(|l| l.strip_prefix("processes ").and_then(|v| v.trim().parse::<u64>().ok()))
+    });
+    set(m, "processes", json!(processes));
+    let services_count = ctx
+        .cmd("systemctl", &["list-units", "--type=service", "--state=running"])
+        .map(|o| o.lines().filter(|l| l.contains("running")).count() as u64);
+    set(m, "services_count", json!(services_count));
 
     // disks: real filesystems from /proc/mounts, sizes via statvfs
     let mut disks = Vec::new();
@@ -160,6 +282,20 @@ fn collect_linux(ctx: &mut ScanContext, m: &mut Map<String, Value>) {
 
 fn null_first_boot(_ctx: &mut ScanContext) -> Value {
     Value::Null
+}
+
+/// Directory entry names under a (prefixed) path, sorted.
+fn list_dir(ctx: &ScanContext, abs_path: &str) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(ctx.path(abs_path))
+        .map(|rd| {
+            rd.filter_map(|e| e.ok())
+                .filter(|e| e.file_type().map(|t| t.is_dir() || t.is_symlink()).unwrap_or(false))
+                .filter_map(|e| e.file_name().into_string().ok())
+                .collect()
+        })
+        .unwrap_or_default();
+    names.sort();
+    names
 }
 
 fn groups_of(ctx: &mut ScanContext, gid: &str) -> Vec<String> {
