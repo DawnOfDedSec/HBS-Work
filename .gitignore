@@ -6,3 +6,6 @@ dashboard/server/data/
 dashboard/binaries/
 *.hbs
 !fixtures/*.hbs
+.claude/
+.rtk/
+CLAUDE.md
