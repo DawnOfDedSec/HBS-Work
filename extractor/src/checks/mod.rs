@@ -3,6 +3,7 @@
 //! in a module via the `check!` macro (spec §4.3).
 
 pub mod linux;
+pub mod server_config;
 pub mod shared;
 pub mod toy;
 pub mod windows;
@@ -33,6 +34,7 @@ pub fn register_all(reg: &mut Vec<RegisteredCheck>) {
     linux::users::register(reg);
     linux::ssh::register(reg);
     linux::threat::register(reg);
+    server_config::register(reg);
     shared::register(reg);
     toy::register(reg);
     // Further Phase 2/3 modules register here as they land.
@@ -136,6 +138,42 @@ pub fn degraded(reason: &str) -> CheckOutcome {
         fallback_log: Vec::new(),
         evidence_blocks: Vec::new(),
     }
+}
+
+/// A control that genuinely cannot exist in this runtime environment
+/// (firmware/boot/hardware controls inside a container, or virtual
+/// firmware a VM does not expose). This is `NotApplicable`, never
+/// `NonCompliant` and never `DegradedPartial`: there is no capability
+/// to assess and no fake evidence block is attached.
+pub fn not_applicable(reason: &str) -> CheckOutcome {
+    CheckOutcome {
+        status: Status::NotApplicable,
+        evidence: format!("not applicable: {reason}"),
+        location: String::new(),
+        repro: String::new(),
+        recommendation_override: None,
+        degraded_reason: None,
+        fallback_log: Vec::new(),
+        evidence_blocks: Vec::new(),
+    }
+}
+
+/// True when the scan runs inside a container (host-only controls cannot
+/// be evaluated).
+pub fn in_container(ctx: &ScanContext) -> bool {
+    ctx.platform.environment.is_container()
+}
+
+/// True when the scan runs inside a virtual machine.
+pub fn on_vm(ctx: &ScanContext) -> bool {
+    ctx.platform.environment.is_vm()
+}
+
+/// Hypervisor label for evidence text (e.g. `VMware`), with a fallback.
+pub fn hypervisor_label(ctx: &ScanContext) -> String {
+    ctx.platform
+        .environment
+        .hypervisor_or("unknown hypervisor")
 }
 
 /// Every fallback for a check was tried and none produced authoritative

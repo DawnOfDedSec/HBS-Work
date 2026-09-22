@@ -43,6 +43,52 @@ fn gen_inv_003_reads_passwd() {
     assert_eq!(r.status, Status::Compliant);
     assert!(r.evidence.contains("root"));
     assert!(r.evidence.contains("svc-web"));
+    assert!(
+        r.fallback_log.iter().any(|a| a.source == "/etc/passwd"),
+        "fallback_log should record the source: {:?}",
+        r.fallback_log
+    );
+}
+
+/// Windows users/groups chain: `net user` -> `net localgroup` ->
+/// PowerShell -> native NetAPI -> registry ProfileList. Every step is
+/// recorded, and a failed read falls through to the next source.
+#[test]
+fn gen_inv_003_windows_chain_records_every_attempt() {
+    let mut p = detect();
+    p.os = Os::Windows;
+    let mut ctx = ScanContext::new(p, false).with_injector(Box::new(|_, _| None));
+    let r = run_one(&mut ctx, "GEN-INV-003");
+    assert_eq!(r.status, Status::DegradedPartial, "{}", r.evidence);
+    let sources: Vec<&str> = r.fallback_log.iter().map(|a| a.source.as_str()).collect();
+    assert_eq!(
+        sources,
+        [
+            "net user",
+            "net localgroup",
+            "PowerShell Get-LocalUser",
+            "PowerShell Get-LocalGroup",
+            "native NetUserEnum/NetLocalGroupEnum",
+        ],
+        "{}",
+        r.evidence
+    );
+}
+
+/// GEN-INV-002 Windows chain: package managers -> Get-Package ->
+/// Win32_Product CIM -> native registry Uninstall keys.
+#[test]
+fn gen_inv_002_windows_chain_records_every_attempt() {
+    let mut p = detect();
+    p.os = Os::Windows;
+    let mut ctx = ScanContext::new(p, false).with_injector(Box::new(|_, _| None));
+    let r = run_one(&mut ctx, "GEN-INV-002");
+    assert_eq!(r.status, Status::DegradedPartial, "{}", r.evidence);
+    let sources: Vec<&str> = r.fallback_log.iter().map(|a| a.source.as_str()).collect();
+    assert!(sources.contains(&"Get-Package".to_string().as_str()) || sources.contains(&"powershell Get-Package"));
+    assert!(sources.contains(&"Get-CimInstance Win32_Product"));
+    assert!(sources.contains(&"native registry Uninstall keys"));
+    assert!(r.evidence.contains("native registry") || r.evidence.contains("Uninstall"));
 }
 
 #[test]

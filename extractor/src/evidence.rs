@@ -331,6 +331,11 @@ fn validate_powershell_script(script: &str) -> bool {
         "get-netfirewallprofile",
         "get-netfirewallrule",
         "test-path",
+        "get-childitem",
+        "get-localuser",
+        "get-localgroup",
+        "get-localgroupmember",
+        "get-scheduledtask",
     ];
 
     const ALLOWED_TRANSFORMERS: &[&str] = &[

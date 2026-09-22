@@ -1,10 +1,12 @@
 //! WIN-TH (part 2): persistence hunting, lifecycle, and local-admin posture.
 //!
-//! Every source is read-only: registry queries, CIM inventories, schtasks,
-//! netsh, service configuration, dsregcmd, local-group enumeration, and the
-//! hosts file. Missing or blocked evidence degrades; it never becomes Error.
+//! Every source is read-only: registry queries, native in-process
+//! registry access, CIM inventories, schtasks, netsh, service
+//! configuration, dsregcmd, local-group enumeration, and the hosts file.
+//! Missing or blocked evidence degrades; it never becomes Error.
 
 use super::services::parse_sc_qc;
+use super::native_reg::{native_reg_enum_subkeys, native_reg_sz};
 use super::{hosts_file, reg_query_dword_with_log, startup_dir, QueryResult};
 use crate::checks::{degraded, nok, ok};
 use crate::context::ScanContext;
@@ -83,54 +85,152 @@ fn json_rows(value: Json) -> Option<Vec<Json>> {
 // WIN-TH-015
 fn ifeo_debuggers(ctx: &mut ScanContext) -> CheckOutcome {
     let mut attempts = Vec::new();
+
+    // 1. `reg query /s`: the broadest single-shot sweep.
     match ctx.cmd("reg", &["query", IFEO, "/s", "/v", "Debugger"]) {
         Some(raw) if unavailable(&raw) => {
             attempts.push(FallbackAttempt {
                 source: format!("reg query {IFEO} /s /v Debugger"),
                 outcome: "key/value absent".into(),
             });
-            with_attempts(
-                ok(
-                    "no IFEO Debugger values found".into(),
-                    format!("registry:{IFEO}"),
-                    format!("reg query {IFEO} /s /v Debugger"),
-                ),
-                attempts,
-            )
+            return with_attempts(ifeo_outcome(Vec::new()), attempts);
         }
         Some(raw) => {
-            let debuggers: Vec<String> = raw
-                .lines()
-                .filter(|line| line.to_ascii_lowercase().contains("debugger"))
-                .map(|line| line.trim().to_string())
-                .collect();
+            let debuggers = debugger_lines(&raw);
             attempts.push(FallbackAttempt {
                 source: format!("reg query {IFEO} /s /v Debugger"),
                 outcome: format!("{} values", debuggers.len()),
             });
-            let outcome = if debuggers.is_empty() {
-                ok(
-                    "no IFEO Debugger values found".into(),
-                    format!("registry:{IFEO}"),
-                    format!("reg query {IFEO} /s /v Debugger"),
-                )
-            } else {
-                nok(
-                    format!("IFEO Debugger persistence found: {}", debuggers.join(" | ")),
-                    format!("registry:{IFEO}"),
-                    format!("reg query {IFEO} /s /v Debugger"),
-                )
-            };
-            with_attempts(outcome, attempts)
+            return with_attempts(ifeo_outcome(debuggers), attempts);
         }
-        None => {
-            attempts.push(FallbackAttempt {
-                source: format!("reg query {IFEO} /s /v Debugger"),
-                outcome: "unavailable or blocked".into(),
-            });
-            degraded_with("IFEO Debugger values unreadable", attempts)
+        None => attempts.push(FallbackAttempt {
+            source: format!("reg query {IFEO} /s /v Debugger"),
+            outcome: "unavailable or blocked".into(),
+        }),
+    }
+
+    // 2. PowerShell `Get-ChildItem` enumerates the IFEO subkeys; each
+    //    subkey's Debugger value is then read with the same reg→PowerShell
+    //    helper used elsewhere (which itself ends in native access).
+    let script = format!(
+        "Get-ChildItem -LiteralPath '{}' | Select-Object -ExpandProperty Name",
+        super::powershell_registry_path(IFEO).replace('\'', "''")
+    );
+    match ctx.cmd(
+        "powershell",
+        &["-NoProfile", "-NonInteractive", "-Command", &script],
+    ) {
+        Some(raw) => {
+            if !ctx.native_fallbacks_enabled() {
+                attempts.push(FallbackAttempt {
+                    source: "PowerShell Get-ChildItem".into(),
+                    outcome: "subkeys listed; value read skipped (injected context)".into(),
+                });
+            } else {
+                let mut debuggers = Vec::new();
+                let mut subkeys = 0usize;
+                for line in raw.lines().map(str::trim).filter(|line| !line.is_empty()) {
+                    if let Some(path) = normalize_hive_path(line) {
+                        subkeys += 1;
+                        if let Some(value) = native_reg_sz(&path, "Debugger") {
+                            if !value.trim().is_empty() {
+                                debuggers.push(format!("{path} = {value}"));
+                            }
+                        }
+                    }
+                }
+                attempts.push(FallbackAttempt {
+                    source: "PowerShell Get-ChildItem".into(),
+                    outcome: format!("{subkeys} subkeys, {} Debugger values", debuggers.len()),
+                });
+                return with_attempts(ifeo_outcome(debuggers), attempts);
+            }
+        }
+        None => attempts.push(FallbackAttempt {
+            source: "PowerShell Get-ChildItem".into(),
+            outcome: "unavailable or blocked".into(),
+        }),
+    }
+
+    // 3. Native in-process registry enumeration: no external tool at all.
+    if ctx.native_fallbacks_enabled() {
+        match native_reg_enum_subkeys(IFEO) {
+            Some(subkeys) => {
+                let mut debuggers = Vec::new();
+                for sub in &subkeys {
+                    let sub_path = format!(r"{IFEO}\{sub}");
+                    if let Some(value) = native_reg_sz(&sub_path, "Debugger") {
+                        if !value.trim().is_empty() {
+                            debuggers.push(format!("{sub_path} = {value}"));
+                        }
+                    }
+                }
+                attempts.push(FallbackAttempt {
+                    source: "native registry IFEO enumeration".into(),
+                    outcome: format!(
+                        "{} subkeys, {} Debugger values",
+                        subkeys.len(),
+                        debuggers.len()
+                    ),
+                });
+                with_attempts(ifeo_outcome(debuggers), attempts)
+            }
+            None => {
+                attempts.push(FallbackAttempt {
+                    source: "native registry IFEO enumeration".into(),
+                    outcome: "unavailable".into(),
+                });
+                degraded_with("IFEO Debugger values unreadable", attempts)
+            }
+        }
+    } else {
+        attempts.push(FallbackAttempt {
+            source: "native registry IFEO enumeration".into(),
+            outcome: "skipped (injected context)".into(),
+        });
+        degraded_with("IFEO Debugger values unreadable", attempts)
+    }
+}
+
+/// Extract the `Debugger` lines from `reg query /s` output.
+fn debugger_lines(raw: &str) -> Vec<String> {
+    raw.lines()
+        .filter(|line| line.to_ascii_lowercase().contains("debugger"))
+        .map(|line| line.trim().to_string())
+        .collect()
+}
+
+/// Build the pass/fail outcome for a collected Debugger list.
+fn ifeo_outcome(debuggers: Vec<String>) -> CheckOutcome {
+    if debuggers.is_empty() {
+        ok(
+            "no IFEO Debugger values found".into(),
+            format!("registry:{IFEO}"),
+            format!("reg query {IFEO} /s /v Debugger"),
+        )
+    } else {
+        nok(
+            format!("IFEO Debugger persistence found: {}", debuggers.join(" | ")),
+            format!("registry:{IFEO}"),
+            format!("reg query {IFEO} /s /v Debugger"),
+        )
+    }
+}
+
+/// Convert a PowerShell registry provider name (`HKEY_LOCAL_MACHINE\...`)
+/// into the `HKLM\...` form the native helpers accept.
+fn normalize_hive_path(line: &str) -> Option<String> {
+    let line = line.trim();
+    for (from, to) in [
+        ("HKEY_LOCAL_MACHINE\\", "HKLM\\"),
+        ("HKEY_CURRENT_USER\\", "HKCU\\"),
+    ] {
+        if let Some(rest) = line.strip_prefix(from) {
+            return Some(format!("{to}{rest}"));
         }
     }
+    let upper = line.to_ascii_uppercase();
+    (upper.starts_with("HKLM\\") || upper.starts_with("HKCU\\")).then(|| line.to_string())
 }
 
 // WIN-TH-016

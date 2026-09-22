@@ -1,7 +1,7 @@
 //! LIN-TH (part 2): container escape surfaces, EOL detection and
 //! patch currency (supply-chain lessons from the xz backdoor era).
 
-use crate::checks::{degraded, nok, ok};
+use crate::checks::{degraded, in_container, nok, not_applicable, ok};
 use crate::context::ScanContext;
 use crate::model::{CheckOutcome, RegisteredCheck};
 use crate::platform::Os;
@@ -288,6 +288,11 @@ fn third_party_repos(ctx: &mut ScanContext) -> CheckOutcome {
 }
 
 fn cmdline_clean(ctx: &mut ScanContext) -> CheckOutcome {
+    if in_container(ctx) {
+        return not_applicable(
+            "the kernel command line belongs to the shared host kernel; a container cannot set or own boot parameters",
+        );
+    }
     if let Some(cmdline) = ctx.read("/proc/cmdline") {
         let bad = ["init=/bin/sh", "init=/bin/bash", "systemd.unit=emergency", "rd.break", "debug"];
         let hits: Vec<&str> = bad.iter().copied().filter(|b| cmdline.contains(b)).collect();

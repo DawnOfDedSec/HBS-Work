@@ -4,6 +4,8 @@ pub mod account;
 pub mod audit;
 pub mod defender;
 pub mod event_logs;
+pub mod native_accounts;
+pub mod native_reg;
 pub mod network;
 pub mod perms;
 pub mod sec_options;
@@ -168,10 +170,35 @@ pub fn reg_query_dword_with_log(ctx: &mut ScanContext, path: &str, name: &str) -
             None
         }
     };
+
+    // Final fallback: in-process, read-only registry access. This is the
+    // only source that survives a Server Core image with neither `reg`
+    // nor PowerShell, and it never spawns a process.
+    let value = match value {
+        Some(value) => Some(value),
+        None if ctx.native_fallbacks_enabled() => match native_reg::native_reg_dword(path, name) {
+            Some(value) => {
+                attempts.push(attempt("native registry", format!("read {name}={value}")));
+                Some(value)
+            }
+            None => {
+                attempts.push(attempt(
+                    "native registry",
+                    format!("{name} missing or unreadable"),
+                ));
+                None
+            }
+        },
+        None => {
+            attempts.push(attempt("native registry", "skipped (injected context)"));
+            None
+        }
+    };
     QueryResult { value, attempts }
 }
 
-/// Read a DWORD through `reg query`, then PowerShell `Get-ItemProperty`.
+/// Read a DWORD through the ordered `reg query` -> PowerShell
+/// `Get-ItemProperty` -> native in-process registry chain.
 pub fn reg_query_dword(ctx: &mut ScanContext, path: &str, name: &str) -> Option<u32> {
     reg_query_dword_with_log(ctx, path, name).value
 }
@@ -219,10 +246,34 @@ pub fn reg_query_sz_with_log(ctx: &mut ScanContext, path: &str, name: &str) -> Q
             "unavailable or missing".into()
         },
     ));
+
+    // Final fallback: in-process, read-only registry access (see the
+    // DWORD helper above). Skipped in injected/deterministic contexts.
+    let value = match value {
+        Some(value) => Some(value),
+        None if ctx.native_fallbacks_enabled() => match native_reg::native_reg_sz(path, name) {
+            Some(value) if !value.is_empty() => {
+                attempts.push(attempt("native registry", format!("read {name}")));
+                Some(value)
+            }
+            _ => {
+                attempts.push(attempt(
+                    "native registry",
+                    format!("{name} missing or unreadable"),
+                ));
+                None
+            }
+        },
+        None => {
+            attempts.push(attempt("native registry", "skipped (injected context)"));
+            None
+        }
+    };
     QueryResult { value, attempts }
 }
 
-/// Read a string through `reg query`, then PowerShell `Get-ItemProperty`.
+/// Read a string through the ordered `reg query` -> PowerShell
+/// `Get-ItemProperty` -> native in-process registry chain.
 pub fn reg_query_sz(ctx: &mut ScanContext, path: &str, name: &str) -> Option<String> {
     reg_query_sz_with_log(ctx, path, name).value
 }

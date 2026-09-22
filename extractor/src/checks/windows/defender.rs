@@ -2,7 +2,10 @@
 //!
 //! Evidence comes from constant query-only PowerShell cmdlets
 //! (`Get-MpComputerStatus`, `Get-MpPreference`, `Get-HotFix`) and one
-//! registry read (`NoAutoUpdate`). Missing cmdlets, denied queries, or
+//! registry read (`NoAutoUpdate`). Every registry-backed check therefore
+//! inherits the three-step `reg query` -> PowerShell `Get-ItemProperty`
+//! -> native in-process registry chain, so a Server Core image without
+//! PowerShell still resolves. Missing cmdlets, denied queries, or
 //! malformed output degrade to `DegradedPartial`, never `Error`.
 //! Tamper protection has its single authoritative home here.
 
@@ -141,11 +144,17 @@ fn status_registry_fallback(
             false,
             attempts,
         ),
-        // AMServiceEnabled has no independent policy DWORD; no honest
-        // second source exists for it.
+        // AMServiceEnabled has no independent policy DWORD or registry
+        // value: the Antimalware Service's running state is only exposed
+        // through the Defender WMI/CIM status object (`Get-MpComputerStatus`)
+        // or the service manager. No honest second read-only source exists
+        // here, so this degrades with manual verification guidance. Verify
+        // out of band with: Get-Service WinDefend (PowerShell) or
+        // `sc query WinDefend`, which the WIN-SVC service checks already
+        // cover generically.
         _ => {
             let mut outcome = degraded(&format!(
-                "{field} unavailable (Get-MpComputerStatus) and no registry fallback exists"
+                "{field} unavailable (Get-MpComputerStatus) and no independent registry fallback exists; verify manually via Get-Service WinDefend or sc query WinDefend"
             ));
             outcome.fallback_log = attempts;
             outcome

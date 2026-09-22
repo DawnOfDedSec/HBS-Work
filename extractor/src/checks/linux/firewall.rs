@@ -2,7 +2,7 @@
 //! config depth second; missing managers are N/A with evidence of all
 //! probes.
 
-use crate::checks::{degraded, degraded_from_attempts, nok, ok};
+use crate::checks::{degraded, degraded_from_attempts, in_container, nok, not_applicable, ok};
 use crate::context::ScanContext;
 use crate::model::{CheckOutcome, FallbackAttempt, RegisteredCheck};
 use crate::platform::Os;
@@ -36,7 +36,13 @@ fn active_firewall(ctx: &mut ScanContext) -> Option<(&'static str, String)> {
     None
 }
 
+const CONTAINER_REASON: &str =
+    "host firewall service is outside the container; a container has no host firewall subsystem";
+
 fn fw_running(ctx: &mut ScanContext) -> CheckOutcome {
+    if in_container(ctx) {
+        return not_applicable(CONTAINER_REASON);
+    }
     let mut log = Vec::new();
     for svc in ["firewalld", "ufw", "nftables"] {
         match ctx.cmd("systemctl", &["is-active", svc]) {
@@ -57,6 +63,9 @@ fn fw_running(ctx: &mut ScanContext) -> CheckOutcome {
 }
 
 fn fw_enabled(ctx: &mut ScanContext) -> CheckOutcome {
+    if in_container(ctx) {
+        return not_applicable(CONTAINER_REASON);
+    }
     let mut log = Vec::new();
     let mut queried = false;
     for svc in ["firewalld", "nftables", "ufw"] {
@@ -78,6 +87,9 @@ fn fw_enabled(ctx: &mut ScanContext) -> CheckOutcome {
 }
 
 fn fw_default_zone(ctx: &mut ScanContext) -> CheckOutcome {
+    if in_container(ctx) {
+        return not_applicable(CONTAINER_REASON);
+    }
     if let Some(out) = ctx.cmd("firewall-cmd", &["--get-default-zone"]) {
         let zone = out.trim();
         let loc = "firewalld config".to_string();
@@ -96,6 +108,9 @@ fn fw_default_zone(ctx: &mut ScanContext) -> CheckOutcome {
 }
 
 fn ufw_default_deny(ctx: &mut ScanContext) -> CheckOutcome {
+    if in_container(ctx) {
+        return not_applicable(CONTAINER_REASON);
+    }
     if let Some(out) = ctx.cmd("ufw", &["status", "verbose"]) {
         let line = out.lines().find(|l| l.starts_with("Default:"));
         let loc = "ufw".to_string();
@@ -121,6 +136,9 @@ fn ufw_default_deny(ctx: &mut ScanContext) -> CheckOutcome {
 }
 
 fn nft_ruleset(ctx: &mut ScanContext) -> CheckOutcome {
+    if in_container(ctx) {
+        return not_applicable(CONTAINER_REASON);
+    }
     if let Some(out) = ctx.cmd("nft", &["list", "ruleset"]) {
         let rules = out.lines().filter(|l| l.contains("rule") || l.trim_start().starts_with("ip ") || l.trim_start().starts_with("tcp")).count();
         let loc = "nftables".to_string();

@@ -3,7 +3,7 @@
 //! hunting (spec §5, threat-informed layer).
 
 use crate::checks::linux::network::{sysctl_eq, sysctl_num_at_least};
-use crate::checks::{degraded, degraded_from_attempts, nok, ok, with_block};
+use crate::checks::{degraded, degraded_from_attempts, in_container, nok, not_applicable, ok, with_block};
 use crate::context::ScanContext;
 use crate::model::{CheckOutcome, FallbackAttempt, RegisteredCheck};
 use crate::platform::Os;
@@ -80,6 +80,11 @@ fn userns_restricted(ctx: &mut ScanContext) -> CheckOutcome {
 }
 
 fn lockdown_mode(ctx: &mut ScanContext) -> CheckOutcome {
+    if in_container(ctx) {
+        return not_applicable(
+            "kernel lockdown is a property of the shared host kernel; a container cannot set or observe it as its own control",
+        );
+    }
     if let Some(l) = ctx.read("/sys/kernel/security/lockdown") {
         let t = l.trim();
         if t.contains("[confidentiality]") {
@@ -95,6 +100,11 @@ fn lockdown_mode(ctx: &mut ScanContext) -> CheckOutcome {
 }
 
 fn module_sig_force(ctx: &mut ScanContext) -> CheckOutcome {
+    if in_container(ctx) {
+        return not_applicable(
+            "module signature enforcement is a property of the shared host kernel; a container cannot load modules or enforce signing",
+        );
+    }
     let kernel = super::sysctl_value(ctx, "kernel.tainted").map(|_| ());
     let _ = kernel;
     if let Some(cfg) = ctx.read("/boot/config-6.8.0-49-generic") {
@@ -289,10 +299,37 @@ fn rc_sweep(ctx: &mut ScanContext) -> CheckOutcome {
     }
 }
 
+/// PAM module directories for the running architecture, most specific
+/// first, then distro-generic fallbacks. Driven by `ctx.platform.arch` so
+/// arm64/armv7 hosts are not assumed to be x86_64.
+fn pam_module_dirs(arch: &str) -> Vec<&'static str> {
+    let a = arch.to_ascii_lowercase();
+    let mut dirs: Vec<&'static str> = Vec::new();
+    if a.contains("x86_64") || a.contains("amd64") {
+        dirs.push("/lib/x86_64-linux-gnu/security");
+        dirs.push("/usr/lib/x86_64-linux-gnu/security");
+    } else if a.contains("aarch64") || a.contains("arm64") {
+        dirs.push("/lib/aarch64-linux-gnu/security");
+        dirs.push("/usr/lib/aarch64-linux-gnu/security");
+    } else if a.starts_with("arm") || a.contains("armv") {
+        dirs.push("/lib/arm-linux-gnueabihf/security");
+        dirs.push("/usr/lib/arm-linux-gnueabihf/security");
+    } else if a.contains("i686") || a == "x86" {
+        dirs.push("/lib/i386-linux-gnu/security");
+        dirs.push("/usr/lib/i386-linux-gnu/security");
+    }
+    dirs.push("/lib/security");
+    dirs.push("/usr/lib/security");
+    dirs.push("/lib64/security");
+    dirs
+}
+
 fn pam_owned(ctx: &mut ScanContext) -> CheckOutcome {
-    let dir = "/lib/x86_64-linux-gnu/security";
-    let alt = "/lib64/security";
-    let target = if ctx.exists(dir) { dir } else if ctx.exists(alt) { alt } else { return degraded("PAM module directory not found") };
+    let dirs = pam_module_dirs(&ctx.platform.arch);
+    let target = match dirs.into_iter().find(|d| ctx.exists(d)) {
+        Some(d) => d,
+        None => return degraded("PAM module directory not found"),
+    };
     let rd = std::fs::read_dir(ctx.path(target));
     let mut unknown = Vec::new();
     let mut checked = 0;

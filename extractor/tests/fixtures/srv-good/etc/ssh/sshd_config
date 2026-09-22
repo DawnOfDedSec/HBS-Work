@@ -1,0 +1,3 @@
+Port 22
+ListenAddress 10.0.0.5
+PermitRootLogin no

@@ -88,7 +88,7 @@ fn registers_twelve_stable_account_policy_ids_without_kerberos_probe() {
     let ids: Vec<_> = registry.iter().map(|c| c.tc.id).collect();
     assert_eq!(
         ids,
-        (1..=12)
+        (1..=14)
             .map(|n| format!("WIN-ACC-{n:03}"))
             .collect::<Vec<_>>()
     );
@@ -191,7 +191,7 @@ fn missing_or_localized_net_accounts_degrades_with_accurate_level_fallbacks() {
             [
                 "NetUserModalsGet level 0",
                 "net accounts",
-                "policy registry/RSOP"
+                "local LSA account-policy values"
             ]
         );
 
@@ -213,7 +213,7 @@ fn missing_or_localized_net_accounts_degrades_with_accurate_level_fallbacks() {
             [
                 "NetUserModalsGet level 3",
                 "net accounts",
-                "policy registry/RSOP"
+                "local LSA account-policy values"
             ]
         );
     }
@@ -250,7 +250,7 @@ fn non_elevated_execution_evaluates_without_error() {
     let mut registry = Vec::new();
     windows::account::register(&mut registry);
     let results = run_all(&registry, &mut ctx);
-    assert_eq!(results.len(), 12);
+    assert_eq!(results.len(), 14);
     for r in &results {
         assert_ne!(
             r.status,
@@ -274,7 +274,7 @@ fn offline_environment_degrades_gracefully_without_panics() {
     let mut registry = Vec::new();
     windows::account::register(&mut registry);
     let results = run_all(&registry, &mut ctx);
-    assert_eq!(results.len(), 12);
+    assert_eq!(results.len(), 14);
     for r in &results {
         assert_eq!(
             r.status,
@@ -358,7 +358,7 @@ fn registry_backed_checks_handle_good_bad_and_missing_values() {
                         .iter()
                         .map(|attempt| attempt.source.as_str())
                         .collect::<Vec<_>>(),
-                    ["reg query", "PowerShell Get-ItemProperty"]
+                    ["reg query", "PowerShell Get-ItemProperty", "native registry"]
                 );
             }
         }
@@ -408,7 +408,7 @@ fn win_acc_012_restrict_anonymous_sam_explicit() {
             .iter()
             .map(|a| a.source.as_str())
             .collect::<Vec<_>>(),
-        ["reg query", "PowerShell Get-ItemProperty"]
+        ["reg query", "PowerShell Get-ItemProperty", "native registry"]
     );
 }
 
@@ -450,7 +450,12 @@ fn password_complexity_and_reversible_encryption_rsop() {
                 .iter()
                 .map(|a| a.source.as_str())
                 .collect::<Vec<_>>(),
-            [format!("RSOP {setting_name}")]
+            [
+                format!("RSOP {setting_name}"),
+                "reg query".to_string(),
+                "PowerShell Get-ItemProperty".to_string(),
+                "native registry".to_string()
+            ]
         );
     }
 }

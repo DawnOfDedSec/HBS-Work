@@ -8,6 +8,9 @@ use crate::platform::Os;
 
 pub const TIMEQ_FOREVER: u32 = u32::MAX;
 const LSA_PATH: &str = r"HKLM\SYSTEM\CurrentControlSet\Control\Lsa";
+/// Local security policy values that hold the account-policy booleans the
+/// RSOP view exposes as `PasswordComplexity`/`ClearTextPassword`.
+const CONTROL_LSA: &str = r"HKLM\SYSTEM\CurrentControlSet\Control\Lsa";
 const LANMAN_PARAMS_PATH: &str = r"HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters";
 const SECONDS_PER_DAY: u32 = 86_400;
 const SECONDS_PER_MINUTE: u32 = 60;
@@ -21,6 +24,281 @@ pub struct AccountPolicy {
     pub lockout_bad_count: u32,
     pub lockout_duration_minutes: u32,
     pub reset_lockout_count_minutes: u32,
+}
+
+/// Guard SID for the built-in `Power Users` group: membership is a local
+/// privilege-escalation tell left behind by GPP/legacy delegation abuse.
+pub const POWER_USERS_SID: &str = "S-1-5-32-547";
+/// The built-in Administrators group.
+pub const ADMINISTRATORS_GROUP: &str = "Administrators";
+
+/// Enumerate local Administrators members. Ordered chain:
+/// `net localgroup` -> PowerShell `Get-LocalGroupMember` -> native
+/// `NetLocalGroupGetMembers`. All sources are read-only; the native
+/// call is the one that survives a PowerShell-less image.
+#[cfg(windows)]
+fn local_administrators_native() -> Option<Vec<String>> {
+    use crate::checks::windows::native_accounts::native_local_group_members;
+    // The English well-known group name is resolved by the OS; on a
+    // non-English build this returns None and the caller degrades with
+    // the recorded attempts rather than guessing a name.
+    native_local_group_members(ADMINISTRATORS_GROUP)
+}
+
+#[cfg(not(windows))]
+fn local_administrators_native() -> Option<Vec<String>> {
+    None
+}
+
+/// Resolve a well-known SID string to its local account name.
+#[cfg(windows)]
+fn account_name_from_sid_string(sid_string: &str) -> Option<String> {
+    use std::ptr::null_mut;
+    use windows_sys::Win32::Security::Authorization::ConvertStringSidToSidA;
+    use windows_sys::Win32::Security::LookupAccountSidA;
+    let c = std::ffi::CString::new(sid_string).ok()?;
+    let mut sid = null_mut();
+    // SAFETY: `c` is a NUL-terminated SID string; `sid` is an out-pointer
+    // allocated by the API and freed with LocalFree below.
+    if unsafe { ConvertStringSidToSidA(c.as_ptr() as *const u8, &mut sid) } == 0 || sid.is_null() {
+        return None;
+    }
+    struct SidGuard(*mut core::ffi::c_void);
+    impl Drop for SidGuard {
+        fn drop(&mut self) {
+            // SAFETY: allocated by ConvertStringSidToSidA, freed once.
+            unsafe { windows_sys::Win32::Foundation::LocalFree(self.0) };
+        }
+    }
+    let _guard = SidGuard(sid as *mut core::ffi::c_void);
+
+    let mut name_size = 0u32;
+    let mut domain_size = 0u32;
+    let mut use_type: i32 = 0;
+    // SAFETY: size-query form with null buffers.
+    unsafe {
+        LookupAccountSidA(
+            std::ptr::null(),
+            sid,
+            null_mut(),
+            &mut name_size,
+            null_mut(),
+            &mut domain_size,
+            &mut use_type,
+        )
+    };
+    let mut name_buf = vec![0u8; name_size.max(1) as usize];
+    let mut domain_buf = vec![0u8; domain_size.max(1) as usize];
+    let mut name_len = name_size;
+    let mut domain_len = domain_size;
+    // SAFETY: buffers sized by the preceding query.
+    let ok = unsafe {
+        LookupAccountSidA(
+            std::ptr::null(),
+            sid,
+            name_buf.as_mut_ptr(),
+            &mut name_len,
+            domain_buf.as_mut_ptr(),
+            &mut domain_len,
+            &mut use_type,
+        )
+    };
+    if ok == 0 {
+        return None;
+    }
+    let nul = name_buf.iter().position(|b| *b == 0).unwrap_or(name_buf.len());
+    Some(String::from_utf8_lossy(&name_buf[..nul]).into_owned())
+}
+
+#[cfg(not(windows))]
+fn account_name_from_sid_string(_sid_string: &str) -> Option<String> {
+    None
+}
+
+fn local_administrators_group(ctx: &mut ScanContext) -> CheckOutcome {
+    let mut attempts = Vec::new();
+
+    if let Some(raw) = ctx.cmd("net", &["localgroup", ADMINISTRATORS_GROUP]) {
+        if raw.contains("---") {
+            let members = super::threat_persist::parse_localgroup_members(&raw);
+            attempts.push(FallbackAttempt {
+                source: format!("net localgroup {ADMINISTRATORS_GROUP}"),
+                outcome: format!("{} members", members.len()),
+            });
+            return with_attempts(admin_group_outcome(members, "net localgroup Administrators".into()), attempts);
+        }
+        attempts.push(FallbackAttempt {
+            source: format!("net localgroup {ADMINISTRATORS_GROUP}"),
+            outcome: "unparseable/localized output".into(),
+        });
+    } else {
+        attempts.push(FallbackAttempt {
+            source: format!("net localgroup {ADMINISTRATORS_GROUP}"),
+            outcome: "unavailable or blocked".into(),
+        });
+    }
+
+    let script = "Get-LocalGroupMember -Group 'Administrators' | Select-Object -ExpandProperty Name";
+    if let Some(raw) =
+        ctx.cmd("powershell", &["-NoProfile", "-NonInteractive", "-Command", script])
+    {
+        let members: Vec<String> = raw
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(str::to_string)
+            .collect();
+        attempts.push(FallbackAttempt {
+            source: "PowerShell Get-LocalGroupMember".into(),
+            outcome: format!("{} members", members.len()),
+        });
+        return with_attempts(admin_group_outcome(members, script.into()), attempts);
+    }
+    attempts.push(FallbackAttempt {
+        source: "PowerShell Get-LocalGroupMember".into(),
+        outcome: "unavailable or blocked".into(),
+    });
+
+    if ctx.native_fallbacks_enabled() {
+        if let Some(members) = local_administrators_native() {
+            attempts.push(FallbackAttempt {
+                source: "native NetLocalGroupGetMembers".into(),
+                outcome: format!("{} members", members.len()),
+            });
+            return with_attempts(
+                admin_group_outcome(members, "NetLocalGroupGetMembers(Administrators)".into()),
+                attempts,
+            );
+        }
+        attempts.push(FallbackAttempt {
+            source: "native NetLocalGroupGetMembers".into(),
+            outcome: "unreadable".into(),
+        });
+    } else {
+        attempts.push(FallbackAttempt {
+            source: "native NetLocalGroupGetMembers".into(),
+            outcome: "skipped (injected context)".into(),
+        });
+    }
+
+    degraded_with_attempts("local Administrators group unreadable", attempts)
+}
+
+fn admin_group_outcome(members: Vec<String>, repro: String) -> CheckOutcome {
+    let listing = if members.is_empty() {
+        "(none)".to_string()
+    } else {
+        members.join(", ")
+    };
+    if members.len() <= 1 {
+        ok(
+            format!("local Administrators count = {}: {listing}", members.len()),
+            "group:Administrators".into(),
+            repro,
+        )
+    } else {
+        nok(
+            format!("local Administrators count = {} (>1): {listing}", members.len()),
+            "group:Administrators".into(),
+            repro,
+        )
+    }
+}
+
+fn local_power_users_group(ctx: &mut ScanContext) -> CheckOutcome {
+    let mut attempts = Vec::new();
+    let group_name = account_name_from_sid_string(POWER_USERS_SID).unwrap_or_else(|| "Power Users".into());
+
+    if let Some(raw) = ctx.cmd("net", &["localgroup", &group_name]) {
+        if raw.contains("---") {
+            let members = super::threat_persist::parse_localgroup_members(&raw);
+            attempts.push(FallbackAttempt {
+                source: format!("net localgroup {group_name}"),
+                outcome: format!("{} members", members.len()),
+            });
+            return with_attempts(power_users_outcome(members, format!("net localgroup {group_name}")), attempts);
+        }
+        attempts.push(FallbackAttempt {
+            source: format!("net localgroup {group_name}"),
+            outcome: "unparseable/localized output".into(),
+        });
+    } else {
+        attempts.push(FallbackAttempt {
+            source: format!("net localgroup {group_name}"),
+            outcome: "unavailable or blocked".into(),
+        });
+    }
+
+    let script = format!(
+        "Get-LocalGroupMember -Group '{group_name}' | Select-Object -ExpandProperty Name"
+    );
+    if let Some(raw) = ctx.cmd(
+        "powershell",
+        &["-NoProfile", "-NonInteractive", "-Command", &script],
+    ) {
+        let members: Vec<String> = raw
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(str::to_string)
+            .collect();
+        attempts.push(FallbackAttempt {
+            source: "PowerShell Get-LocalGroupMember".into(),
+            outcome: format!("{} members", members.len()),
+        });
+        return with_attempts(power_users_outcome(members, script), attempts);
+    }
+    attempts.push(FallbackAttempt {
+        source: "PowerShell Get-LocalGroupMember".into(),
+        outcome: "unavailable or blocked".into(),
+    });
+
+    if ctx.native_fallbacks_enabled() {
+        if let Some(members) =
+            crate::checks::windows::native_accounts::native_local_group_members(&group_name)
+        {
+            attempts.push(FallbackAttempt {
+                source: "native NetLocalGroupGetMembers".into(),
+                outcome: format!("{} members", members.len()),
+            });
+            return with_attempts(
+                power_users_outcome(members, format!("NetLocalGroupGetMembers({group_name})")),
+                attempts,
+            );
+        }
+        attempts.push(FallbackAttempt {
+            source: "native NetLocalGroupGetMembers".into(),
+            outcome: "unreadable".into(),
+        });
+    } else {
+        attempts.push(FallbackAttempt {
+            source: "native NetLocalGroupGetMembers".into(),
+            outcome: "skipped (injected context)".into(),
+        });
+    }
+
+    degraded_with_attempts("local Power Users group unreadable", attempts)
+}
+
+fn power_users_outcome(members: Vec<String>, repro: String) -> CheckOutcome {
+    let listing = if members.is_empty() {
+        "(none)".to_string()
+    } else {
+        members.join(", ")
+    };
+    if members.is_empty() {
+        ok(
+            "no members in Power Users".into(),
+            "group:Power Users".into(),
+            repro,
+        )
+    } else {
+        nok(
+            format!("Power Users members (legacy privilege group): {listing}"),
+            "group:Power Users".into(),
+            repro,
+        )
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -234,6 +512,32 @@ pub fn register(reg: &mut Vec<RegisteredCheck>) {
         win,
         |ctx| registry_path_equals_one(ctx, LSA_PATH, "RestrictAnonymousSAM")
     );
+    check!(
+        reg,
+        "WIN-ACC-013",
+        "Local Administrators membership minimized",
+        "Local Administrators group has at most one member.",
+        "Every extra local administrator is another credential and persistence path.",
+        "Remove unnecessary direct/group memberships from local Administrators.",
+        Medium,
+        "Account Policy",
+        &["CIS 5.1", "CIS 5.4"],
+        win,
+        local_administrators_group
+    );
+    check!(
+        reg,
+        "WIN-ACC-014",
+        "Legacy Power Users group empty",
+        "The legacy Power Users group has no members.",
+        "Power Users retain dangerous legacy rights and are a classic escalation persistence spot.",
+        "Remove every member from the built-in Power Users group.",
+        Medium,
+        "Account Policy",
+        &["CIS 5.7", "Microsoft Security Baseline"],
+        win,
+        local_power_users_group
+    );
 }
 
 fn win(platform: &crate::platform::PlatformInfo) -> bool {
@@ -342,12 +646,20 @@ fn account_check(ctx: &mut ScanContext, field: AccountField) -> CheckOutcome {
 }
 
 fn account_policy_field(ctx: &mut ScanContext, field: AccountField) -> QueryResult<AccountPolicy> {
+    account_policy_field_native(ctx, field, account_policy_registry)
+}
+
+fn account_policy_field_native(
+    ctx: &mut ScanContext,
+    field: AccountField,
+    native_policy: fn(u32) -> Option<AccountPolicy>,
+) -> QueryResult<AccountPolicy> {
     let mut attempts = Vec::new();
     let lvl = field.modals_level();
     let modals_source = format!("NetUserModalsGet level {lvl}");
 
     if !ctx.has_injector() {
-        if let Some(policy) = net_user_modals_get_level(lvl) {
+        if let Some(policy) = native_policy(lvl) {
             attempts.push(FallbackAttempt {
                 source: modals_source,
                 outcome: format!("read level {lvl} account policy"),
@@ -393,16 +705,98 @@ fn account_policy_field(ctx: &mut ScanContext, field: AccountField) -> QueryResu
         }),
     }
 
-    // No documented registry/RSOP source exposes all seven local account-policy
-    // values. Record final fallback rather than infer incomplete state.
+    // Last read-only source: the local security policy values under
+    // HKLM\SYSTEM\CurrentControlSet\Control\Lsa, read through the shared
+    // reg -> PowerShell -> native chain. Only fields that actually exist
+    // as local LSA values are populated; the rest stay absent so the
+    // caller degrades rather than inventing a partial policy.
+    if !ctx.has_injector() {
+        if let Some(policy) = lsa_account_policy(field) {
+            attempts.push(FallbackAttempt {
+                source: "local LSA account-policy values".into(),
+                outcome: "read the local policy field".into(),
+            });
+            return QueryResult {
+                value: Some(policy),
+                attempts,
+            };
+        }
+    }
     attempts.push(FallbackAttempt {
-        source: "policy registry/RSOP".into(),
-        outcome: "no documented complete read-only source".into(),
+        source: "local LSA account-policy values".into(),
+        outcome: "no complete read-only value for this field".into(),
     });
     QueryResult {
         value: None,
         attempts,
     }
+}
+
+/// Read one account-policy field from the local LSA registry values via
+/// the shared reg -> PowerShell -> native helper chain.
+#[cfg(windows)]
+fn lsa_account_policy(field: AccountField) -> Option<AccountPolicy> {
+    let mut policy = empty_policy();
+    match field {
+        AccountField::LockoutBadCount => {
+            policy.lockout_bad_count = read_lsa_dword("LockoutBadCount")?;
+        }
+        AccountField::LockoutDuration => {
+            let seconds = read_lsa_dword("LockoutDuration")?;
+            policy.lockout_duration_minutes = convert_lockout_duration_seconds(seconds);
+        }
+        AccountField::ResetLockoutCount => {
+            let seconds = read_lsa_dword("ResetLockoutCount")?;
+            policy.reset_lockout_count_minutes = convert_observation_window_seconds(seconds);
+        }
+        AccountField::MinimumPasswordLength => {
+            policy.minimum_password_length = read_lsa_dword("MinimumPasswordLength")?;
+        }
+        AccountField::MaximumPasswordAge => {
+            let seconds = read_lsa_dword("MaximumPasswordAge")?;
+            policy.maximum_password_age_days = convert_max_password_age_seconds(seconds);
+        }
+        AccountField::MinimumPasswordAge => {
+            let seconds = read_lsa_dword("MinimumPasswordAge")?;
+            policy.minimum_password_age_days = convert_min_password_age_seconds(seconds);
+        }
+        AccountField::PasswordHistorySize => {
+            policy.password_history_size = read_lsa_dword("PasswordHistorySize")?;
+        }
+    }
+    Some(policy)
+}
+
+#[cfg(not(windows))]
+fn lsa_account_policy(_field: AccountField) -> Option<AccountPolicy> {
+    None
+}
+
+fn empty_policy() -> AccountPolicy {
+    AccountPolicy {
+        minimum_password_length: 0,
+        maximum_password_age_days: 0,
+        minimum_password_age_days: 0,
+        password_history_size: 0,
+        lockout_bad_count: 0,
+        lockout_duration_minutes: 0,
+        reset_lockout_count_minutes: 0,
+    }
+}
+
+/// Read a local LSA account-policy DWORD without going through a
+/// `ScanContext` (the native LSA value lives under the machine hive).
+#[cfg(windows)]
+fn read_lsa_dword(name: &str) -> Option<u32> {
+    use crate::checks::windows::native_reg::native_reg_dword;
+    native_reg_dword(CONTROL_LSA, name)
+}
+
+/// Registry-backed account policy is not a documented source for every
+/// field, so this variant always declines and lets the caller fall
+/// through to `lsa_account_policy`.
+fn account_policy_registry(_level: u32) -> Option<AccountPolicy> {
+    None
 }
 
 pub fn parse_net_accounts(output: &str) -> Option<AccountPolicy> {
@@ -477,14 +871,35 @@ fn registry_path_equals_one(ctx: &mut ScanContext, hive_path: &str, name: &str) 
 }
 
 fn password_complexity(ctx: &mut ScanContext) -> CheckOutcome {
-    rsop_boolean(ctx, "PasswordComplexity", true)
+    rsop_boolean(
+        ctx,
+        "PasswordComplexity",
+        true,
+        Some((CONTROL_LSA, "PasswordComplexity")),
+    )
 }
 
 fn reversible_encryption(ctx: &mut ScanContext) -> CheckOutcome {
-    rsop_boolean(ctx, "ClearTextPassword", false)
+    rsop_boolean(
+        ctx,
+        "ClearTextPassword",
+        false,
+        Some((CONTROL_LSA, "ClearTextPassword")),
+    )
 }
 
-fn rsop_boolean(ctx: &mut ScanContext, key: &str, want: bool) -> CheckOutcome {
+/// RSOP policy view first (applies domain GPO + local policy), then the
+/// local security policy registry value with the shared
+/// `reg query` -> PowerShell -> native chain when RSOP is unavailable
+/// (e.g. a Server Core image without the RSOP CIM provider). A local LSA
+/// value is authoritative for the local-policy case; when only a domain
+/// GPO sets it, the fallback degrades rather than guessing.
+fn rsop_boolean(
+    ctx: &mut ScanContext,
+    key: &str,
+    want: bool,
+    reg_fallback: Option<(&str, &str)>,
+) -> CheckOutcome {
     let script = format!(
         "(Get-CimInstance -Namespace 'root\\rsop\\computer' -ClassName RSOP_SecuritySettingBoolean -Filter \"KeyName='{key}'\" -ErrorAction SilentlyContinue | Sort-Object Precedence | Select-Object -First 1 -ExpandProperty Setting)"
     );
@@ -511,10 +926,46 @@ fn rsop_boolean(ctx: &mut ScanContext, key: &str, want: bool) -> CheckOutcome {
             };
             with_attempts(outcome, attempts)
         }
-        None => degraded_with_attempts(
-            &format!("{key} unavailable through read-only RSOP policy evidence"),
-            attempts,
-        ),
+        None => match reg_fallback {
+            Some((path, name)) => {
+                let query = reg_query_dword_with_log(ctx, path, name);
+                let mut attempts = attempts;
+                attempts.extend(query.attempts);
+                match query.value {
+                    Some(value) => {
+                        let passed = (value != 0) == want;
+                        let evidence = format!(
+                            "{key} = {value} via local security policy (expected {})",
+                            if want { "enabled" } else { "disabled" }
+                        );
+                        let outcome = if passed {
+                            ok(
+                                evidence,
+                                format!(r"registry:{path}\{name}"),
+                                format!("reg query {path} /v {name}"),
+                            )
+                        } else {
+                            nok(
+                                evidence,
+                                format!(r"registry:{path}\{name}"),
+                                format!("reg query {path} /v {name}"),
+                            )
+                        };
+                        with_attempts(outcome, attempts)
+                    }
+                    None => degraded_with_attempts(
+                        &format!(
+                            "{key} unavailable through read-only RSOP policy evidence or local LSA registry value"
+                        ),
+                        attempts,
+                    ),
+                }
+            }
+            None => degraded_with_attempts(
+                &format!("{key} unavailable through read-only RSOP policy evidence"),
+                attempts,
+            ),
+        },
     }
 }
 
@@ -535,73 +986,3 @@ fn degraded_with_attempts(reason: &str, attempts: Vec<FallbackAttempt>) -> Check
     with_attempts(degraded(reason), attempts)
 }
 
-#[cfg(windows)]
-fn net_user_modals_get_level(level: u32) -> Option<AccountPolicy> {
-    use std::ptr::{null, null_mut};
-    use windows_sys::Win32::NetworkManagement::NetManagement::{
-        NetApiBufferFree, NetUserModalsGet, USER_MODALS_INFO_0, USER_MODALS_INFO_3,
-    };
-
-    struct NetBuffer(*mut u8);
-    impl Drop for NetBuffer {
-        fn drop(&mut self) {
-            if !self.0.is_null() {
-                // SAFETY: buffer is returned by NetUserModalsGet and freed once.
-                unsafe { NetApiBufferFree(self.0.cast()) };
-            }
-        }
-    }
-
-    fn query<T: Copy>(level: u32) -> Option<T> {
-        let mut raw = null_mut();
-        // SAFETY: null server means local computer; API initializes `raw` on
-        // success. We copy documented POD structure before NetApiBufferFree.
-        if unsafe { NetUserModalsGet(null(), level, &mut raw) } != 0 || raw.is_null() {
-            return None;
-        }
-        let buffer = NetBuffer(raw);
-        // SAFETY: successful call for requested level returns corresponding T.
-        Some(unsafe { *(buffer.0.cast::<T>()) })
-    }
-
-    match level {
-        0 => {
-            let base: USER_MODALS_INFO_0 = query(0)?;
-            Some(AccountPolicy {
-                minimum_password_length: base.usrmod0_min_passwd_len,
-                maximum_password_age_days: convert_max_password_age_seconds(
-                    base.usrmod0_max_passwd_age,
-                ),
-                minimum_password_age_days: convert_min_password_age_seconds(
-                    base.usrmod0_min_passwd_age,
-                ),
-                password_history_size: base.usrmod0_password_hist_len,
-                lockout_bad_count: 0,
-                lockout_duration_minutes: 0,
-                reset_lockout_count_minutes: 0,
-            })
-        }
-        3 => {
-            let lockout: USER_MODALS_INFO_3 = query(3)?;
-            Some(AccountPolicy {
-                minimum_password_length: 0,
-                maximum_password_age_days: 0,
-                minimum_password_age_days: 0,
-                password_history_size: 0,
-                lockout_bad_count: lockout.usrmod3_lockout_threshold,
-                lockout_duration_minutes: convert_lockout_duration_seconds(
-                    lockout.usrmod3_lockout_duration,
-                ),
-                reset_lockout_count_minutes: convert_observation_window_seconds(
-                    lockout.usrmod3_lockout_observation_window,
-                ),
-            })
-        }
-        _ => None,
-    }
-}
-
-#[cfg(not(windows))]
-fn net_user_modals_get_level(_level: u32) -> Option<AccountPolicy> {
-    None
-}

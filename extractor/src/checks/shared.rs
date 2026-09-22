@@ -1,7 +1,10 @@
 //! GEN-INV: shared informational inventory — context evidence, never
 //! pass/fail (spec §5). Collected on every OS where the sources exist.
 
-use crate::checks::{degraded, degraded_from_attempts, ok};
+use crate::checks::{
+    degraded, degraded_from_attempts, hypervisor_label, in_container, not_applicable, ok, on_vm,
+};
+use crate::checks::windows::native_accounts;
 use crate::checks::windows::{program_data, system_root};
 use crate::context::ScanContext;
 use crate::model::{CheckOutcome, FallbackAttempt, RegisteredCheck};
@@ -44,6 +47,19 @@ fn inv_ok(evidence: String, location: String, repro: String) -> CheckOutcome {
     ok(evidence, location, repro)
 }
 
+/// `inv_ok` that preserves the ordered fallback attempts on success too,
+/// so a resolved check still records which source answered.
+fn inv_ok_logged(
+    evidence: String,
+    location: String,
+    repro: String,
+    log: Vec<FallbackAttempt>,
+) -> CheckOutcome {
+    let mut outcome = inv_ok(evidence, location, repro);
+    outcome.fallback_log = log;
+    outcome
+}
+
 fn one_fallback(source: &str, outcome: &str) -> Vec<FallbackAttempt> {
     vec![FallbackAttempt { source: source.into(), outcome: outcome.into() }]
 }
@@ -80,6 +96,8 @@ fn listening_ports(ctx: &mut ScanContext) -> CheckOutcome {
 }
 
 fn installed_packages(ctx: &mut ScanContext) -> CheckOutcome {
+    // Linux distro package managers first (unchanged), then the
+    // PowerShell path on Windows hosts.
     let attempts: [(&str, &str, &[&str]); 5] = [
         ("dpkg-query -W", "dpkg-query", &["-W"]),
         ("rpm -qa", "rpm", &["-qa"]),
@@ -93,11 +111,95 @@ fn installed_packages(ctx: &mut ScanContext) -> CheckOutcome {
             let count = out.lines().filter(|l| !l.trim().is_empty()).count();
             log.push(FallbackAttempt { source: label.into(), outcome: format!("{count} packages").into() });
             let sample: Vec<&str> = out.lines().take(20).collect();
-            return inv_ok(format!("{count} packages installed; first entries: {}", sample.join(", ")), label.into(), label.into());
+            return inv_ok_logged(format!("{count} packages installed; first entries: {}", sample.join(", ")), label.into(), label.into(), log);
         }
         log.push(FallbackAttempt { source: label.into(), outcome: "unavailable".into() });
     }
-    degraded_from_attempts(log, "no package manager available (dpkg/rpm/apk/pacman/powershell all failed)")
+    if !linux_only(ctx) {
+        // Windows sources that need no package manager. Win32_Product via
+        // CIM first (PowerShell), then the registry Uninstall keys read
+        // natively — the only path that survives a PowerShell-less image.
+        let cim_args: [&str; 4] = [
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Get-CimInstance -ClassName Win32_Product | Select-Object -ExpandProperty Name",
+        ];
+        if let Some(out) = ctx.cmd("powershell", &cim_args) {
+            let count = out.lines().filter(|l| !l.trim().is_empty()).count();
+            log.push(FallbackAttempt { source: "Get-CimInstance Win32_Product".into(), outcome: format!("{count} packages").into() });
+            let sample: Vec<&str> = out.lines().take(20).collect();
+            return inv_ok_logged(format!("{count} packages installed; first entries: {}", sample.join(", ")), "cim:Win32_Product".into(), "Get-CimInstance Win32_Product".into(), log);
+        }
+        log.push(FallbackAttempt { source: "Get-CimInstance Win32_Product".into(), outcome: "unavailable".into() });
+
+        if ctx.native_fallbacks_enabled() {
+            match windows_uninstall_entries() {
+                Some(entries) if !entries.is_empty() => {
+                    log.push(FallbackAttempt { source: "native registry Uninstall keys".into(), outcome: format!("{} packages", entries.len()) });
+                    let sample: Vec<&str> = entries.iter().take(20).map(String::as_str).collect();
+                    return inv_ok_logged(
+                        format!("{} packages installed; first entries: {}", entries.len(), sample.join(", ")),
+                        "registry:Uninstall".into(),
+                        "native registry Uninstall enumeration".into(),
+                        log,
+                    );
+                }
+                Some(_) => log.push(FallbackAttempt { source: "native registry Uninstall keys".into(), outcome: "no DisplayName entries".into() }),
+                None => log.push(FallbackAttempt { source: "native registry Uninstall keys".into(), outcome: "unreadable".into() }),
+            }
+        } else {
+            log.push(FallbackAttempt { source: "native registry Uninstall keys".into(), outcome: "skipped (injected context)".into() });
+        }
+    }
+    degraded_from_attempts(log, "no package manager available (dpkg/rpm/apk/pacman/powershell/CIM/native registry all failed)")
+}
+
+/// Enumerate installed programs from the registry Uninstall keys, which
+/// exist on every Windows build and need no package manager:
+/// `HKLM` native + `WOW6432Node` (32-bit view) + `HKCU`.
+fn windows_uninstall_entries() -> Option<Vec<String>> {
+    use crate::checks::windows::native_reg::{
+        native_reg_enum_subkeys_view, native_reg_sz_view, RegView,
+    };
+    const UNINSTALL: &str = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
+    let locations: [(&str, RegView); 3] = [
+        ("HKLM", RegView::Default),
+        ("HKLM", RegView::Wow64_32),
+        ("HKCU", RegView::Default),
+    ];
+    let mut entries: Vec<String> = Vec::new();
+    let mut opened_any = false;
+    for (hive, view) in locations {
+        let path = format!(r"{hive}\{UNINSTALL}");
+        let Some(subkeys) = native_reg_enum_subkeys_view(&path, view) else {
+            continue;
+        };
+        opened_any = true;
+        for sub in subkeys {
+            let key = format!(r"{path}\{sub}");
+            let Some(name) = native_reg_sz_view(&key, "DisplayName", view) else {
+                continue;
+            };
+            let name = name.trim();
+            if name.is_empty() {
+                continue;
+            }
+            let entry = match native_reg_sz_view(&key, "DisplayVersion", view) {
+                Some(version) if !version.trim().is_empty() => {
+                    format!("{name} {}", version.trim())
+                }
+                _ => name.to_string(),
+            };
+            entries.push(entry);
+        }
+    }
+    if !opened_any {
+        return None;
+    }
+    entries.sort();
+    entries.dedup();
+    Some(entries)
 }
 
 fn users_groups(ctx: &mut ScanContext) -> CheckOutcome {
@@ -107,21 +209,105 @@ fn users_groups(ctx: &mut ScanContext) -> CheckOutcome {
             log.push(FallbackAttempt { source: "/etc/passwd".into(), outcome: "read".into() });
             let count = passwd.lines().count();
             let names: Vec<&str> = passwd.lines().filter_map(|l| l.split(':').next()).take(20).collect();
-            return inv_ok(format!("{count} local users: {}", names.join(", ")), "/etc/passwd".into(), "cat /etc/passwd".into());
+            return inv_ok_logged(format!("{count} local users: {}", names.join(", ")), "/etc/passwd".into(), "cat /etc/passwd".into(), log);
         }
         log.extend(one_fallback("/etc/passwd", "missing"));
         if let Some(out) = ctx.cmd("getent", &["passwd"]) {
             log.push(FallbackAttempt { source: "getent passwd".into(), outcome: "read".into() });
-            return inv_ok(format!("{} users via getent", out.lines().count()), "getent passwd".into(), "getent passwd".into());
+            return inv_ok_logged(format!("{} users via getent", out.lines().count()), "getent passwd".into(), "getent passwd".into(), log);
         }
         log.push(FallbackAttempt { source: "getent passwd".into(), outcome: "unavailable".into() });
-    } else if let Some(out) = ctx.cmd("net", &["user"]) {
-        log.push(FallbackAttempt { source: "net user".into(), outcome: "read".into() });
-        return inv_ok(out.lines().skip(4).take(30).collect::<Vec<_>>().join(" "), "net user".into(), "net user".into());
-    } else {
-        log.extend(one_fallback("net user", "unavailable"));
+        return degraded_from_attempts(log, "local user/group enumeration unavailable (/etc/passwd, getent failed)");
     }
-    degraded_from_attempts(log, "local user/group enumeration unavailable (/etc/passwd, getent, net user failed)")
+
+    // Windows chain: net user / net localgroup, then PowerShell
+    // Get-LocalUser / Get-LocalGroup, then the native NetAPI account
+    // enumeration, then the registry ProfileList as a last resort.
+    if let Some(out) = ctx.cmd("net", &["user"]) {
+        log.push(FallbackAttempt { source: "net user".into(), outcome: "read".into() });
+        return inv_ok_logged(out.lines().skip(4).take(30).collect::<Vec<_>>().join(" "), "net user".into(), "net user".into(), log);
+    }
+    log.push(FallbackAttempt { source: "net user".into(), outcome: "unavailable".into() });
+    if let Some(out) = ctx.cmd("net", &["localgroup"]) {
+        log.push(FallbackAttempt { source: "net localgroup".into(), outcome: "read".into() });
+        return inv_ok_logged(out.lines().skip(4).take(30).collect::<Vec<_>>().join(" "), "net localgroup".into(), "net localgroup".into(), log);
+    }
+    log.push(FallbackAttempt { source: "net localgroup".into(), outcome: "unavailable".into() });
+
+    let ps_sources: [(&str, &str, &str); 2] = [
+        ("PowerShell Get-LocalUser", "Get-LocalUser | Select-Object -ExpandProperty Name", "Get-LocalUser"),
+        ("PowerShell Get-LocalGroup", "Get-LocalGroup | Select-Object -ExpandProperty Name", "Get-LocalGroup"),
+    ];
+    for (label, script, source) in ps_sources {
+        if let Some(out) = ctx.cmd("powershell", &["-NoProfile", "-NonInteractive", "-Command", script]) {
+            let count = out.lines().filter(|l| !l.trim().is_empty()).count();
+            log.push(FallbackAttempt { source: label.into(), outcome: format!("{count} entries").into() });
+            let sample: Vec<&str> = out.lines().take(30).collect();
+            return inv_ok_logged(format!("{count} local entries: {}", sample.join(", ")), source.into(), source.into(), log);
+        }
+        log.push(FallbackAttempt { source: label.into(), outcome: "unavailable".into() });
+    }
+
+    if ctx.native_fallbacks_enabled() {
+        let users = native_accounts::native_enum_local_users();
+        let groups = native_accounts::native_enum_local_groups();
+        if users.is_none() && groups.is_none() {
+            log.push(FallbackAttempt { source: "native NetUserEnum/NetLocalGroupEnum".into(), outcome: "unreadable".into() });
+        } else {
+            let ucount = users.as_ref().map_or(0, |u| u.len());
+            let gcount = groups.as_ref().map_or(0, |g| g.len());
+            log.push(FallbackAttempt { source: "native NetUserEnum/NetLocalGroupEnum".into(), outcome: format!("{ucount} users, {gcount} groups") });
+            let mut names: Vec<String> = users.unwrap_or_default();
+            names.extend(groups.unwrap_or_default());
+            let sample: Vec<&str> = names.iter().take(30).map(String::as_str).collect();
+            return inv_ok_logged(
+                format!("{ucount} local users, {gcount} local groups: {}", sample.join(", ")),
+                "native:NetUserEnum/NetLocalGroupEnum".into(),
+                "NetUserEnum/NetLocalGroupEnum".into(),
+                log,
+            );
+        }
+        match windows_profile_users() {
+            Some(profiles) if !profiles.is_empty() => {
+                log.push(FallbackAttempt { source: "registry ProfileList".into(), outcome: format!("{} profiles", profiles.len()) });
+                let sample: Vec<&str> = profiles.iter().take(30).map(String::as_str).collect();
+                return inv_ok_logged(
+                    format!("{} user profiles (registry ProfileList): {}", profiles.len(), sample.join(", ")),
+                    "registry:ProfileList".into(),
+                    "native registry ProfileList".into(),
+                    log,
+                );
+            }
+            Some(_) => log.push(FallbackAttempt { source: "registry ProfileList".into(), outcome: "no profiles".into() }),
+            None => log.push(FallbackAttempt { source: "registry ProfileList".into(), outcome: "unreadable".into() }),
+        }
+    } else {
+        log.push(FallbackAttempt { source: "native NetUserEnum/NetLocalGroupEnum".into(), outcome: "skipped (injected context)".into() });
+    }
+
+    degraded_from_attempts(log, "local user/group enumeration unavailable (/etc/passwd, getent, net user, Get-LocalUser, NetUserEnum, ProfileList failed)")
+}
+
+/// Last-resort user list from `HKLM\...\ProfileList` subkeys' recorded
+/// `ProfileImagePath` (the profile directory name).
+fn windows_profile_users() -> Option<Vec<String>> {
+    use crate::checks::windows::native_reg::{native_reg_enum_subkeys, native_reg_sz};
+    const PROFILE_LIST: &str =
+        r"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList";
+    let subkeys = native_reg_enum_subkeys(PROFILE_LIST)?;
+    let mut names = Vec::new();
+    for sub in subkeys {
+        let key = format!(r"{PROFILE_LIST}\{sub}");
+        if let Some(path) = native_reg_sz(&key, "ProfileImagePath") {
+            if let Some(name) = path.rsplit(['\\', '/']).next() {
+                let name = name.trim();
+                if !name.is_empty() {
+                    names.push(name.to_string());
+                }
+            }
+        }
+    }
+    Some(names)
 }
 
 fn scheduled_tasks(ctx: &mut ScanContext) -> CheckOutcome {
@@ -291,6 +477,11 @@ fn log_forwarding(ctx: &mut ScanContext) -> CheckOutcome {
 }
 
 fn secure_boot(ctx: &mut ScanContext) -> CheckOutcome {
+    if in_container(ctx) {
+        return not_applicable(
+            "Secure Boot is a firmware control; a container shares the host boot chain and exposes no firmware interface",
+        );
+    }
     let mut log = Vec::new();
     if let Some(out) = ctx.cmd("mokutil", &["--sb-state"]) {
         log.push(FallbackAttempt { source: "mokutil --sb-state".into(), outcome: "read".into() });
@@ -309,18 +500,41 @@ fn secure_boot(ctx: &mut ScanContext) -> CheckOutcome {
         }
         log.push(FallbackAttempt { source: "Confirm-SecureBootUEFI".into(), outcome: "unavailable (BIOS or non-admin)".into() });
     }
-    degraded("Secure Boot state not determinable on this host (BIOS/vm/container)")
+    if on_vm(ctx) {
+        return not_applicable(&format!(
+            "this virtual machine ({}) exposes no Secure Boot interface (no efivars/mokutil)",
+            hypervisor_label(ctx)
+        ));
+    }
+    degraded("Secure Boot state not determinable on this host (legacy BIOS or restricted firmware)")
 }
 
 fn tpm_state(ctx: &mut ScanContext) -> CheckOutcome {
+    if in_container(ctx) {
+        return not_applicable(
+            "TPM is a host hardware device; a container has no TPM or passthrough device to assess",
+        );
+    }
     if linux_only(ctx) {
-        if ctx.exists("/sys/class/tpm/tpm0") {
-            return inv_ok("TPM device present (/sys/class/tpm/tpm0)".into(), "/sys/class/tpm".into(), "ls /sys/class/tpm".into());
+        if ctx.exists("/sys/class/tpm/tpm0") || ctx.exists("/sys/class/tpm") {
+            return inv_ok("TPM device present (/sys/class/tpm)".into(), "/sys/class/tpm".into(), "ls /sys/class/tpm".into());
+        }
+        if on_vm(ctx) {
+            return not_applicable(&format!(
+                "this virtual machine ({}) exposes no TPM device (no virtual TPM configured)",
+                hypervisor_label(ctx)
+            ));
         }
         return inv_ok("no TPM device found".into(), "/sys/class/tpm".into(), "ls /sys/class/tpm".into());
     }
     if let Some(out) = ctx.cmd("powershell", &["-NoProfile", "-NonInteractive", "-Command", "Get-Tpm | Select-Object TpmReady,TpmPresent | ConvertTo-Json -Compress"]) {
         return inv_ok(format!("TPM: {out}"), "Get-Tpm".into(), "Get-Tpm".into());
+    }
+    if on_vm(ctx) {
+        return not_applicable(&format!(
+            "this virtual machine ({}) exposes no TPM device (no virtual TPM configured)",
+            hypervisor_label(ctx)
+        ));
     }
     degraded("TPM state needs admin PowerShell (Get-Tpm)")
 }
@@ -377,6 +591,11 @@ fn priv_groups(ctx: &mut ScanContext) -> CheckOutcome {
 }
 
 fn firewall_profile(ctx: &mut ScanContext) -> CheckOutcome {
+    if in_container(ctx) {
+        return not_applicable(
+            "the host firewall service is outside the container; netfilter policy is owned by the host or network namespace, not the container",
+        );
+    }
     let mut log = Vec::new();
     if linux_only(ctx) {
         for svc in ["firewalld", "ufw", "nftables"] {
@@ -465,6 +684,11 @@ fn backup_agent(ctx: &mut ScanContext) -> CheckOutcome {
 }
 
 fn kernel_modules(ctx: &mut ScanContext) -> CheckOutcome {
+    if in_container(ctx) {
+        return not_applicable(
+            "kernel modules belong to the shared host kernel; a container cannot load, unload, or own a module inventory",
+        );
+    }
     if let Some(out) = ctx.cmd("lsmod", &[]) {
         let count = out.lines().count().saturating_sub(1);
         return inv_ok(format!("{count} modules loaded"), "lsmod".into(), "lsmod".into());

@@ -12,7 +12,7 @@
 //
 // Run: cd dashboard && bun run ../scripts/docker-e2e-hosts-windows.ts
 
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -20,7 +20,9 @@ const repo = resolve(import.meta.dir, "..");
 const dashboardDir = join(repo, "dashboard");
 const PORT = Number(process.env.HBS_E2E_PORT ?? (20000 + Math.floor(Math.random() * 20000)));
 const BASE = `http://127.0.0.1:${PORT}`;
-const DOCKER_BASE = `http://host.docker.internal:${PORT}`;
+// Windows containers cannot resolve host.docker.internal; use the host IP that
+// the container's NAT network can reach (resolved after the engine check).
+let DOCKER_BASE = `http://172.22.224.1:${PORT}`;
 const ISOLATION = process.env.HBS_WINDOWS_ISOLATION ?? "hyperv";
 const work = mkdtempSync(join(tmpdir(), "hbs-win-hosts-"));
 const outDir = join(work, "out");
@@ -28,8 +30,11 @@ const binDir = join(dashboardDir, "binaries");
 mkdirSync(outDir, { recursive: true });
 mkdirSync(binDir, { recursive: true });
 
+// Server Core images include the OS tools the checks use (reg.exe, netsh,
+// wevtutil, PowerShell). nanoserver is intentionally excluded: it is too
+// minimal and the extractor exits 0xC0000135 (STATUS_DLL_NOT_FOUND) there.
 const IMAGES = (process.env.HBS_WINDOWS_IMAGES ??
-  "mcr.microsoft.com/windows/servercore:ltsc2019,mcr.microsoft.com/windows/servercore:ltsc2022,mcr.microsoft.com/windows/servercore:ltsc2025,mcr.microsoft.com/windows/nanoserver:ltsc2022,mcr.microsoft.com/windows/nanoserver:ltsc2025")
+  "mcr.microsoft.com/windows/servercore:ltsc2019,mcr.microsoft.com/windows/servercore:ltsc2022,mcr.microsoft.com/windows/servercore:ltsc2025")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
@@ -56,6 +61,15 @@ if (dockerOsType() !== "windows") {
   process.exit(2);
 }
 
+// A Windows container reaches the host via the NAT gateway (not host.docker.internal).
+{
+  const gateway = Bun.spawnSync([
+    "docker", "network", "inspect", "nat", "--format", "{{(index .IPAM.Config 0).Gateway}}",
+  ]).stdout.toString().trim();
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(gateway)) DOCKER_BASE = `http://${gateway}:${PORT}`;
+  console.log(`windows containers will reach the dashboard at ${DOCKER_BASE}`);
+}
+
 const template = join(repo, "extractor", "target", "x86_64-pc-windows-msvc", "debug", "hbs-extractor.exe");
 if (!existsSync(template)) {
   console.error("missing static windows binary; build it with:");
@@ -64,6 +78,7 @@ if (!existsSync(template)) {
 }
 copyFileSync(template, join(binDir, "windows-amd64"));
 
+const dashLogFd = openSync(join(work, "dashboard.log"), "w");
 const server = Bun.spawn(["bun", "server/index.ts"], {
   cwd: dashboardDir,
   env: {
@@ -74,8 +89,8 @@ const server = Bun.spawn(["bun", "server/index.ts"], {
     HBS_DATA_ROOT: join(work, "data"),
     HBS_BOOTSTRAP_ADMIN: "false",
   },
-  stdout: "pipe",
-  stderr: "pipe",
+  stdout: dashLogFd,
+  stderr: dashLogFd,
 });
 
 let cookie = "";
@@ -141,9 +156,10 @@ try {
       [
         "@echo off",
         "setlocal",
-        "where curl >nul 2>nul",
-        "if %errorlevel%==0 (",
-        `  curl -fsSL "%HBS_URL%/api/issuances/%HBS_ISSUANCE%/download?token=%HBS_DOWNLOAD_TOKEN%" -o C:\\hbs.exe`,
+        `if exist "%SystemRoot%\\System32\\curl.exe" (`,
+        `  echo URL=%HBS_URL% ISS=%HBS_ISSUANCE%`,
+        `  "%SystemRoot%\\System32\\curl.exe" -fsSL "%HBS_URL%/api/issuances/%HBS_ISSUANCE%/download?token=%HBS_DOWNLOAD_TOKEN%" -o C:\\hbs.exe`,
+        `  echo CURL_EXIT=%errorlevel%`,
         ") else (",
         `  powershell -NoProfile -Command "Invoke-WebRequest -UseBasicParsing -Uri '%HBS_URL%/api/issuances/%HBS_ISSUANCE%/download?token=%HBS_DOWNLOAD_TOKEN%' -OutFile 'C:\\hbs.exe'"`,
         ")",
@@ -184,15 +200,15 @@ try {
   const hosts = (await (await api("/api/hosts")).json()) as { hosts?: unknown[] };
   check((hosts.hosts?.length ?? 0) >= 1, `dashboard routed ${hosts.hosts?.length ?? 0} Windows hosts`);
 } finally {
-  server.kill();
+  for (let i = 0; i < 5 && server.exitCode === null; i += 1) {
+    server.kill();
+    await Bun.sleep(200);
+  }
   await server.exited.catch(() => {});
   try {
-    writeFileSync(
-      join(work, "dashboard.log"),
-      `${await new Response(server.stdout as ReadableStream).text()}${await new Response(server.stderr as ReadableStream).text()}`,
-    );
+    closeSync(dashLogFd);
   } catch {
-    // stream closed
+    // already closed
   }
 }
 
@@ -203,3 +219,4 @@ if (failures.length > 0) {
   process.exit(1);
 }
 console.log(`WINDOWS CONTAINER SWEEP PASS: ${validated} image(s) validated`);
+process.exit(0);

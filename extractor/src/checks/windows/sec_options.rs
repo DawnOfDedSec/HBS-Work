@@ -1,10 +1,12 @@
 //! WIN-SEC: Windows security options checks using read-only registry evidence.
 //!
-//! Evaluated strictly via `reg query` -> PowerShell `Get-ItemProperty`
-//! fallback reads. Missing or unavailable evidence returns `DegradedPartial`,
-//! never `Error`. No writes, no `secedit /export`, no temp files.
+//! Evaluated strictly via the ordered `reg query` -> PowerShell
+//! `Get-ItemProperty` -> native in-process registry fallback chain, so
+//! every option still resolves on an image without `reg` or PowerShell.
+//! Missing or unavailable evidence returns `DegradedPartial`, never
+//! `Error`. No writes, no `secedit /export`, no temp files.
 
-use super::{reg_query_dword_with_log, reg_query_sz_with_log, QueryResult};
+use super::{reg_query_sz_with_log, QueryResult};
 use crate::checks::{degraded, nok, ok};
 use crate::context::ScanContext;
 use crate::model::{CheckOutcome, FallbackAttempt, RegisteredCheck};

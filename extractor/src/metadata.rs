@@ -9,6 +9,20 @@ use serde_json::{json, Map, Value};
 pub fn collect(ctx: &mut ScanContext) -> Value {
     let mut m = Map::new();
     m.insert("elevated".into(), json!(ctx.elevated));
+    // Environment classification travels with the system fingerprint so
+    // the dashboard can distinguish host-only controls that were N/A.
+    m.insert(
+        "environment".into(),
+        json!(format!("{:?}", ctx.platform.environment.kind)),
+    );
+    m.insert(
+        "hypervisor".into(),
+        json!(ctx.platform.environment.hypervisor.clone()),
+    );
+    m.insert(
+        "environment_signals".into(),
+        json!(ctx.platform.environment.signals.clone()),
+    );
     if ctx.linux() {
         collect_linux(ctx, &mut m);
     } else {

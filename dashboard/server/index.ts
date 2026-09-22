@@ -17,22 +17,19 @@ import { registerExportRoutes } from "./exports/xlsx";
 import { reportEvents } from "./sse";
 import { streamSSE } from "hono/streaming";
 
-function flag(name: string): string | undefined {
-  const index = process.argv.indexOf(name);
-  if (index < 0) return undefined;
-  const value = process.argv[index + 1];
-  if (!value || value.startsWith("--")) throw new Error(`${name} requires a path`);
-  return value;
+import { networkInterfaces } from "node:os";
+import { USAGE, isExposed, parseServerOptions } from "./options";
+
+const parsed = parseServerOptions(process.argv, process.env);
+if (!parsed.ok) {
+  console.error(`hbs-dashboard: ${parsed.error}\n\n${USAGE}`);
+  process.exit(2);
 }
-
-const port = Number(process.env.PORT ?? 3000);
-const host = process.env.HOST ?? "127.0.0.1";
-const dbPath = process.env.HBS_DB_PATH ?? resolve("server/data/hbs.sqlite");
-const tlsCertPath = flag("--tls-cert") ?? process.env.HBS_TLS_CERT;
-const tlsKeyPath = flag("--tls-key") ?? process.env.HBS_TLS_KEY;
-
-if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`invalid PORT: ${process.env.PORT}`);
-if (!!tlsCertPath !== !!tlsKeyPath) throw new Error("TLS requires both --tls-cert and --tls-key (or HBS_TLS_CERT and HBS_TLS_KEY)");
+if ("help" in parsed) {
+  console.log(parsed.help);
+  process.exit(0);
+}
+const { host, port, dbPath, tlsCert: tlsCertPath, tlsKey: tlsKeyPath } = parsed.options;
 if (dbPath !== ":memory:") mkdirSync(dirname(dbPath), { recursive: true });
 
 export const db = openDb(dbPath);
@@ -175,7 +172,27 @@ if (tls && tlsCertPath) {
   console.log(`hbs-dashboard TLS certificate SHA-256 ${fingerprint}`);
 }
 
-console.log(`hbs-dashboard listening on ${tls ? "https" : "http"}://${host}:${port}`);
+const scheme = tls ? "https" : "http";
+if (isExposed(host)) {
+  const urls = new Set<string>();
+  if (host === "0.0.0.0" || host === "::") {
+    for (const entries of Object.values(networkInterfaces())) {
+      for (const entry of entries ?? []) {
+        if (entry.family === "IPv4" && !entry.internal) urls.add(`${scheme}://${entry.address}:${port}`);
+      }
+    }
+    if (urls.size === 0) urls.add(`${scheme}://localhost:${port}`);
+  } else {
+    urls.add(`${scheme}://${host}:${port}`);
+  }
+  console.log(`hbs-dashboard is exposed on the network (${host}):`);
+  for (const url of urls) console.log(`  ${url}`);
+  if (!tls) {
+    console.log("  WARNING: TLS is not configured — dashboard traffic and session cookies are unencrypted. Use --tls-cert/--tls-key on untrusted networks.");
+  }
+} else {
+  console.log(`hbs-dashboard listening on ${scheme}://${host}:${port} (localhost only; pass --host to expose it)`);
+}
 
 export { app };
 export default {

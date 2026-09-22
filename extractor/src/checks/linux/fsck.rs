@@ -1,7 +1,7 @@
 //! LIN-FS: filesystem & partition hardening (CIS 1.1.x).
 
 use super::{has_opt, mount_opts};
-use crate::checks::{degraded, degraded_from_attempts, nok, ok};
+use crate::checks::{degraded, degraded_from_attempts, in_container, nok, not_applicable, ok};
 use crate::context::ScanContext;
 use crate::model::{CheckOutcome, FallbackAttempt, RegisteredCheck};
 
@@ -32,7 +32,16 @@ fn tmp_separate(ctx: &mut ScanContext) -> CheckOutcome {
     separate_check(ctx, "/tmp", "CIS 1.1.1")
 }
 
+fn container_mount_reason(path: &str) -> String {
+    format!(
+        "{path} partition layout is a host-level property; container mounts are namespaces, not separate partitions"
+    )
+}
+
 fn separate_check(ctx: &mut ScanContext, path: &str, cis: &str) -> CheckOutcome {
+    if in_container(ctx) {
+        return not_applicable(&container_mount_reason(path));
+    }
     match mount_opts(ctx, path) {
         Some(opts) => ok(
             format!("{path} is a separate mount ({opts})"),
@@ -54,6 +63,9 @@ fn separate_check(ctx: &mut ScanContext, path: &str, cis: &str) -> CheckOutcome 
 }
 
 fn opt_check(ctx: &mut ScanContext, path: &str, opt: &str) -> CheckOutcome {
+    if in_container(ctx) {
+        return not_applicable(&container_mount_reason(path));
+    }
     match mount_opts(ctx, path) {
         Some(opts) if has_opt(&opts, opt) => ok(
             format!("{path} mounted with {opt} (options: {opts})"),
@@ -78,6 +90,9 @@ fn var_tmp_opts(ctx: &mut ScanContext) -> CheckOutcome {
 }
 
 fn multi_opt(ctx: &mut ScanContext, path: &str, opts: &[&str]) -> CheckOutcome {
+    if in_container(ctx) {
+        return not_applicable(&container_mount_reason(path));
+    }
     match mount_opts(ctx, path) {
         Some(mount) => {
             let missing: Vec<&str> = opts.iter().copied().filter(|o| !has_opt(&mount, o)).collect();
@@ -96,6 +111,11 @@ fn multi_opt(ctx: &mut ScanContext, path: &str, opts: &[&str]) -> CheckOutcome {
 }
 
 fn fstab_consistency(ctx: &mut ScanContext) -> CheckOutcome {
+    if in_container(ctx) {
+        return not_applicable(
+            "/etc/fstab partition hardening is a host-level property; a container does not own the host fstab",
+        );
+    }
     let mut log = Vec::new();
     let Some(fstab) = ctx.read("/etc/fstab") else {
         log.push(FallbackAttempt { source: "/etc/fstab".into(), outcome: "missing".into() });
@@ -130,6 +150,11 @@ fn fstab_consistency(ctx: &mut ScanContext) -> CheckOutcome {
 }
 
 fn bootloader_perms(ctx: &mut ScanContext) -> CheckOutcome {
+    if in_container(ctx) {
+        return not_applicable(
+            "the bootloader belongs to the host; a container has no grub.cfg to protect",
+        );
+    }
     let candidates = ["/boot/grub2/grub.cfg", "/boot/grub/grub.cfg", "/boot/grub2/user.cfg"];
     let Some(path) = super::first_existing(ctx, &candidates) else {
         return degraded("no grub.cfg found (systemd-boot or non-grub host)");
@@ -151,6 +176,11 @@ fn bootloader_perms(ctx: &mut ScanContext) -> CheckOutcome {
 }
 
 fn bootloader_password(ctx: &mut ScanContext) -> CheckOutcome {
+    if in_container(ctx) {
+        return not_applicable(
+            "the bootloader belongs to the host; a container has no bootloader password to set",
+        );
+    }
     let candidates = ["/boot/grub2/grub.cfg", "/boot/grub/grub.cfg"];
     let mut log = Vec::new();
     let Some(path) = super::first_existing(ctx, &candidates) else {
@@ -205,6 +235,11 @@ fn core_dumps(ctx: &mut ScanContext) -> CheckOutcome {
 }
 
 fn swap_encrypted(ctx: &mut ScanContext) -> CheckOutcome {
+    if in_container(ctx) {
+        return not_applicable(
+            "swap is configured by the host kernel; a container has no swap device of its own",
+        );
+    }
     if let Some(mounts) = ctx.read("/proc/swaps") {
         let swaps: Vec<&str> = mounts.lines().skip(1).filter(|l| !l.trim().is_empty()).collect();
         if swaps.is_empty() {

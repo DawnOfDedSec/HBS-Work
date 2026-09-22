@@ -33,6 +33,9 @@ libc = "0.2"
 wait-timeout = "0.2"
 
 [target.'cfg(windows)'.dependencies]
+# `Win32_NetworkManagement_NetManagement` (registry + NetAPI account
+# enumeration) and `Win32_System_Registry` (native registry helpers) are
+# the features the in-process, read-only Windows API fallbacks rely on.
 windows-sys = { version = "0.59", features = [
   "Win32_Foundation", "Win32_NetworkManagement_NetManagement", "Win32_Security", "Win32_Security_Authentication_Identity",
   "Win32_Security_Authorization",

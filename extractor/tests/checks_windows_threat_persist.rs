@@ -79,6 +79,29 @@ fn ifeo_debugger_and_netsh_helper_sweeps() {
     assert_eq!(run_one(&mut ctx2, "WIN-TH-022").status, Status::Compliant);
 }
 
+/// WIN-TH-015 fallback chain: `reg query /s` -> PowerShell
+/// `Get-ChildItem` + value reads -> native in-process IFEO enumeration.
+#[test]
+fn ifeo_fallback_chain_is_ordered_and_never_errors() {
+    let mut ctx = windows_ctx(Box::new(|_, _| None));
+    let res = run_one(&mut ctx, "WIN-TH-015");
+    assert_eq!(res.status, Status::DegradedPartial, "{}", res.evidence);
+    assert_eq!(
+        res.fallback_log
+            .iter()
+            .map(|a| a.source.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "reg query HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options /s /v Debugger",
+            "PowerShell Get-ChildItem",
+            "native registry IFEO enumeration",
+        ],
+        "{}",
+        res.evidence
+    );
+    assert!(res.degraded_reason.is_some());
+}
+
 #[test]
 fn scheduled_task_parser_handles_quoted_commas_and_flags_risk() {
     let csv = concat!(

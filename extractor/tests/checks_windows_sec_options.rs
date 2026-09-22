@@ -207,6 +207,34 @@ fn compliant_registry_values_pass_all_twenty_two_checks() {
 }
 
 #[test]
+fn each_sec_check_chains_reg_powershell_and_native_sources() {
+    // No external source answers: the recorded log must show the full
+    // ordered chain, ending in the in-process native registry fallback.
+    let mut ctx = windows_ctx(Box::new(|_, _| None));
+    let res = run_one(&mut ctx, "WIN-SEC-019");
+    let sources: Vec<&str> = res.fallback_log.iter().map(|a| a.source.as_str()).collect();
+    assert_eq!(
+        sources,
+        ["reg query", "PowerShell Get-ItemProperty", "native registry"],
+        "{}",
+        res.evidence
+    );
+}
+
+#[test]
+fn each_sec_check_accepts_a_single_independent_registry_source() {
+    // Registry read succeeds and PowerShell is gone (Server Core shape):
+    // the check must still resolve Compliant/NonCompliant.
+    let mut ctx = windows_ctx(sec_injector(true));
+    let res = run_one(&mut ctx, "WIN-SEC-019");
+    assert_eq!(res.status, Status::Compliant, "{}", res.evidence);
+    assert_eq!(
+        res.fallback_log.iter().map(|a| a.source.as_str()).collect::<Vec<_>>(),
+        ["reg query"]
+    );
+}
+
+#[test]
 fn non_compliant_registry_values_fail_all_twenty_two_checks() {
     let mut ctx = windows_ctx(sec_injector(false));
     for i in 1..=22 {

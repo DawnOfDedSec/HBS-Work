@@ -151,6 +151,19 @@ via `--tls-cert <path> --tls-key <path>` or `HBS_TLS_CERT` / `HBS_TLS_KEY`
 (the certificate SHA-256 fingerprint is printed at startup). Private keys are
 stored per issuance with mode `0600`; the server binds to localhost by default.
 
+**Hosting on the network:**
+
+```bash
+bun server/index.ts                 # 127.0.0.1:3000 (localhost only, default)
+bun server/index.ts --host 10.0.0.5 # one interface
+bun server/index.ts --host          # ALL interfaces (0.0.0.0) — prints reachable URLs
+bun server/index.ts --host --port 8443 --tls-cert cert.pem --tls-key key.pem
+```
+
+Bare `--host` prints the interface URLs it is reachable on and a warning when
+TLS is not configured (session cookies are unencrypted over plain HTTP). CLI
+flags take precedence over `HOST`/`PORT`.
+
 For development, `bun run dev` serves the Vite SPA and proxies `/api`. For a
 single-host deployment, `bun run build` emits `dashboard/dist` and the API
 server serves it at `/` (with SPA deep-link fallback), so one process serves
