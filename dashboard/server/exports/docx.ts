@@ -1,24 +1,35 @@
 // Editable Word deliverable export (Task 58, spec §6.6).
 //
-// Mirrors the technical PDF: the same normalized view model produces the same
-// per-host / per-check structure, evidence ±3 context windows, fallback logs,
-// read-only repro commands, references, and remediation instructions. Rendered
-// as a real .docx so the auditor can edit it before delivery.
+// Mirrors the technical PDF from the same normalized view model: cover page,
+// table of contents, headings, KPI table, findings by host/check, evidence ±3
+// context windows, fallback logs, read-only repro commands, references, and
+// remediation instructions. Rendered as a real .docx so the auditor can edit
+// it before delivery.
 
 import {
+  AlignmentType,
   BorderStyle,
   Document,
+  Footer,
+  Header,
   HeadingLevel,
   Packer,
+  PageBreak,
+  PageNumber,
   Paragraph,
   ShadingType,
   Table,
   TableCell,
   TableRow,
+  TableOfContents,
   TextRun,
   WidthType,
 } from "docx";
 import {
+  campaignLabel,
+  describeScopeText,
+  severityHex,
+  severityTextHex,
   SEVERITY_ARGB,
   SEVERITY_TEXT_ARGB,
   type ExportEvidenceBlock,
@@ -33,14 +44,17 @@ function argb6(argb: string): string {
 }
 
 function severityShading(severity: string): { type: (typeof ShadingType)[keyof typeof ShadingType]; fill: string } {
-  return { type: ShadingType.CLEAR, fill: argb6(SEVERITY_ARGB[severity] ?? "FF7F7F7F") };
+  return { type: ShadingType.CLEAR, fill: argb6(SEVERITY_ARGB[severity] ?? "FF64748B") };
 }
 
 function severityColor(severity: string): string {
   return argb6(SEVERITY_TEXT_ARGB[severity] ?? "FFFFFFFF");
 }
 
-function text(value: string, options: { bold?: boolean; italics?: boolean; size?: number; color?: string; font?: string; break?: number } = {}): TextRun {
+function text(
+  value: string,
+  options: { bold?: boolean; italics?: boolean; size?: number; color?: string; font?: string; break?: number } = {},
+): TextRun {
   return new TextRun({
     text: value,
     bold: options.bold,
@@ -52,7 +66,10 @@ function text(value: string, options: { bold?: boolean; italics?: boolean; size?
   });
 }
 
-function body(value: string, options: { bold?: boolean; size?: number; color?: string; spacingAfter?: number } = {}): Paragraph {
+function body(
+  value: string,
+  options: { bold?: boolean; italics?: boolean; size?: number; color?: string; spacingAfter?: number } = {},
+): Paragraph {
   return new Paragraph({
     children: [text(value, options)],
     spacing: { after: options.spacingAfter ?? 80 },
@@ -65,6 +82,10 @@ function bullet(value: string): Paragraph {
     bullet: { level: 0 },
     spacing: { after: 60 },
   });
+}
+
+function pageBreak(): Paragraph {
+  return new Paragraph({ children: [new PageBreak()] });
 }
 
 function keyValueTable(rows: readonly [string, string | number][]): Table {
@@ -147,7 +168,7 @@ function findingParagraphs(finding: ExportFinding): Paragraph[] {
   for (const block of finding.evidenceBlocks) paragraphs.push(evidenceParagraph(block));
 
   if (finding.fallbackLog.length > 0) {
-    paragraphs.push(body("Fallback log:", { bold: true, size: 18 }));
+    paragraphs.push(body("Fallback attempt log:", { bold: true, size: 18 }));
     for (const entry of finding.fallbackLog) {
       paragraphs.push(body(`- ${entry.source} => ${entry.outcome}`, { size: 16, color: "6B7280" }));
     }
@@ -175,27 +196,43 @@ function findingParagraphs(finding: ExportFinding): Paragraph[] {
   return paragraphs;
 }
 
+function coverPage(viewModel: ExportViewModel): (Paragraph | Table)[] {
+  return [
+    new Paragraph({
+      alignment: AlignmentType.LEFT,
+      children: [text(viewModel.title, { bold: true, size: 52, color: "0F172A" })],
+      spacing: { before: 2400, after: 120 },
+    }),
+    body("Technical Audit Report", { size: 30, color: "475569" }),
+    body(`${viewModel.generator}`, { size: 18, color: "94A3B8", spacingAfter: 240 }),
+    keyValueTable([
+      ["Client", viewModel.client ?? "—"],
+      ["Campaign", campaignLabel(viewModel.scope)],
+      ["Scope", describeScopeText(viewModel.scope)],
+      ["Generated", viewModel.generatedAt],
+    ]),
+    new Paragraph({
+      spacing: { before: 240, after: 120 },
+      children: [text(viewModel.confidentiality, { size: 18, color: "9A3412", italics: true })],
+    }),
+    pageBreak(),
+  ];
+}
+
 /** Render the editable technical deliverable. Pure: returns the document bytes. */
 export async function renderDocx(viewModel: ExportViewModel): Promise<Buffer> {
   const children: (Paragraph | Table)[] = [];
 
-  children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [text(viewModel.title, { bold: true, size: 36 })] }));
-  children.push(body("Technical Audit Report", { size: 26, color: "4B5563" }));
-  children.push(body(`Generated ${viewModel.generatedAt}`, { size: 18, color: "6B7280" }));
-  children.push(
-    body(
-      `Scope: ${viewModel.scope.kind}${viewModel.scope.campaignName ? ` · ${viewModel.scope.campaignName}` : ""}`,
-      { size: 18, color: "6B7280" },
-    ),
-  );
-  children.push(
-    body("Confidential — prepared for the commissioning client. Contains redacted security findings.", {
-      size: 18,
-      color: "6B7280",
-    }),
-  );
+  // --- Cover page ---------------------------------------------------------
+  children.push(...coverPage(viewModel));
 
-  children.push(new Paragraph({ heading: HeadingLevel.HEADING_2, children: [text("Key Performance Indicators")] }));
+  // --- Table of contents --------------------------------------------------
+  children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [text("Table of Contents")] }));
+  children.push(new TableOfContents(undefined, { hyperlink: true, headingStyleRange: "1-3" }));
+  children.push(pageBreak());
+
+  // --- KPI table ----------------------------------------------------------
+  children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [text("Key Performance Indicators")] }));
   children.push(
     keyValueTable([
       ["Weighted Risk Score (0-100)", viewModel.kpis.riskScore],
@@ -210,10 +247,11 @@ export async function renderDocx(viewModel: ExportViewModel): Promise<Buffer> {
     ]),
   );
 
-  children.push(new Paragraph({ heading: HeadingLevel.HEADING_2, children: [text("Executive Summary")] }));
+  children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [text("Executive Summary")] }));
   for (const sentence of viewModel.summary) children.push(bullet(sentence));
 
-  children.push(new Paragraph({ heading: HeadingLevel.HEADING_2, children: [text("Findings by Host")] }));
+  // --- Findings by host ---------------------------------------------------
+  children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [text("Findings by Host")] }));
   if (viewModel.hosts.length === 0) children.push(body("No hosts matched this scope.", { color: "6B7280" }));
   for (const host of viewModel.hosts) {
     children.push(new Paragraph({ heading: HeadingLevel.HEADING_2, children: [text(`${host.hostname} (${host.displayId})`)] }));
@@ -236,7 +274,8 @@ export async function renderDocx(viewModel: ExportViewModel): Promise<Buffer> {
     for (const finding of host.findings) children.push(...findingParagraphs(finding));
   }
 
-  children.push(new Paragraph({ heading: HeadingLevel.HEADING_2, children: [text("Findings by Check")] }));
+  // --- Findings by check --------------------------------------------------
+  children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [text("Findings by Check")] }));
   for (const check of viewModel.checks) {
     children.push(
       body(
@@ -246,8 +285,9 @@ export async function renderDocx(viewModel: ExportViewModel): Promise<Buffer> {
     );
   }
 
+  // --- References ---------------------------------------------------------
   if (viewModel.references.length > 0) {
-    children.push(new Paragraph({ heading: HeadingLevel.HEADING_2, children: [text("Standard References")] }));
+    children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [text("Standard References")] }));
     for (const reference of viewModel.references) {
       children.push(
         body(
@@ -259,10 +299,47 @@ export async function renderDocx(viewModel: ExportViewModel): Promise<Buffer> {
   }
 
   const document = new Document({
-    creator: "HBS Dashboard",
+    creator: viewModel.generator,
     title: viewModel.title,
     description: "HBS technical audit deliverable",
-    sections: [{ children }],
+    keywords: "HBS-EXPORT-MARKER-docx",
+    features: { updateFields: true },
+    sections: [
+      {
+        headers: {
+          default: new Header({
+            children: [
+              new Paragraph({
+                children: [
+                  text(`${viewModel.title} · ${campaignLabel(viewModel.scope)}`, { size: 14, color: "6B7280" }),
+                ],
+              }),
+            ],
+          }),
+        },
+        footers: {
+          default: new Footer({
+            children: [
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                children: [text(viewModel.confidentiality, { size: 14, color: "6B7280" })],
+              }),
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                children: [
+                  new TextRun({
+                    children: ["Page ", PageNumber.CURRENT, " of ", PageNumber.TOTAL_PAGES],
+                    size: 14,
+                    color: "6B7280",
+                  }),
+                ],
+              }),
+            ],
+          }),
+        },
+        children,
+      },
+    ],
   });
 
   return Packer.toBuffer(document);

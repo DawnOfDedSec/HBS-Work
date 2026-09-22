@@ -2,6 +2,7 @@
 //! pass/fail (spec §5). Collected on every OS where the sources exist.
 
 use crate::checks::{degraded, degraded_from_attempts, ok};
+use crate::checks::windows::{program_data, system_root};
 use crate::context::ScanContext;
 use crate::model::{CheckOutcome, FallbackAttempt, RegisteredCheck};
 use crate::platform::Os;
@@ -403,10 +404,10 @@ fn cloud_agents(ctx: &mut ScanContext) -> CheckOutcome {
     if ctx.exists("/etc/cloud") {
         found.push("cloud-init (/etc/cloud)");
     }
-    if ctx.exists("C:/ProgramData/Amazon/EC2Launch") {
+    if ctx.exists(&format!("{}\\Amazon\\EC2Launch", program_data())) {
         found.push("EC2Launch");
     }
-    if ctx.exists("C:/Windows/Panther") {
+    if ctx.exists(&format!("{}\\Panther", system_root())) {
         found.push("Windows unattend area present");
     }
     if found.is_empty() {

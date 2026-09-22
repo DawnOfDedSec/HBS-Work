@@ -9,6 +9,7 @@ use crate::checks::{degraded, nok, ok};
 use crate::context::ScanContext;
 use crate::model::{CheckOutcome, FallbackAttempt, RegisteredCheck};
 use crate::platform::Os;
+use super::{perf_logs_dir, program_files, startup_dir, system32_dir, system_root};
 
 /// SDDL trustees that must hold (or fail) an ACL.
 const ADMIN_ADMINS: &str = "BA"; // Built-in Administrators
@@ -255,7 +256,7 @@ fn parse_reg_value_names(raw: &str) -> Vec<String> {
 fn startup_inventory(ctx: &mut ScanContext) -> CheckOutcome {
     const SHELL_FOLDERS: &str =
         r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders";
-    const DEFAULT_STARTUP: &str = r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp";
+    let default_startup = startup_dir();
     let mut attempts = Vec::new();
     // Locate the all-users Startup folder via registry, else assume default.
     let folder = match ctx.cmd(
@@ -275,14 +276,14 @@ fn startup_inventory(ctx: &mut ScanContext) -> CheckOutcome {
                     None => "value absent".into(),
                 },
             });
-            value.unwrap_or_else(|| DEFAULT_STARTUP.to_string())
+            value.unwrap_or_else(|| default_startup.clone())
         }
         None => {
             attempts.push(FallbackAttempt {
                 source: format!("reg query {SHELL_FOLDERS}\\Common Startup"),
                 outcome: "unavailable; using default path".into(),
             });
-            DEFAULT_STARTUP.to_string()
+            default_startup.clone()
         }
     };
     // ACL read is best-effort: unreadable ACL still leaves the inventory.
@@ -464,7 +465,7 @@ pub fn register(reg: &mut Vec<RegisteredCheck>) {
         "Reset inherited ACLs: icacls C:\\Windows /reset or restore default inheritance.",
         High, "Permissions", &[],
         win,
-        |ctx| acl_check(ctx, r"C:\Windows", "%SystemRoot%", AclMode::Directory)
+        |ctx| acl_check(ctx, &system_root(), "%SystemRoot%", AclMode::Directory)
     );
     check!(
         reg, "WIN-REG-005",
@@ -474,7 +475,7 @@ pub fn register(reg: &mut Vec<RegisteredCheck>) {
         "Remove Everyone/Users write ACEs from the Program Files tree.",
         High, "Permissions", &[],
         win,
-        |ctx| acl_check(ctx, r"C:\Program Files", "%ProgramFiles%", AclMode::Directory)
+        |ctx| acl_check(ctx, &program_files(), "%ProgramFiles%", AclMode::Directory)
     );
     check!(
         reg, "WIN-REG-006",
@@ -484,7 +485,7 @@ pub fn register(reg: &mut Vec<RegisteredCheck>) {
         "Reset inherited ACLs on C:\\Windows\\System32.",
         High, "Permissions", &[],
         win,
-        |ctx| acl_check(ctx, r"C:\Windows\System32", "%SystemRoot%\\System32", AclMode::Directory)
+        |ctx| acl_check(ctx, &system32_dir(), "%SystemRoot%\\System32", AclMode::Directory)
     );
     check!(
         reg, "WIN-REG-007",
@@ -494,7 +495,7 @@ pub fn register(reg: &mut Vec<RegisteredCheck>) {
         "Restrict write access on C:\\PerfLogs to Administrators/SYSTEM.",
         Medium, "Permissions", &[],
         win,
-        |ctx| acl_check(ctx, r"C:\PerfLogs", "%SystemDrive%\\PerfLogs", AclMode::Directory)
+        |ctx| acl_check(ctx, &perf_logs_dir(), "%SystemDrive%\\PerfLogs", AclMode::Directory)
     );
     check!(
         reg, "WIN-REG-008",

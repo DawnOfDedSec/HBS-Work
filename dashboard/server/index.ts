@@ -1,7 +1,8 @@
 import { X509Certificate } from "node:crypto";
-import { mkdirSync, readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { Hono } from "hono";
+import { serveStatic } from "hono/bun";
 import { openDb, runMigrations } from "./db";
 import { createAuthRoutes, requireAuth, requireRole } from "./auth";
 import { createCampaignRoutes, type CampaignAuth } from "./campaigns";
@@ -37,6 +38,24 @@ if (dbPath !== ":memory:") mkdirSync(dirname(dbPath), { recursive: true });
 export const db = openDb(dbPath);
 const version = runMigrations(db);
 console.log(`hbs-dashboard database schema version ${version}`);
+
+// First-run bootstrap: create and print the initial super_admin. Only when the
+// server is the entrypoint (not when the module is imported by tests).
+if (import.meta.main && process.env.HBS_BOOTSTRAP_ADMIN !== "false") {
+  const { ensureBootstrapAdmin } = await import("./bootstrap");
+  const created = await ensureBootstrapAdmin(db);
+  if (created) {
+    const rule = "=".repeat(72);
+    console.log(rule);
+    console.log("  HBS dashboard — first-run superuser created");
+    console.log(`  username: ${created.username}`);
+    console.log(`  password: ${created.password}`);
+    console.log("  Store these credentials securely and change the password after sign-in.");
+    console.log("  (Set HBS_BOOTSTRAP_ADMIN=false to skip this; HBS_ADMIN_USERNAME /");
+    console.log("   HBS_ADMIN_PASSWORD override the generated values.)");
+    console.log(rule);
+  }
+}
 
 const app = new Hono();
 const MAX_RAW_BODY = 64 * 1024 * 1024;
@@ -130,6 +149,23 @@ registerAdminRoutes(app, db, campaignAuth, {
   dataRoot: process.env.HBS_DATA_ROOT,
 });
 registerExportRoutes(app, db, campaignAuth);
+
+// --- built SPA (production) -------------------------------------------------
+// `bun run build` emits dashboard/dist; serve it at `/` with an SPA fallback
+// so deep links work, while leaving /api/* to the API (and its 404s) alone.
+const distDir = resolve(import.meta.dir, "..", "dist");
+const indexHtml = join(distDir, "index.html");
+if (existsSync(indexHtml)) {
+  app.use("/assets/*", serveStatic({ root: distDir }));
+  app.get("*", (c, next) => {
+    if (c.req.path.startsWith("/api/")) return next();
+    return serveStatic({ path: indexHtml })(c, next);
+  });
+} else {
+  app.get("/", (c) =>
+    c.text("HBS dashboard: the SPA is not built yet. Run `bun run build` in dashboard/, or use `bun run dev` (Vite) for development."),
+  );
+}
 
 const tls = tlsCertPath && tlsKeyPath
   ? { cert: readFileSync(tlsCertPath), key: readFileSync(tlsKeyPath) }

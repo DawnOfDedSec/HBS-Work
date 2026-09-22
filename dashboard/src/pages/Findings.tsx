@@ -1,13 +1,53 @@
-import { useEffect, useMemo, useState } from "react";
-import { Search, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  AlertTriangle,
+  FileSearch,
+  ListChecks,
+  RefreshCw,
+  Search,
+  Server,
+  ShieldAlert,
+  Table2,
+  X,
+} from "lucide-react";
 import { api, ApiError } from "../api";
-import { EmptyState } from "../components/EmptyState";
+import {
+  Badge,
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  Chip,
+  EmptyState,
+  Input,
+  Pagination,
+  SectionHeader,
+  Skeleton,
+  TabPanel,
+  Tabs,
+  Table,
+  Toolbar,
+  ToolbarDivider,
+  ToolbarGroup,
+  ToolbarSpacer,
+  type TabItem,
+  type TableColumn,
+  useToast,
+} from "../components/ui";
+import {
+  SeverityBadge,
+  StatusBadge,
+  TreatmentBadge,
+  EvidenceDepthBadge,
+  PlatformBadge,
+} from "../components/badges";
 import {
   EvidenceDrawer,
   sanitizeText,
   type EvidenceFinding,
 } from "../components/EvidenceDrawer";
-import { resolveScope, serializeFilters, type FilterKey, type ScopeFilters } from "../filters";
+import { ScopeControls, clearScopeKeys } from "../components/ScopeSelector";
+import { resolveScope, type FilterKey, type ScopeFilters } from "../filters";
 import { useScopeFilters } from "../useScopeFilters";
 import type { CheckResult } from "../types";
 import { CheckDetail } from "./CheckDetail";
@@ -79,12 +119,13 @@ const TREATMENT_OPTIONS = ["open", "accepted_risk", "false_positive", "remediate
 const DEPTH_OPTIONS = ["AuthoritativePrimary", "AuthoritativeFallback", "DegradedPartial"];
 const PAGE_SIZES = [25, 50, 100, 200];
 
-const SEVERITY_TONE: Record<string, string> = {
-  Critical: "text-red-300",
-  High: "text-amber-300",
-  Medium: "text-yellow-200",
-  Low: "text-sky-300",
-  Informational: "text-slate-300",
+type CheckAggregate = {
+  checkId: string;
+  title: string;
+  severity: string;
+  category: string;
+  count: number;
+  hosts: Set<number>;
 };
 
 function errorMessage(error: unknown): string {
@@ -110,143 +151,53 @@ function toEvidence(result: CheckResult): EvidenceFinding {
   };
 }
 
-function ToggleGroup({
+/** A fieldset of removable toggle chips for one canonical filter key. */
+function FilterToggle({
   label,
-  keyName,
+  filterKey,
   options,
   filters,
   onToggle,
 }: {
   label: string;
-  keyName: FilterKey;
+  filterKey: FilterKey;
   options: string[];
   filters: ScopeFilters;
   onToggle: (key: FilterKey, value: string) => void;
 }) {
-  const active = new Set(filters[keyName] ?? []);
+  const active = new Set(filters[filterKey] ?? []);
   return (
-    <fieldset className="flex flex-wrap items-center gap-1">
-      <legend className="sr-only">{label}</legend>
-      <span className="mr-1 text-xs uppercase tracking-wide text-slate-500">{label}</span>
-      {options.map((option) => {
-        const on = active.has(option);
-        return (
-          <button
-            key={option}
-            type="button"
-            aria-pressed={on}
-            onClick={() => onToggle(keyName, option)}
-            className={`rounded-full border px-2 py-0.5 text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
-              on
-                ? "border-sky-400 bg-sky-500/20 text-sky-100"
-                : "border-slate-700 text-slate-300 hover:bg-slate-800"
-            }`}
-          >
-            {option}
-          </button>
-        );
-      })}
-    </fieldset>
+    <ToolbarGroup>
+      <span className="text-2xs font-semibold uppercase tracking-wide text-ink-subtle">{label}</span>
+      {options.map((option) => (
+        <Chip
+          key={option}
+          label={option.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/_/g, " ")}
+          active={active.has(option)}
+          onClick={() => onToggle(filterKey, option)}
+        />
+      ))}
+    </ToolbarGroup>
   );
 }
 
-/**
- * Atomically drop the scope keys (`scope`, `reportId`, `from`, `to`) and make
- * the URL-backed filter hook re-parse. Clearing them one-by-one would race
- * because each commit reads the same captured filter state.
- */
-function clearScopeKeys(filters: ScopeFilters): void {
-  const next: ScopeFilters = { ...filters };
-  delete next.scope;
-  delete next.reportId;
-  delete next.from;
-  delete next.to;
-  const query = serializeFilters(next);
-  const url = query ? `${window.location.pathname}?${query}` : window.location.pathname;
-  window.history.pushState({}, "", url);
-  window.dispatchEvent(new PopStateEvent("popstate"));
-}
-
-function ScopeControls({
-  filters,
-  onToggle,
-  onLatest,
-}: {
-  filters: ScopeFilters;
-  onToggle: (key: FilterKey, value: string) => void;
-  onLatest: () => void;
-}) {
-  const scope = resolveScope(filters);
+function InlineAlert({ children }: { children: React.ReactNode }) {
   return (
-    <fieldset className="flex flex-wrap items-end gap-4 rounded-lg border border-slate-800 p-3">
-      <legend className="px-1 text-xs uppercase tracking-wide text-slate-400">Scope</legend>
-      <label className="flex items-center gap-2 text-sm">
-        <input type="radio" name="findings-scope" checked={scope === "latest"} onChange={onLatest} />
-        Latest state
-      </label>
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="radio"
-          name="findings-scope"
-          checked={scope === "report"}
-          onChange={() => onToggle("scope", "report")}
-        />
-        Single report
-      </label>
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="radio"
-          name="findings-scope"
-          checked={scope === "range"}
-          onChange={() => onToggle("scope", "range")}
-        />
-        Date range
-      </label>
-      {scope === "report" ? (
-        <label className="flex items-center gap-2 text-sm">
-          Report ID
-          <input
-            type="number"
-            min={1}
-            value={filters.reportId?.[0] ?? ""}
-            onChange={(event) => event.target.value && onToggle("reportId", event.target.value)}
-            className="w-28 rounded border border-slate-700 bg-slate-900 px-2 py-1"
-          />
-        </label>
-      ) : null}
-      {scope === "range" ? (
-        <>
-          <label className="flex items-center gap-2 text-sm">
-            From
-            <input
-              type="datetime-local"
-              value={filters.from?.[0] ?? ""}
-              onChange={(event) => event.target.value && onToggle("from", event.target.value)}
-              className="rounded border border-slate-700 bg-slate-900 px-2 py-1"
-            />
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            To
-            <input
-              type="datetime-local"
-              value={filters.to?.[0] ?? ""}
-              onChange={(event) => event.target.value && onToggle("to", event.target.value)}
-              className="rounded border border-slate-700 bg-slate-900 px-2 py-1"
-            />
-          </label>
-        </>
-      ) : null}
-    </fieldset>
+    <div role="alert" className="flex items-start gap-2 rounded-control border border-critical/40 bg-critical-soft/60 p-3 text-sm text-critical">
+      <AlertTriangle size={16} aria-hidden className="mt-0.5 shrink-0" />
+      <span>{children}</span>
+    </div>
   );
 }
 
 /**
  * Scope-aware findings explorer. The filter bar is bound to `useScopeFilters`
- * so the URL query string stays the single source of truth; scope selection
- * precedes the By Host / By Check pivots.
+ * so the URL query string stays the single source of truth; All findings / By
+ * Host / By Check pivots share the same scope.
  */
 export function Findings() {
   const { filters, query, chips, toggle, clearKey, clear } = useScopeFilters();
+  const toast = useToast();
   const [pivot, setPivot] = useState<Pivot>("findings");
   const [search, setSearch] = useState(filters.q?.[0] ?? "");
   const [page, setPage] = useState(1);
@@ -272,6 +223,8 @@ export function Findings() {
   useEffect(() => {
     setPage(1);
   }, [query]);
+
+  const refresh = useCallback(() => setPage(1), []);
 
   useEffect(() => {
     let alive = true;
@@ -299,7 +252,10 @@ export function Findings() {
         setTotal(typeof response.total === "number" ? response.total : 0);
       })
       .catch((err) => {
-        if (alive) setError(errorMessage(err));
+        if (!alive) return;
+        const message = errorMessage(err);
+        setError(message);
+        toast.error("Could not load findings", { description: message });
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -307,10 +263,10 @@ export function Findings() {
     return () => {
       alive = false;
     };
-  }, [query, page, pageSize, pivot]);
+  }, [query, page, pageSize, pivot, toast]);
 
-  const checks = useMemo(() => {
-    const grouped = new Map<string, { checkId: string; title: string; severity: string; category: string; count: number; hosts: Set<number> }>();
+  const checks = useMemo<CheckAggregate[]>(() => {
+    const grouped = new Map<string, CheckAggregate>();
     for (const finding of findings) {
       const bucket =
         grouped.get(finding.checkId) ??
@@ -329,27 +285,34 @@ export function Findings() {
     return [...grouped.values()].sort((a, b) => a.checkId.localeCompare(b.checkId));
   }, [findings]);
 
-  async function openEvidence(finding: Finding) {
-    const key = `${finding.reportId}:${finding.checkId}`;
-    setPendingRow(key);
-    try {
-      const report = await api.raw<ReportResponse>("GET", `/api/reports/${finding.reportId}`);
-      const result = (report.results ?? []).find((entry) => entry.id === finding.checkId);
-      if (!result) {
-        setError(`Finding ${finding.checkId} is no longer present in report #${finding.reportId}.`);
-        return;
+  const openEvidence = useCallback(
+    async (finding: Finding) => {
+      const key = `${finding.reportId}:${finding.checkId}`;
+      setPendingRow(key);
+      try {
+        const report = await api.raw<ReportResponse>("GET", `/api/reports/${finding.reportId}`);
+        const result = (report.results ?? []).find((entry) => entry.id === finding.checkId);
+        if (!result) {
+          const message = `Finding ${finding.checkId} is no longer present in report #${finding.reportId}.`;
+          setError(message);
+          toast.error("Evidence unavailable", { description: message });
+          return;
+        }
+        setEvidence({
+          finding: toEvidence(result),
+          reportId: finding.reportId,
+          hostname: report.hostname ?? finding.hostname,
+        });
+      } catch (err) {
+        const message = errorMessage(err);
+        setError(message);
+        toast.error("Could not load evidence", { description: message });
+      } finally {
+        setPendingRow(null);
       }
-      setEvidence({
-        finding: toEvidence(result),
-        reportId: finding.reportId,
-        hostname: report.hostname ?? finding.hostname,
-      });
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setPendingRow(null);
-    }
-  }
+    },
+    [toast],
+  );
 
   if (activeReportId !== null) {
     return (
@@ -377,222 +340,425 @@ export function Findings() {
     );
   }
 
-  const totalPages = Math.max(1, Math.ceil(total / (pivot === "checks" ? 200 : pageSize)));
+  const findingColumns: Array<TableColumn<Finding>> = [
+    {
+      key: "checkId",
+      header: "Check",
+      render: (row) => (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            setActiveCheckId(row.checkId);
+          }}
+          className="rounded font-mono text-xs text-accent underline decoration-dotted underline-offset-2 hover:text-accent-strong"
+        >
+          {sanitizeText(row.checkId)}
+        </button>
+      ),
+    },
+    {
+      key: "title",
+      header: "Title",
+      render: (row) => <span className="text-ink">{sanitizeText(row.title)}</span>,
+    },
+    {
+      key: "displayId",
+      header: "Host",
+      render: (row) => (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            toggle("hostId", String(row.hostId));
+          }}
+          className="rounded text-left text-ink-muted underline decoration-dotted underline-offset-2 hover:text-ink"
+        >
+          {sanitizeText(row.displayId)}
+        </button>
+      ),
+    },
+    { key: "severity", header: "Severity", render: (row) => <SeverityBadge severity={row.severity} /> },
+    { key: "status", header: "Status", render: (row) => <StatusBadge status={row.status} /> },
+    {
+      key: "treatment",
+      header: "Treatment",
+      render: (row) => <TreatmentBadge state={row.treatment} />,
+    },
+    {
+      key: "evidenceDepth",
+      header: "Evidence",
+      render: (row) =>
+        row.evidenceDepth ? (
+          <EvidenceDepthBadge depth={row.evidenceDepth} />
+        ) : (
+          <span className="text-2xs text-ink-subtle">—</span>
+        ),
+    },
+    {
+      key: "receivedAt",
+      header: "Received",
+      sortable: true,
+      render: (row) => <span className="text-xs text-ink-muted">{sanitizeText(row.receivedAt)}</span>,
+    },
+    {
+      key: "actions",
+      header: <span className="sr-only">Actions</span>,
+      align: "right",
+      render: (row) => (
+        <div className="flex items-center justify-end gap-1.5">
+          <Button
+            size="sm"
+            variant="secondary"
+            loading={pendingRow === `${row.reportId}:${row.checkId}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              void openEvidence(row);
+            }}
+          >
+            View
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={(event) => {
+              event.stopPropagation();
+              setActiveReportId(row.reportId);
+            }}
+          >
+            Report
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
+  const hostColumns: Array<TableColumn<HostGroup>> = [
+    {
+      key: "displayId",
+      header: "Host",
+      render: (row) => (
+        <button
+          type="button"
+          onClick={() => {
+            toggle("hostId", String(row.id));
+            setPivot("findings");
+          }}
+          className="rounded text-left text-accent underline decoration-dotted underline-offset-2 hover:text-accent-strong"
+        >
+          {sanitizeText(row.displayId)}
+        </button>
+      ),
+    },
+    {
+      key: "platform",
+      header: "Platform",
+      render: (row) => <PlatformBadge platform={row.platform} />,
+    },
+    { key: "reportCount", header: "Reports", align: "right", sortable: true },
+    {
+      key: "riskScore",
+      header: "Risk",
+      align: "right",
+      sortable: true,
+      render: (row) => (row.riskScore === null ? "—" : row.riskScore.toFixed(1)),
+    },
+    {
+      key: "coverage",
+      header: "Coverage",
+      align: "right",
+      sortable: true,
+      render: (row) => (row.coverage === null ? "—" : `${row.coverage.toFixed(1)}%`),
+    },
+    {
+      key: "latestReceivedAt",
+      header: "Last report",
+      render: (row) => (
+        <span className="text-xs text-ink-muted">{sanitizeText(row.latestReceivedAt) || "—"}</span>
+      ),
+    },
+  ];
+
+  const checkColumns: Array<TableColumn<CheckAggregate>> = [
+    {
+      key: "checkId",
+      header: "Check",
+      render: (row) => (
+        <button
+          type="button"
+          onClick={() => setActiveCheckId(row.checkId)}
+          className="rounded font-mono text-xs text-accent underline decoration-dotted underline-offset-2 hover:text-accent-strong"
+        >
+          {sanitizeText(row.checkId)}
+        </button>
+      ),
+    },
+    { key: "title", header: "Title", render: (row) => sanitizeText(row.title) },
+    { key: "severity", header: "Severity", render: (row) => <SeverityBadge severity={row.severity} /> },
+    { key: "category", header: "Category", render: (row) => <span className="text-xs text-ink-muted">{sanitizeText(row.category)}</span> },
+    {
+      key: "hosts",
+      header: "Hosts",
+      align: "right",
+      sortable: true,
+      sortValue: (row) => row.hosts.size,
+      render: (row) => row.hosts.size,
+    },
+    { key: "count", header: "Results", align: "right", sortable: true },
+  ];
+
+  const tabs: TabItem[] = [
+    { value: "findings", label: "All findings", icon: ListChecks },
+    { value: "hosts", label: "By Host", icon: Server },
+    { value: "checks", label: "By Check", icon: Table2 },
+  ];
+
+  const scope = resolveScope(filters);
 
   return (
-    <section aria-label="Findings explorer" className="space-y-4">
-      <ScopeControls filters={filters} onToggle={toggle} onLatest={() => clearScopeKeys(filters)} />
+    <section aria-label="Findings explorer" className="mx-auto flex max-w-7xl flex-col gap-5">
+      <SectionHeader
+        eyebrow="Operate"
+        title="Findings"
+        description="Search, filter, and triage checks across the current scope. Every row opens pinned evidence."
+        icon={ListChecks}
+        actions={
+          <Button variant="secondary" icon={RefreshCw} loading={loading} onClick={refresh}>
+            Refresh
+          </Button>
+        }
+      />
 
-      <div className="space-y-3 rounded-lg border border-slate-800 p-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <form
-            className="flex items-center gap-2"
-            role="search"
-            onSubmit={(event) => {
-              event.preventDefault();
-              const value = search.trim();
-              if (value) toggle("q", value);
-              else clearKey("q");
-            }}
-          >
-            <label className="sr-only" htmlFor="findings-search">
-              Search findings
-            </label>
-            <div className="flex items-center gap-1 rounded border border-slate-700 bg-slate-900 px-2">
-              <Search size={14} aria-hidden className="text-slate-500" />
-              <input
-                id="findings-search"
+      <ScopeControls
+        filters={filters}
+        onToggle={toggle}
+        onClearScope={() => {
+          clearScopeKeys(filters);
+          setPivot("findings");
+        }}
+      />
+
+      <Card>
+        <CardHeader
+          title="Filters"
+          description={`${total} result${total === 1 ? "" : "s"} in the ${scope} scope`}
+          icon={FileSearch}
+          actions={
+            chips.length > 0 ? (
+              <Button size="sm" variant="ghost" icon={X} onClick={clear}>
+                Clear all
+              </Button>
+            ) : null
+          }
+        />
+        <CardBody className="flex flex-col gap-3">
+          <Toolbar label="Findings filters">
+            <form
+              role="search"
+              className="flex items-center gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const value = search.trim();
+                if (value) toggle("q", value);
+                else clearKey("q");
+              }}
+            >
+              <Input
                 type="search"
+                aria-label="Search findings"
+                icon={Search}
+                placeholder="Search titles, IDs, references…"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search titles, IDs, references…"
-                className="w-64 bg-transparent py-1 text-sm focus:outline-none"
+                containerClassName="w-72"
+              />
+              <Button size="sm" variant="secondary" type="submit">
+                Apply
+              </Button>
+            </form>
+            <ToolbarDivider />
+            <FilterToggle
+              label="Severity"
+              filterKey="severity"
+              options={SEVERITY_OPTIONS}
+              filters={filters}
+              onToggle={toggle}
+            />
+            <ToolbarDivider />
+            <FilterToggle
+              label="Status"
+              filterKey="status"
+              options={STATUS_OPTIONS}
+              filters={filters}
+              onToggle={toggle}
+            />
+            <ToolbarDivider />
+            <FilterToggle
+              label="Treatment"
+              filterKey="treatment"
+              options={TREATMENT_OPTIONS}
+              filters={filters}
+              onToggle={toggle}
+            />
+            <ToolbarDivider />
+            <FilterToggle
+              label="Evidence"
+              filterKey="evidenceDepth"
+              options={DEPTH_OPTIONS}
+              filters={filters}
+              onToggle={toggle}
+            />
+            <ToolbarSpacer />
+          </Toolbar>
+
+          {chips.length > 0 ? (
+            <div aria-label="Active filters" className="flex flex-wrap items-center gap-2">
+              <span className="text-2xs font-semibold uppercase tracking-wide text-ink-subtle">Active</span>
+              {chips.map((chip) => (
+                <Chip
+                  key={`${chip.key}:${chip.value}`}
+                  label={`${chip.key}:`}
+                  value={chip.value}
+                  active
+                  onRemove={() => toggle(chip.key, chip.value)}
+                />
+              ))}
+            </div>
+          ) : null}
+        </CardBody>
+      </Card>
+
+      <Tabs
+        items={tabs}
+        value={pivot}
+        onChange={(value) => {
+          setPivot(value as Pivot);
+          setPage(1);
+        }}
+        label="Findings pivots"
+        idBase="findings-pivots"
+      />
+
+      {error ? <InlineAlert>{error}</InlineAlert> : null}
+
+      <TabPanel id="findings" active={pivot === "findings"} idBase="findings-pivots">
+        <Card flush className="overflow-hidden">
+          {loading && findings.length === 0 ? (
+            <div className="flex flex-col gap-2 p-4">
+              {Array.from({ length: 8 }).map((_, index) => (
+                <Skeleton key={index} height={28} />
+              ))}
+            </div>
+          ) : findings.length === 0 ? (
+            <div className="p-4">
+              <EmptyState
+                title="No findings match the current filters"
+                detail="Adjust or clear filters to widen the search."
               />
             </div>
-            <button
-              type="submit"
-              className="rounded border border-slate-700 px-2 py-1 text-sm hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-            >
-              Apply
-            </button>
-          </form>
-          <span className="text-xs text-slate-500">
-            {loading ? "Loading…" : `${total} result${total === 1 ? "" : "s"}`}
-          </span>
-        </div>
-
-        <ToggleGroup label="Severity" keyName="severity" options={SEVERITY_OPTIONS} filters={filters} onToggle={toggle} />
-        <ToggleGroup label="Status" keyName="status" options={STATUS_OPTIONS} filters={filters} onToggle={toggle} />
-        <ToggleGroup
-          label="Treatment"
-          keyName="treatment"
-          options={TREATMENT_OPTIONS}
-          filters={filters}
-          onToggle={toggle}
-        />
-        <ToggleGroup
-          label="Evidence depth"
-          keyName="evidenceDepth"
-          options={DEPTH_OPTIONS}
-          filters={filters}
-          onToggle={toggle}
-        />
-
-        {chips.length > 0 ? (
-          <div className="flex flex-wrap items-center gap-2" aria-label="Active filters">
-            {chips.map((chip) => (
-              <span
-                key={`${chip.key}:${chip.value}`}
-                className="flex items-center gap-1 rounded-full border border-sky-500/50 bg-sky-500/10 px-2 py-0.5 text-xs text-sky-100"
-              >
-                <span className="text-sky-300/80">{chip.key}:</span>
-                {chip.value}
-                <button
-                  type="button"
-                  aria-label={`Remove filter ${chip.key} ${chip.value}`}
-                  onClick={() => toggle(chip.key, chip.value)}
-                  className="rounded-full p-0.5 hover:bg-sky-500/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
-                >
-                  <X size={12} aria-hidden />
-                </button>
-              </span>
-            ))}
-            <button
-              type="button"
-              onClick={clear}
-              className="rounded border border-slate-600 px-2 py-0.5 text-xs hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-            >
-              Clear all
-            </button>
+          ) : (
+            <Table
+              label="Findings matching the current scope and filters"
+              columns={findingColumns}
+              rows={findings}
+              rowKey={(row) => `${row.reportId}:${row.checkId}`}
+              stickyHeader
+              onRowClick={(row) => void openEvidence(row)}
+            />
+          )}
+        </Card>
+        {pivot === "findings" && total > 0 ? (
+          <div className="mt-3">
+            <Pagination
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              pageSizeOptions={PAGE_SIZES}
+              onPageChange={setPage}
+              onPageSizeChange={(size) => {
+                setPageSize(size);
+                setPage(1);
+              }}
+            />
           </div>
         ) : null}
-      </div>
+      </TabPanel>
 
-      <div role="tablist" aria-label="Findings pivots" className="flex flex-wrap gap-1 border-b border-slate-800">
-        {(["findings", "hosts", "checks"] as const).map((value) => (
-          <button
-            key={value}
-            role="tab"
-            type="button"
-            aria-selected={pivot === value}
-            onClick={() => {
-              setPivot(value);
-              setPage(1);
-            }}
-            className={`px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
-              pivot === value ? "border-b-2 border-sky-400 text-sky-200" : "text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            {value === "findings" ? "All findings" : value === "hosts" ? "By Host" : "By Check"}
-          </button>
-        ))}
-      </div>
-
-      {error ? (
-        <EmptyState title="Could not load findings" detail={error} />
-      ) : loading && findings.length === 0 && hosts.length === 0 ? (
-        <p role="status" className="p-4 text-sm text-slate-400">
-          Loading findings…
-        </p>
-      ) : pivot === "hosts" ? (
-        hosts.length === 0 ? (
-          <EmptyState title="No hosts match the current filters" />
-        ) : (
-          <HostTable hosts={hosts} onFilterHost={(id) => { toggle("hostId", String(id)); setPivot("findings"); }} />
-        )
-      ) : pivot === "checks" ? (
-        checks.length === 0 ? (
-          <EmptyState title="No checks match the current filters" />
-        ) : (
-          <table className="w-full border-collapse text-sm">
-            <caption className="sr-only">Checks matching the current filters</caption>
-            <thead>
-              <tr className="text-left text-slate-400">
-                <th scope="col" className="border-b border-slate-800 py-2 pr-3">Check</th>
-                <th scope="col" className="border-b border-slate-800 py-2 pr-3">Title</th>
-                <th scope="col" className="border-b border-slate-800 py-2 pr-3">Severity</th>
-                <th scope="col" className="border-b border-slate-800 py-2 pr-3">Hosts</th>
-                <th scope="col" className="border-b border-slate-800 py-2">Results</th>
-              </tr>
-            </thead>
-            <tbody>
-              {checks.map((check) => (
-                <tr key={check.checkId} className="align-top">
-                  <td className="border-b border-slate-900 py-2 pr-3">
-                    <button
-                      type="button"
-                      onClick={() => setActiveCheckId(check.checkId)}
-                      className="font-mono text-sky-300 underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                    >
-                      {check.checkId}
-                    </button>
-                  </td>
-                  <td className="border-b border-slate-900 py-2 pr-3">{sanitizeText(check.title)}</td>
-                  <td className={`border-b border-slate-900 py-2 pr-3 ${SEVERITY_TONE[check.severity] ?? ""}`}>
-                    {sanitizeText(check.severity)}
-                  </td>
-                  <td className="border-b border-slate-900 py-2 pr-3 tabular-nums">{check.hosts.size}</td>
-                  <td className="border-b border-slate-900 py-2 tabular-nums">{check.count}</td>
-                </tr>
+      <TabPanel id="hosts" active={pivot === "hosts"} idBase="findings-pivots">
+        <Card flush className="overflow-hidden">
+          {loading && hosts.length === 0 ? (
+            <div className="flex flex-col gap-2 p-4">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <Skeleton key={index} height={28} />
               ))}
-            </tbody>
-          </table>
-        )
-      ) : findings.length === 0 ? (
-        <EmptyState title="No findings match the current filters" detail="Adjust or clear filters to widen the search." />
-      ) : (
-        <FindingsTable
-          findings={findings}
-          pendingRow={pendingRow}
-          onOpenEvidence={openEvidence}
-          onOpenCheck={setActiveCheckId}
-          onOpenReport={setActiveReportId}
-          onFilterHost={(id) => toggle("hostId", String(id))}
-        />
-      )}
-
-      {pivot !== "checks" && totalPages > 1 ? (
-        <nav aria-label="Pagination" className="flex items-center justify-between gap-3 text-sm">
-          <button
-            type="button"
-            disabled={page <= 1}
-            onClick={() => setPage((value) => Math.max(1, value - 1))}
-            className="rounded border border-slate-700 px-2 py-1 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-          >
-            Previous
-          </button>
-          <span aria-live="polite" className="text-slate-400">
-            Page {page} of {totalPages}
-          </span>
-          <div className="flex items-center gap-2">
-            <label className="flex items-center gap-1 text-xs text-slate-400">
-              Rows
-              <select
-                value={pageSize}
-                onChange={(event) => {
-                  setPageSize(Number(event.target.value));
-                  setPage(1);
-                }}
-                className="rounded border border-slate-700 bg-slate-900 px-1 py-0.5"
-              >
-                {PAGE_SIZES.map((size) => (
-                  <option key={size} value={size}>
-                    {size}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              disabled={page >= totalPages}
-              onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
-              className="rounded border border-slate-700 px-2 py-1 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-            >
-              Next
-            </button>
+            </div>
+          ) : hosts.length === 0 ? (
+            <div className="p-4">
+              <EmptyState title="No hosts match the current filters" />
+            </div>
+          ) : (
+            <Table
+              label="Hosts matching the current scope and filters"
+              caption="Hosts matching the current scope and filters"
+              columns={hostColumns}
+              rows={hosts}
+              rowKey={(row) => String(row.id)}
+              stickyHeader
+              onRowClick={(row) => {
+                toggle("hostId", String(row.id));
+                setPivot("findings");
+              }}
+            />
+          )}
+        </Card>
+        {total > 0 ? (
+          <div className="mt-3">
+            <Pagination
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              pageSizeOptions={PAGE_SIZES}
+              onPageChange={setPage}
+              onPageSizeChange={(size) => {
+                setPageSize(size);
+                setPage(1);
+              }}
+            />
           </div>
-        </nav>
-      ) : null}
+        ) : null}
+      </TabPanel>
+
+      <TabPanel id="checks" active={pivot === "checks"} idBase="findings-pivots">
+        <Card flush className="overflow-hidden">
+          {loading && checks.length === 0 ? (
+            <div className="flex flex-col gap-2 p-4">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <Skeleton key={index} height={28} />
+              ))}
+            </div>
+          ) : checks.length === 0 ? (
+            <div className="p-4">
+              <EmptyState title="No checks match the current filters" />
+            </div>
+          ) : (
+            <Table
+              label="Checks matching the current filters"
+              caption="Checks matching the current filters"
+              columns={checkColumns}
+              rows={checks}
+              rowKey={(row) => row.checkId}
+              stickyHeader
+              onRowClick={(row) => setActiveCheckId(row.checkId)}
+            />
+          )}
+        </Card>
+        <p className="mt-3 flex items-center gap-2 text-2xs text-ink-subtle">
+          <Badge tone="accent" icon={ShieldAlert}>
+            By Check
+          </Badge>
+          Selected checks open the host-by-host breakdown from GET /api/checks/:checkId.
+        </p>
+      </TabPanel>
 
       <EvidenceDrawer
         open={evidence !== null}
@@ -602,153 +768,5 @@ export function Findings() {
         onClose={() => setEvidence(null)}
       />
     </section>
-  );
-}
-
-function FindingsTable({
-  findings,
-  pendingRow,
-  onOpenEvidence,
-  onOpenCheck,
-  onOpenReport,
-  onFilterHost,
-}: {
-  findings: Finding[];
-  pendingRow: string | null;
-  onOpenEvidence: (finding: Finding) => void;
-  onOpenCheck: (checkId: string) => void;
-  onOpenReport: (reportId: number) => void;
-  onFilterHost: (hostId: number) => void;
-}) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-sm">
-        <caption className="sr-only">Findings matching the current scope and filters</caption>
-        <thead>
-          <tr className="text-left text-slate-400">
-            <th scope="col" className="border-b border-slate-800 py-2 pr-3">Check</th>
-            <th scope="col" className="border-b border-slate-800 py-2 pr-3">Title</th>
-            <th scope="col" className="border-b border-slate-800 py-2 pr-3">Host</th>
-            <th scope="col" className="border-b border-slate-800 py-2 pr-3">Severity</th>
-            <th scope="col" className="border-b border-slate-800 py-2 pr-3">Status</th>
-            <th scope="col" className="border-b border-slate-800 py-2 pr-3">Treatment</th>
-            <th scope="col" className="border-b border-slate-800 py-2">Evidence</th>
-          </tr>
-        </thead>
-        <tbody>
-          {findings.map((finding) => {
-            const key = `${finding.reportId}:${finding.checkId}`;
-            return (
-              <tr
-                key={key}
-                onClick={() => void onOpenEvidence(finding)}
-                className="cursor-pointer align-top hover:bg-slate-800/40"
-              >
-                <td className="border-b border-slate-900 py-2 pr-3">
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onOpenCheck(finding.checkId);
-                    }}
-                    className="font-mono text-sky-300 underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                  >
-                    {sanitizeText(finding.checkId)}
-                  </button>
-                </td>
-                <td className="border-b border-slate-900 py-2 pr-3">{sanitizeText(finding.title)}</td>
-                <td className="border-b border-slate-900 py-2 pr-3">
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onFilterHost(finding.hostId);
-                    }}
-                    className="text-left text-slate-200 underline decoration-dotted underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                  >
-                    {sanitizeText(finding.displayId)}
-                  </button>
-                </td>
-                <td className={`border-b border-slate-900 py-2 pr-3 ${SEVERITY_TONE[finding.severity] ?? ""}`}>
-                  {sanitizeText(finding.severity)}
-                </td>
-                <td className="border-b border-slate-900 py-2 pr-3">{sanitizeText(finding.status)}</td>
-                <td className="border-b border-slate-900 py-2 pr-3">{sanitizeText(finding.treatment)}</td>
-                <td className="border-b border-slate-900 py-2">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void onOpenEvidence(finding);
-                      }}
-                      className="rounded border border-slate-700 px-2 py-0.5 text-xs hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                    >
-                      {pendingRow === key ? "Opening…" : "View"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onOpenReport(finding.reportId);
-                      }}
-                      className="rounded border border-slate-700 px-2 py-0.5 text-xs hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                    >
-                      Report
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function HostTable({ hosts, onFilterHost }: { hosts: HostGroup[]; onFilterHost: (hostId: number) => void }) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-sm">
-        <caption className="sr-only">Hosts matching the current scope and filters</caption>
-        <thead>
-          <tr className="text-left text-slate-400">
-            <th scope="col" className="border-b border-slate-800 py-2 pr-3">Host</th>
-            <th scope="col" className="border-b border-slate-800 py-2 pr-3">Platform</th>
-            <th scope="col" className="border-b border-slate-800 py-2 pr-3">Reports</th>
-            <th scope="col" className="border-b border-slate-800 py-2 pr-3">Risk</th>
-            <th scope="col" className="border-b border-slate-800 py-2 pr-3">Coverage</th>
-            <th scope="col" className="border-b border-slate-800 py-2">Last seen</th>
-          </tr>
-        </thead>
-        <tbody>
-          {hosts.map((host) => (
-            <tr key={host.id} className="align-top">
-              <td className="border-b border-slate-900 py-2 pr-3">
-                <button
-                  type="button"
-                  onClick={() => onFilterHost(host.id)}
-                  className="text-left text-sky-300 underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                >
-                  {sanitizeText(host.displayId)}
-                </button>
-              </td>
-              <td className="border-b border-slate-900 py-2 pr-3">
-                {sanitizeText([host.platform, host.os, host.arch].filter(Boolean).join(" · ")) || "—"}
-              </td>
-              <td className="border-b border-slate-900 py-2 pr-3 tabular-nums">{host.reportCount}</td>
-              <td className="border-b border-slate-900 py-2 pr-3 tabular-nums">
-                {host.riskScore === null ? "—" : host.riskScore.toFixed(1)}
-              </td>
-              <td className="border-b border-slate-900 py-2 pr-3 tabular-nums">
-                {host.coverage === null ? "—" : `${host.coverage.toFixed(1)}%`}
-              </td>
-              <td className="border-b border-slate-900 py-2">{sanitizeText(host.latestReceivedAt) || "—"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
   );
 }

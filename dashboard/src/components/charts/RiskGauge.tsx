@@ -21,10 +21,10 @@ const GAUGE_WIDTH = 240;
 const GAUGE_HEIGHT = 150;
 
 function riskBand(score: number): { label: string; color: string } {
-  if (score >= 90) return { label: "Excellent", color: "#059669" };
-  if (score >= 70) return { label: "Good", color: "#38bdf8" };
-  if (score >= 40) return { label: "At risk", color: "#f59e0b" };
-  return { label: "Critical", color: "#dc2626" };
+  if (score >= 90) return { label: "Excellent", color: "var(--color-compliant)" };
+  if (score >= 70) return { label: "Good", color: "var(--color-low)" };
+  if (score >= 40) return { label: "At risk", color: "var(--color-high-strong)" };
+  return { label: "Critical", color: "var(--color-critical-strong)" };
 }
 
 /**
@@ -36,7 +36,7 @@ export function RiskGauge({ score, coverage, onDrilldown }: RiskGaugeProps) {
   const band = riskBand(clamped);
   const data = [
     { name: "Risk score", value: clamped, fill: band.color, interactive: true },
-    { name: "Remaining", value: 100 - clamped, fill: "#1e293b", interactive: false },
+    { name: "Remaining", value: 100 - clamped, fill: "var(--color-surface-raised)", interactive: false },
   ];
 
   const renderSector = (props: PieSectorShapeProps): ReactNode => {
@@ -52,7 +52,7 @@ export function RiskGauge({ score, coverage, onDrilldown }: RiskGaugeProps) {
         startAngle={props.startAngle}
         endAngle={props.endAngle}
         cornerRadius={props.cornerRadius}
-        fill={typeof props.fill === "string" ? props.fill : "#1e293b"}
+        fill={typeof props.fill === "string" ? props.fill : "var(--color-surface-raised)"}
         label={interactive ? `Risk score ${value.toFixed(1)} out of 100. Show non-compliant findings.` : undefined}
         onActivate={
           interactive ? () => onDrilldown(drilldownQuery({ status: ["NonCompliant"] })) : undefined
@@ -86,7 +86,7 @@ export function RiskGauge({ score, coverage, onDrilldown }: RiskGaugeProps) {
         <div className="text-3xl font-semibold tabular-nums" style={{ color: band.color }}>
           {clamped.toFixed(1)}
         </div>
-        <div className="text-xs text-slate-400">{band.label}</div>
+        <div className="text-xs text-ink-muted">{band.label}</div>
       </div>
     </div>
   );

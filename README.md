@@ -58,6 +58,10 @@ hbs-extractor [OPTIONS]
 A dashboard-issued extractor carries a 512-byte keyslot with the issuance's
 public key and IDs. An unissued (placeholder) or expired binary exits before
 scanning. The keyslot checksum detects corruption; it is **not** a trust anchor.
+By default the sealed report is written **in the same directory as the extractor
+binary** (never the current working directory); `--out <path>` overrides it.
+Windows system locations are resolved from the environment (`SystemRoot`,
+`SystemDrive`, `ProgramFiles`, `ProgramData`), never assumed to be on `C:`.
 
 ### Offline by default
 
@@ -137,10 +141,20 @@ bun install
 bun run dev        # binds 127.0.0.1:3000 by default
 ```
 
+**First run.** If no users exist, the server creates a `super_admin` and prints
+its credentials once in the CLI (a random 20-character password). Sign in and
+change it. Disable with `HBS_BOOTSTRAP_ADMIN=false` (then use the `/setup`
+wizard); override with `HBS_ADMIN_USERNAME` / `HBS_ADMIN_PASSWORD`.
+
 Configuration: `PORT`, `HOST`, `HBS_DB_PATH`, `HBS_DATA_ROOT`, and optional TLS
 via `--tls-cert <path> --tls-key <path>` or `HBS_TLS_CERT` / `HBS_TLS_KEY`
 (the certificate SHA-256 fingerprint is printed at startup). Private keys are
 stored per issuance with mode `0600`; the server binds to localhost by default.
+
+For development, `bun run dev` serves the Vite SPA and proxies `/api`. For a
+single-host deployment, `bun run build` emits `dashboard/dist` and the API
+server serves it at `/` (with SPA deep-link fallback), so one process serves
+both the console and the API.
 
 ### Hierarchy and routing
 
@@ -160,10 +174,51 @@ cd dashboard && bun test          # Bun backend + frontend unit suite
 cd dashboard && bunx tsc --noEmit # strict TypeScript check
 ```
 
+### Real-world validation
+
+```bash
+# Linux: static musl extractor inside real distros, root and non-root
+bash scripts/docker-test/run.sh
+bun run scripts/docker-test/validate-reports.ts   # decrypt + assert every sealed report
+
+# Host sweep: host the dashboard and have 13 distro versions download the
+# extractor from it, run it, and push/upload results (with extractor logs)
+cd dashboard && bun run ../scripts/docker-e2e-hosts.ts
+
+# Linux end-to-end: issue a musl extractor, run it in debian:12, push to the dashboard
+cd dashboard && bun run ../scripts/e2e-linux.ts
+
+# Windows: native scans (full, filtered, category, list) + issued-extractor loop
+bun run scripts/windows-validate.ts
+cd dashboard && bun run ../scripts/e2e-loop.ts
+```
+
+Docker Desktop here runs Linux containers, so Windows is validated natively on
+a real Windows host. Windows-container mode (servercore/nanoserver LTSC sweep,
+`scripts/docker-e2e-hosts-windows.ts`) requires the enabled `Containers`
+Windows feature and a Docker Desktop install that permits Windows containers.
+
 ## Status and limitations
 
-See `.superpowers/sdd/2026-09-21-hbs-platform/progress.md` for the live
-execution ledger. Known open items at this revision include: the catalog-wide
-evidence-model refinement, remaining React workspace pages, deliverable exports
-(Excel/CSV/PDF/Word), and the full end-to-end validation matrix. The dashboard
-does not make outbound network calls; there is no telemetry and no auto-update.
+The platform is functionally complete end to end: a dashboard-issued extractor
+scans offline, seals a v2 report, pushes or uploads it, and the dashboard
+decrypts, routes, and exports it (verified by `scripts/e2e-loop.ts`).
+
+Known limitations at this revision:
+
+- Windows 10/11/Server 2016–2025 have not been exercised on real runners; the
+  catalog-wide audit (`extractor/tests/catalog.rs`) covers Linux and Windows
+  behavior with injected, offline contexts.
+- Evidence blocks use the `{path, line, col, context[], targetIndex}` wire
+  format, and the UI derives the ±3-line window from it. The spec's fully
+  discriminated block (`sourceType/offendingValue/contextBefore/contextAfter`)
+  is a documented future refinement, not implemented across the catalog.
+- Browser end-to-end specs under `dashboard/tests/` are driven by
+  `bunx playwright test` and gated behind `HBS_E2E=1`; `bun test` intentionally
+  ignores `tests/**` (see `dashboard/bunfig.toml`).
+- Backup restore validates and stages a replacement database; the operator
+  swaps the file and restarts the server rather than hot-swapping live state.
+
+The dashboard makes no outbound network calls; there is no telemetry and no
+auto-update. See `.superpowers/sdd/2026-09-21-hbs-platform/progress.md` for the
+full execution ledger.

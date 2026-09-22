@@ -1,7 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
-import { Copy, Download, RefreshCw } from "lucide-react";
+import { Check, Copy, Download, KeyRound, RefreshCw, ShieldAlert, Terminal } from "lucide-react";
 import { api, ApiError } from "../api";
-import { EmptyState } from "../components/EmptyState";
+import {
+  Badge,
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  EmptyState,
+  Input,
+  SectionHeader,
+  Select,
+  Skeleton,
+  useToast,
+} from "../components/ui";
+import { sanitizeText } from "../components/EvidenceDrawer";
 
 /** Platform allowlist mirrors `server/issuances.ts` PLATFORMS exactly. */
 export const PLATFORMS = ["linux-amd64", "linux-arm64", "windows-amd64"] as const;
@@ -67,8 +80,10 @@ function powershellSnippet(issuance: IssuanceDetail): string {
 function CopyButton({ value, label }: { value: string; label: string }) {
   const [copied, setCopied] = useState(false);
   return (
-    <button
-      type="button"
+    <Button
+      size="sm"
+      variant="ghost"
+      icon={copied ? Check : Copy}
       aria-label={label}
       onClick={() => {
         void navigator.clipboard?.writeText(value).then(
@@ -79,11 +94,25 @@ function CopyButton({ value, label }: { value: string; label: string }) {
           () => setCopied(false),
         );
       }}
-      className="inline-flex items-center gap-1 rounded border border-slate-700 px-1.5 py-0.5 text-xs hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
     >
-      <Copy size={12} aria-hidden />
       {copied ? "Copied" : "Copy"}
-    </button>
+    </Button>
+  );
+}
+
+function Snippet({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="overflow-hidden rounded-control border border-hairline-soft">
+      <div className="flex items-center justify-between gap-2 border-b border-hairline-soft px-2 py-1">
+        <span className="inline-flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-ink-subtle">
+          <Terminal size={12} aria-hidden /> {label}
+        </span>
+        <CopyButton value={value} label={`Copy ${label}`} />
+      </div>
+      <pre className="hbs-scroll overflow-x-auto bg-surface-sunken p-2 text-xs">
+        <code className="text-ink-muted">{value}</code>
+      </pre>
+    </div>
   );
 }
 
@@ -96,6 +125,7 @@ export function Downloads({ campaignId, locationId, onBack }: DownloadsProps) {
   const [expiry, setExpiry] = useState("");
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const toast = useToast();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -105,13 +135,15 @@ export function Downloads({ campaignId, locationId, onBack }: DownloadsProps) {
         "GET",
         `/api/campaigns/${campaignId}/locations/${locationId}/issuances`,
       );
-      setIssuances(rows);
+      setIssuances(Array.isArray(rows) ? rows : []);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "failed to load issuances");
+      const message = err instanceof ApiError ? err.message : "failed to load issuances";
+      setError(message);
+      toast.error("Could not load issuances", { description: message });
     } finally {
       setLoading(false);
     }
-  }, [campaignId, locationId]);
+  }, [campaignId, locationId, toast]);
 
   useEffect(() => {
     void load();
@@ -128,165 +160,166 @@ export function Downloads({ campaignId, locationId, onBack }: DownloadsProps) {
         { platform, expiry: expiry ? expiry : undefined },
       );
       setExpiry("");
+      toast.success("Issuance generated", { description: platform });
       await load();
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : "could not create issuance");
+      const message = err instanceof ApiError ? err.message : "could not create issuance";
+      setFormError(message);
+      toast.error("Could not generate issuance", { description: message });
     } finally {
       setCreating(false);
     }
   }
 
   return (
-    <section aria-label="Downloads" className="space-y-4">
-      <div className="flex items-center gap-3">
-        {onBack ? (
-          <button
-            type="button"
-            onClick={onBack}
-            className="rounded border border-slate-700 px-2 py-1 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-          >
-            ← Locations
-          </button>
-        ) : null}
-        <h2 className="text-lg font-semibold">Extractor downloads</h2>
-      </div>
+    <section aria-label="Downloads" className="mx-auto flex max-w-7xl flex-col gap-5">
+      <SectionHeader
+        eyebrow="Operate"
+        title="Extractor downloads"
+        description={`Immutable patched artifacts for campaign #${campaignId} · location #${locationId}.`}
+        icon={Download}
+        actions={
+          <>
+            {onBack ? (
+              <Button variant="ghost" onClick={onBack}>
+                Back
+              </Button>
+            ) : null}
+            <Button variant="secondary" icon={RefreshCw} loading={loading} onClick={() => void load()}>
+              Refresh
+            </Button>
+          </>
+        }
+      />
 
-      <form onSubmit={create} className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-800 p-3">
-        <label className="flex flex-col gap-1 text-sm">
-          Platform
-          <select
-            value={platform}
-            onChange={(event) => setPlatform(event.target.value as Platform)}
-            className="rounded border border-slate-700 bg-slate-900 px-2 py-1"
-          >
-            {PLATFORMS.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          Expiry (optional)
-          <input
-            type="datetime-local"
-            value={expiry}
-            onChange={(event) => setExpiry(event.target.value)}
-            className="rounded border border-slate-700 bg-slate-900 px-2 py-1"
-          />
-        </label>
-        <button
-          type="submit"
-          disabled={creating}
-          className="rounded bg-sky-600 px-3 py-1.5 text-sm font-medium disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-        >
-          {creating ? "Generating…" : "Generate issuance"}
-        </button>
-        <button
-          type="button"
-          onClick={() => void load()}
-          className="inline-flex items-center gap-1 rounded border border-slate-700 px-2 py-1.5 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-        >
-          <RefreshCw size={14} aria-hidden /> Refresh
-        </button>
-        {formError ? (
-          <p role="alert" className="text-sm text-red-400">
-            {formError}
-          </p>
-        ) : null}
-      </form>
+      <Card>
+        <CardHeader
+          icon={KeyRound}
+          title="Generate issuance"
+          description="Each issuance has a unique extractor identity and independent keypair."
+          actions={formError ? <Badge tone="critical">{formError}</Badge> : null}
+        />
+        <CardBody>
+          <form onSubmit={create} className="flex flex-wrap items-end gap-3">
+            <Select
+              label="Platform"
+              value={platform}
+              onChange={(value) => setPlatform(value as Platform)}
+              options={PLATFORMS.map((option) => ({ value: option, label: option }))}
+              className="w-44"
+            />
+            <Input
+              label="Expiry (optional)"
+              type="datetime-local"
+              value={expiry}
+              onChange={(event) => setExpiry(event.target.value)}
+              containerClassName="w-56"
+              hint="Defaults to 90 days."
+            />
+            <Button type="submit" variant="primary" icon={KeyRound} loading={creating}>
+              Generate issuance
+            </Button>
+          </form>
+        </CardBody>
+      </Card>
 
-      {error ? <EmptyState title="Could not load issuances" detail={error} /> : null}
-      {loading && issuances === null && !error ? <p role="status">Loading issuances…</p> : null}
-      {issuances && issuances.length === 0 ? (
+      {error ? (
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-control border border-critical/40 bg-critical-soft/60 p-3 text-sm text-critical"
+        >
+          <ShieldAlert size={16} aria-hidden className="mt-0.5 shrink-0" />
+          <span>{error}</span>
+        </div>
+      ) : null}
+
+      {loading && issuances === null ? (
+        <div className="flex flex-col gap-4">
+          {Array.from({ length: 2 }).map((_, index) => (
+            <Card key={index}>
+              <Skeleton width="40%" />
+              <Skeleton className="mt-3" width="100%" />
+            </Card>
+          ))}
+        </div>
+      ) : issuances && issuances.length === 0 ? (
         <EmptyState
+          icon={KeyRound}
           title="No issuances yet"
           detail="Generate an extractor to produce a patched artifact with a unique identity."
         />
-      ) : null}
+      ) : (
+        <ul className="flex flex-col gap-4">
+          {(issuances ?? []).map((issuance) => (
+            <li key={issuance.id} className="hbs-panel flex flex-col gap-3 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-control bg-surface-raised text-accent">
+                    <Download size={15} aria-hidden />
+                  </span>
+                  <span className="font-semibold text-ink">{sanitizeText(issuance.platform)}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {issuance.revoked ? <Badge tone="critical">Revoked</Badge> : null}
+                  {issuance.expired ? <Badge tone="high">Expired</Badge> : null}
+                  {!issuance.revoked && !issuance.expired ? <Badge tone="compliant">Active</Badge> : null}
+                  <Badge tone="accent">{issuance.downloadCount} downloads</Badge>
+                </div>
+              </div>
 
-      <ul className="space-y-3">
-        {(issuances ?? []).map((issuance) => (
-          <li key={issuance.id} className="rounded-lg border border-slate-800 bg-slate-900/50 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="font-medium">{issuance.platform}</div>
-              <div className="flex items-center gap-2 text-xs">
-                {issuance.revoked ? (
-                  <span className="rounded border border-red-600 px-1.5 py-0.5 text-red-300">Revoked</span>
-                ) : null}
-                {issuance.expired ? (
-                  <span className="rounded border border-amber-500 px-1.5 py-0.5 text-amber-300">Expired</span>
-                ) : null}
-                {!issuance.revoked && !issuance.expired ? (
-                  <span className="rounded border border-emerald-600 px-1.5 py-0.5 text-emerald-300">Active</span>
-                ) : null}
-              </div>
-            </div>
+              <dl className="grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-4">
+                <div>
+                  <dt className="text-ink-subtle">Key ID</dt>
+                  <dd className="tabular-nums text-ink">{issuance.keyId}</dd>
+                </div>
+                <div>
+                  <dt className="text-ink-subtle">Size</dt>
+                  <dd className="tabular-nums text-ink">{formatBytes(issuance.artifactSize)}</dd>
+                </div>
+                <div>
+                  <dt className="text-ink-subtle">Expires</dt>
+                  <dd className="text-ink">{sanitizeText(issuance.expiresAt) || "—"}</dd>
+                </div>
+                <div>
+                  <dt className="text-ink-subtle">Extractor ID</dt>
+                  <dd className="break-all font-mono text-2xs text-ink-muted">{sanitizeText(issuance.extractorId)}</dd>
+                </div>
+                <div className="sm:col-span-2 lg:col-span-4">
+                  <dt className="text-ink-subtle">Artifact SHA-256</dt>
+                  <dd className="break-all font-mono text-2xs text-ink-muted">{sanitizeText(issuance.artifactSha256)}</dd>
+                </div>
+              </dl>
 
-            <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
-              <div>
-                <dt className="text-slate-400">Key ID</dt>
-                <dd className="tabular-nums">{issuance.keyId}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-400">Size</dt>
-                <dd className="tabular-nums">{formatBytes(issuance.artifactSize)}</dd>
-              </div>
-              <div className="sm:col-span-2">
-                <dt className="text-slate-400">Artifact SHA-256</dt>
-                <dd className="break-all font-mono text-[11px]">{issuance.artifactSha256}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-400">Extractor ID</dt>
-                <dd className="break-all font-mono text-[11px]">{issuance.extractorId}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-400">Expires</dt>
-                <dd>{issuance.expiresAt ?? "—"}</dd>
-              </div>
-            </dl>
+              {issuance.versionStalenessWarning ? (
+                <p role="alert" className="text-xs text-high">
+                  {sanitizeText(issuance.versionStalenessWarning)}
+                </p>
+              ) : null}
 
-            {issuance.versionStalenessWarning ? (
-              <p role="alert" className="mt-2 text-xs text-amber-300">
-                {issuance.versionStalenessWarning}
-              </p>
-            ) : null}
-
-            <div className="mt-3 space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs uppercase tracking-wide text-slate-400">Download URL</span>
-                <CopyButton value={artifactUrl(issuance)} label="Copy download URL" />
+              <div className="grid gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-2xs font-semibold uppercase tracking-wide text-ink-subtle">Download URL</span>
+                  <CopyButton value={artifactUrl(issuance)} label="Copy download URL" />
+                </div>
+                <code className="hbs-scroll block overflow-x-auto break-all rounded-control border border-hairline-soft bg-surface-sunken p-2 font-mono text-2xs text-ink-muted">
+                  {artifactUrl(issuance)}
+                </code>
+                <Snippet label="curl" value={curlSnippet(issuance)} />
+                <Snippet label="PowerShell" value={powershellSnippet(issuance)} />
               </div>
-              <code className="block break-all rounded bg-slate-950 p-2 font-mono text-[11px]">
-                {artifactUrl(issuance)}
-              </code>
 
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs uppercase tracking-wide text-slate-400">curl</span>
-                <CopyButton value={curlSnippet(issuance)} label="Copy curl command" />
+              <div className="flex flex-wrap items-center gap-2">
+                <a
+                  href={issuance.downloadUrl}
+                  className="inline-flex items-center gap-1.5 rounded-control border border-hairline bg-surface-raised px-3 py-1.5 text-xs text-ink hover:border-hairline-strong"
+                >
+                  <Download size={13} aria-hidden /> Download artifact ({issuance.downloadCount})
+                </a>
               </div>
-              <code className="block break-all rounded bg-slate-950 p-2 font-mono text-[11px]">
-                {curlSnippet(issuance)}
-              </code>
-
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs uppercase tracking-wide text-slate-400">PowerShell</span>
-                <CopyButton value={powershellSnippet(issuance)} label="Copy PowerShell command" />
-              </div>
-              <code className="block break-all rounded bg-slate-950 p-2 font-mono text-[11px]">
-                {powershellSnippet(issuance)}
-              </code>
-
-              <a
-                href={issuance.downloadUrl}
-                className="inline-flex items-center gap-1 text-xs text-sky-300 underline focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-              >
-                <Download size={12} aria-hidden /> Download ({issuance.downloadCount})
-              </a>
-            </div>
-          </li>
-        ))}
-      </ul>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }

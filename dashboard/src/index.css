@@ -1,24 +1,361 @@
 @import "tailwindcss";
 
-:root {
-  color-scheme: dark;
+/*
+ * HBS Console design system.
+ *
+ * Everything below is expressed as semantic tokens so components never carry
+ * ad-hoc hex values. Tailwind v4 emits the `@theme` custom properties on
+ * `:root`; the light theme re-declares the same properties under
+ * `[data-theme="light"]`, so a single utility (`bg-surface`, `text-critical`)
+ * adapts to the active theme at runtime.
+ */
+
+@theme {
+  /* Typography -------------------------------------------------------- */
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-2xs--letter-spacing: 0.04em;
+
+  /* Surfaces & chrome (dark-first) ------------------------------------ */
+  --color-canvas: #0b0f14;
+  --color-canvas-elevated: #0e141c;
+  --color-surface: #111923;
+  --color-surface-raised: #16202c;
+  --color-surface-overlay: #1b2735;
+  --color-surface-sunken: #090d12;
+
+  --color-hairline: #223040;
+  --color-hairline-strong: #33475c;
+  --color-hairline-soft: #1a2532;
+
+  /* Text -------------------------------------------------------------- */
+  --color-ink: #e9eff7;
+  --color-ink-muted: #9fb0c3;
+  --color-ink-subtle: #6d8098;
+  --color-ink-inverse: #0b0f14;
+
+  /* Accents ----------------------------------------------------------- */
+  --color-accent: #38bdf8;
+  --color-accent-strong: #0ea5e9;
+  --color-accent-soft: #102c3a;
+  --color-accent-contrast: #04121c;
+  --color-focus: #7dd3fc;
+
+  /* Severity ---------------------------------------------------------- */
+  --color-critical: #fb7185;
+  --color-critical-strong: #f43f5e;
+  --color-critical-soft: #3a1620;
+  --color-high: #fbbf24;
+  --color-high-strong: #f59e0b;
+  --color-high-soft: #3a2a10;
+  --color-medium: #facc15;
+  --color-medium-soft: #3a3310;
+  --color-low: #38bdf8;
+  --color-low-soft: #102c3a;
+  --color-info: #94a3b8;
+  --color-info-soft: #1f2937;
+
+  /* Status ------------------------------------------------------------ */
+  --color-compliant: #34d399;
+  --color-compliant-soft: #0f2f28;
+  --color-noncompliant: #f87171;
+  --color-noncompliant-soft: #3a1717;
+  --color-degraded: #fbbf24;
+  --color-degraded-soft: #3a2f10;
+  --color-na: #94a3b8;
+  --color-na-soft: #1f2937;
+  --color-error: #fb7185;
+  --color-error-soft: #3a1620;
+
+  /* Treatment lifecycle ---------------------------------------------- */
+  --color-treatment-open: #38bdf8;
+  --color-treatment-open-soft: #102c3a;
+  --color-treatment-accepted: #fbbf24;
+  --color-treatment-accepted-soft: #3a2a10;
+  --color-treatment-false-positive: #94a3b8;
+  --color-treatment-false-positive-soft: #1f2937;
+  --color-treatment-remediated: #34d399;
+  --color-treatment-remediated-soft: #0f2f28;
+
+  /* Evidence depth ---------------------------------------------------- */
+  --color-evidence-primary: #34d399;
+  --color-evidence-primary-soft: #0f2f28;
+  --color-evidence-fallback: #fbbf24;
+  --color-evidence-fallback-soft: #3a2a10;
+  --color-evidence-degraded: #94a3b8;
+  --color-evidence-degraded-soft: #1f2937;
+
+  /* Radii & elevation -------------------------------------------------- */
+  --radius-panel: 0.75rem;
+  --radius-control: 0.5rem;
+
+  --shadow-panel: 0 1px 2px 0 rgb(0 0 0 / 0.35), 0 1px 1px -1px rgb(0 0 0 / 0.4);
+  --shadow-raised: 0 10px 30px -12px rgb(0 0 0 / 0.65);
+  --shadow-overlay: 0 24px 60px -18px rgb(0 0 0 / 0.8);
+
+  /* Motion ------------------------------------------------------------ */
+  --animate-fade-in: hbs-fade-in 160ms ease-out both;
+  --animate-scale-in: hbs-scale-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-slide-in-right: hbs-slide-in-right 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-toast-in: hbs-toast-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-shimmer: hbs-shimmer 1.6s ease-in-out infinite;
 }
 
-html,
-body,
-#root {
-  height: 100%;
+/* Light theme: re-declare the same tokens. Unlayered, so it wins over the
+   `@layer theme` output regardless of source order. */
+[data-theme="light"] {
+  --color-canvas: #f4f6fb;
+  --color-canvas-elevated: #eef2f8;
+  --color-surface: #ffffff;
+  --color-surface-raised: #f8fafc;
+  --color-surface-overlay: #ffffff;
+  --color-surface-sunken: #eaeef5;
+
+  --color-hairline: #d8e0eb;
+  --color-hairline-strong: #b9c6d8;
+  --color-hairline-soft: #e6ebf3;
+
+  --color-ink: #0f172a;
+  --color-ink-muted: #4a5a70;
+  --color-ink-subtle: #6b7c93;
+  --color-ink-inverse: #f8fafc;
+
+  --color-accent: #0284c7;
+  --color-accent-strong: #0369a1;
+  --color-accent-soft: #e0f2fe;
+  --color-accent-contrast: #f0f9ff;
+  --color-focus: #0284c7;
+
+  --color-critical: #b91c1c;
+  --color-critical-strong: #991b1b;
+  --color-critical-soft: #fee2e2;
+  --color-high: #b45309;
+  --color-high-strong: #92400e;
+  --color-high-soft: #fef3c7;
+  --color-medium: #a16207;
+  --color-medium-soft: #fef9c3;
+  --color-low: #0369a1;
+  --color-low-soft: #e0f2fe;
+  --color-info: #475569;
+  --color-info-soft: #e2e8f0;
+
+  --color-compliant: #047857;
+  --color-compliant-soft: #d1fae5;
+  --color-noncompliant: #b91c1c;
+  --color-noncompliant-soft: #fee2e2;
+  --color-degraded: #b45309;
+  --color-degraded-soft: #fef3c7;
+  --color-na: #475569;
+  --color-na-soft: #e2e8f0;
+  --color-error: #be123c;
+  --color-error-soft: #ffe4e6;
+
+  --color-treatment-open: #0369a1;
+  --color-treatment-open-soft: #e0f2fe;
+  --color-treatment-accepted: #b45309;
+  --color-treatment-accepted-soft: #fef3c7;
+  --color-treatment-false-positive: #475569;
+  --color-treatment-false-positive-soft: #e2e8f0;
+  --color-treatment-remediated: #047857;
+  --color-treatment-remediated-soft: #d1fae5;
+
+  --color-evidence-primary: #047857;
+  --color-evidence-primary-soft: #d1fae5;
+  --color-evidence-fallback: #b45309;
+  --color-evidence-fallback-soft: #fef3c7;
+  --color-evidence-degraded: #475569;
+  --color-evidence-degraded-soft: #e2e8f0;
+
+  --shadow-panel: 0 1px 2px 0 rgb(15 23 42 / 0.06), 0 1px 3px 0 rgb(15 23 42 / 0.08);
+  --shadow-raised: 0 10px 30px -14px rgb(15 23 42 / 0.25);
+  --shadow-overlay: 0 24px 60px -20px rgb(15 23 42 / 0.35);
 }
 
-body {
-  margin: 0;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  background-color: #0b0f14;
-  color: #e5e7eb;
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    color-scheme: dark;
+    height: 100%;
+    background-color: var(--color-canvas);
+  }
+
+  html[data-theme="light"] {
+    color-scheme: light;
+  }
+
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-synthesis-weight: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  /* Global keyboard affordance; components layer their own rings on top. */
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
+    color: var(--color-ink);
+  }
+
+  ::placeholder {
+    color: var(--color-ink-subtle);
+    opacity: 1;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }
 
-/* Light theme is applied via [data-theme="light"] for the accessible toggle. */
-[data-theme="light"] body {
-  background-color: #f8fafc;
-  color: #0f172a;
+@layer components {
+  /* A standard panel: raised surface, hairline border, soft elevation. */
+  .hbs-panel {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-panel);
+    box-shadow: var(--shadow-panel);
+  }
+
+  .hbs-inset {
+    background-color: var(--color-surface-sunken);
+    border: 1px solid var(--color-hairline-soft);
+    border-radius: var(--radius-control);
+  }
+
+  /* Thin, theme-aware scrollbars for dense data regions. */
+  .hbs-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-hairline-strong) transparent;
+  }
+
+  .hbs-scroll::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .hbs-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .hbs-scroll::-webkit-scrollbar-thumb {
+    background-color: var(--color-hairline-strong);
+    border: 3px solid transparent;
+    border-radius: 9999px;
+    background-clip: content-box;
+  }
+
+  /* Subtle scanline/mesh backdrop used behind auth and empty screens. */
+  .hbs-mesh {
+    background-image:
+      radial-gradient(circle at 15% 10%, color-mix(in srgb, var(--color-accent) 14%, transparent), transparent 42%),
+      radial-gradient(circle at 85% 0%, color-mix(in srgb, var(--color-low) 10%, transparent), transparent 38%);
+  }
+
+  .hbs-divider {
+    height: 1px;
+    background: linear-gradient(
+      to right,
+      transparent,
+      var(--color-hairline) 12%,
+      var(--color-hairline) 88%,
+      transparent
+    );
+  }
+}
+
+@keyframes hbs-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes hbs-scale-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes hbs-slide-in-right {
+  from {
+    opacity: 0.4;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes hbs-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes hbs-shimmer {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.85;
+  }
 }

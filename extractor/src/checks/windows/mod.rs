@@ -36,6 +36,53 @@ fn powershell_registry_path(path: &str) -> String {
     }
 }
 
+// ---- environment-derived system paths ---------------------------------------
+// Never assume `C:\`: the system drive and profile directories are configurable
+// (SystemRoot/SystemDrive/ProgramFiles/ProgramData) and differ across hosts.
+
+/// `%SystemRoot%` (e.g. `D:\Windows`), falling back to the canonical default.
+pub fn system_root() -> String {
+    std::env::var("SystemRoot")
+        .or_else(|_| std::env::var("windir"))
+        .unwrap_or_else(|_| r"C:\Windows".to_string())
+}
+
+/// `%SystemDrive%` (e.g. `D:`).
+pub fn system_drive() -> String {
+    std::env::var("SystemDrive").unwrap_or_else(|_| "C:".to_string())
+}
+
+/// `%ProgramFiles%`.
+pub fn program_files() -> String {
+    std::env::var("ProgramFiles").unwrap_or_else(|_| r"C:\Program Files".to_string())
+}
+
+/// `%ProgramData%`.
+pub fn program_data() -> String {
+    std::env::var("ProgramData").unwrap_or_else(|_| r"C:\ProgramData".to_string())
+}
+
+pub fn system32_dir() -> String {
+    format!("{}\\System32", system_root())
+}
+
+pub fn perf_logs_dir() -> String {
+    format!("{}\\PerfLogs", system_drive())
+}
+
+/// The all-users Startup folder.
+pub fn startup_dir() -> String {
+    format!(
+        "{}\\Microsoft\\Windows\\Start Menu\\Programs\\StartUp",
+        program_data()
+    )
+}
+
+/// The hosts file under the real system root.
+pub fn hosts_file() -> String {
+    format!("{}\\System32\\drivers\\etc\\hosts", system_root())
+}
+
 fn reg_query_value(output: &str, name: &str) -> Option<String> {
     output.lines().find_map(|line| {
         let line = line.trim();

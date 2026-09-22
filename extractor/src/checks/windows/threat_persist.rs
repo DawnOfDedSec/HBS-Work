@@ -5,7 +5,7 @@
 //! hosts file. Missing or blocked evidence degrades; it never becomes Error.
 
 use super::services::parse_sc_qc;
-use super::{reg_query_dword_with_log, QueryResult};
+use super::{hosts_file, reg_query_dword_with_log, startup_dir, QueryResult};
 use crate::checks::{degraded, nok, ok};
 use crate::context::ScanContext;
 use crate::model::{CheckOutcome, FallbackAttempt, RegisteredCheck};
@@ -18,7 +18,6 @@ const IFEO: &str =
 const NETSH_HELPERS: &str = r"HKLM\SOFTWARE\Microsoft\NetSh";
 const SHELL_FOLDERS: &str =
     r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders";
-const DEFAULT_STARTUP: &str = r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp";
 const MODERN_LAPS: &str = r"HKLM\SOFTWARE\Policies\Microsoft\Windows\LAPS";
 const LEGACY_LAPS: &str =
     r"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Services\AdmPwdService";
@@ -184,7 +183,7 @@ fn startup_executables(ctx: &mut ScanContext) -> CheckOutcome {
             })
         })
         .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| DEFAULT_STARTUP.into());
+        .unwrap_or_else(startup_dir);
     attempts.push(FallbackAttempt {
         source: format!("reg query {SHELL_FOLDERS} /v Common Startup"),
         outcome: format!("startup folder: {folder}"),
@@ -410,10 +409,10 @@ fn wmi_subscriptions(ctx: &mut ScanContext) -> CheckOutcome {
 
 // WIN-TH-020
 fn hosts_redirects(ctx: &mut ScanContext) -> CheckOutcome {
-    const HOSTS: &str = "C:/Windows/System32/drivers/etc/hosts";
+    let hosts = hosts_file();
     // Fixture roots cannot prefix a drive-qualified path on Windows.
     let source = if ctx.root_prefix.as_os_str().is_empty() {
-        HOSTS
+        hosts.as_str()
     } else {
         "/Windows/System32/drivers/etc/hosts"
     };
@@ -435,14 +434,14 @@ fn hosts_redirects(ctx: &mut ScanContext) -> CheckOutcome {
     if entries.is_empty() {
         ok(
             "hosts file contains only default loopback entries".into(),
-            format!("file:{HOSTS}"),
-            format!("read {HOSTS}"),
+            format!("file:{hosts}"),
+            format!("read {hosts}"),
         )
     } else {
         nok(
             format!("non-default hosts redirects: {}", entries.join(" | ")),
-            format!("file:{HOSTS}"),
-            format!("read {HOSTS}"),
+            format!("file:{hosts}"),
+            format!("read {hosts}"),
         )
     }
 }

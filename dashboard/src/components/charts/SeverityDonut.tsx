@@ -44,7 +44,7 @@ export function SeverityDonut({ data, onDrilldown }: SeverityDonutProps) {
         endAngle={props.endAngle}
         cornerRadius={props.cornerRadius}
         fill={typeof props.fill === "string" ? props.fill : severityColor(severity)}
-        stroke="#0b0f14"
+        stroke="var(--color-surface-sunken)"
         strokeWidth={4}
         label={`${severity} severity: ${count} findings. Show findings.`}
         onActivate={() => onDrilldown(drilldownQuery({ severity: [severity] }))}
@@ -56,7 +56,7 @@ export function SeverityDonut({ data, onDrilldown }: SeverityDonutProps) {
 
   const chart =
     nonzero.length === 0 ? (
-      <p role="status" className="py-8 text-center text-sm text-slate-400">
+      <p role="status" className="py-8 text-center text-sm text-ink-muted">
         No findings in this scope.
       </p>
     ) : (
@@ -81,8 +81,8 @@ export function SeverityDonut({ data, onDrilldown }: SeverityDonutProps) {
           <Tooltip content={ExactTooltip} />
         </PieChart>
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-2xl font-semibold tabular-nums">{total}</span>
-          <span className="text-xs text-slate-400">findings</span>
+          <span className="text-2xl font-semibold tabular-nums text-ink">{total}</span>
+          <span className="text-xs text-ink-muted">findings</span>
         </div>
       </div>
     );

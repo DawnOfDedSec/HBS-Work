@@ -31,7 +31,26 @@ fn collect_linux(ctx: &mut ScanContext, m: &mut Map<String, Value>) {
     set(m, "hostname", json!(hostname));
     let fqdn = ctx.cmd("hostname", &["-f"]).or_else(|| hostname.clone());
     set(m, "fqdn", json!(fqdn));
-    set(m, "machine_id", json!(trimmed(ctx, "/etc/machine-id")));
+    // Stable machine identity. Minimal containers often ship an empty
+    // /etc/machine-id, so fall back to the dbus copy, then to a
+    // virtualization-aware stable value (a container's hostname is its
+    // container id; a VM/bare-metal host can use its DMI product UUID).
+    let virt = ctx.platform.virtualized.clone().unwrap_or_default();
+    let container = ["docker", "podman", "containerd", "lxc", "openvz", "rkt"]
+        .iter()
+        .any(|c| virt.eq_ignore_ascii_case(c));
+    let mut machine_id =
+        trimmed(ctx, "/etc/machine-id").or_else(|| trimmed(ctx, "/var/lib/dbus/machine-id"));
+    if machine_id.is_none() {
+        machine_id = if container {
+            hostname.as_ref().map(|h| format!("container-{h}"))
+        } else {
+            trimmed(ctx, "/sys/class/dmi/id/product_uuid")
+                .map(|u| format!("dmi-{u}"))
+                .or_else(|| hostname.as_ref().map(|h| format!("host-{h}")))
+        };
+    }
+    set(m, "machine_id", json!(machine_id));
     set(
         m,
         "os_name",

@@ -214,9 +214,18 @@ fn main() {
             std::process::exit(3);
         });
 
+    // Default output: alongside the extractor binary itself (its own
+    // directory), never the current working directory — operators run it from
+    // arbitrary places, and the report should land where the tool lives.
     let path = args.out.clone().unwrap_or_else(|| {
         let stamp = chrono_like_stamp();
-        format!("hbs-report-{}-{}.hbs", hostname, stamp)
+        let dir = std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(std::path::Path::to_path_buf))
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        dir.join(format!("hbs-report-{hostname}-{stamp}.hbs"))
+            .to_string_lossy()
+            .into_owned()
     });
     std::fs::write(&path, &envelope).unwrap_or_else(|e| {
         eprintln!("hbs-extractor: cannot write {path}: {e}");

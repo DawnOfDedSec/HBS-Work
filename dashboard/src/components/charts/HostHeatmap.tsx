@@ -32,7 +32,6 @@ const CHART_WIDTH = 560;
 const MAX_HOSTS = 20;
 const CELL_WIDTH = 62;
 const CELL_HEIGHT = 24;
-const COLUMN_GAP = 6;
 
 type HeatPoint = {
   x: number;
@@ -48,11 +47,11 @@ function heatTooltip(props: TooltipContentProps): ReactNode {
   const point = payload?.[0]?.payload as HeatPoint | undefined;
   if (!active || !point) return null;
   return (
-    <div className="rounded border border-slate-700 bg-slate-950/95 px-2 py-1 text-xs shadow-lg">
-      <div className="font-medium text-slate-200">{point.hostname}</div>
-      <div className="text-slate-300">
-        <span className="text-slate-400">{point.severity}: </span>
-        <span className="tabular-nums text-slate-100">{point.value}</span>
+    <div className="rounded-control border border-hairline-strong bg-surface-overlay px-2.5 py-1.5 text-xs shadow-overlay">
+      <div className="font-semibold text-ink">{point.hostname}</div>
+      <div className="text-ink-muted">
+        <span className="text-ink-subtle">{point.severity}: </span>
+        <span className="tabular-nums text-ink">{point.value}</span>
       </div>
     </div>
   );
@@ -97,7 +96,7 @@ export function HostHeatmap({ hosts, onDrilldown }: HostHeatmapProps) {
         radius={4}
         fill={severityColor(point.severity)}
         fillOpacity={point.value === 0 ? 0.12 : 0.25 + 0.75 * intensity}
-        stroke="#0b0f14"
+        stroke="var(--color-surface-sunken)"
         label={`${point.hostname} ${point.severity}: ${point.value} findings. Show findings.`}
         onActivate={
           point.value > 0
@@ -116,7 +115,7 @@ export function HostHeatmap({ hosts, onDrilldown }: HostHeatmapProps) {
 
   const chart =
     rows.length === 0 ? (
-      <p role="status" className="py-8 text-center text-sm text-slate-400">
+      <p role="status" className="py-8 text-center text-sm text-ink-muted">
         No host data in this scope.
       </p>
     ) : (
@@ -135,7 +134,7 @@ export function HostHeatmap({ hosts, onDrilldown }: HostHeatmapProps) {
             ticks={SEVERITY_ORDER.map((_, index) => index)}
             interval={0}
             tickFormatter={(value: number) => SEVERITY_ORDER[value] ?? ""}
-            stroke="#94a3b8"
+            stroke="var(--color-ink-subtle)"
             fontSize={10}
           />
           <YAxis
@@ -150,7 +149,7 @@ export function HostHeatmap({ hosts, onDrilldown }: HostHeatmapProps) {
               return name.length > 18 ? `${name.slice(0, 17)}…` : name;
             }}
             width={140}
-            stroke="#94a3b8"
+            stroke="var(--color-ink-subtle)"
             fontSize={10}
           />
           <Tooltip content={heatTooltip} />
@@ -171,11 +170,7 @@ export function HostHeatmap({ hosts, onDrilldown }: HostHeatmapProps) {
         const counts = SEVERITY_ORDER.map((severity) => host.severity[severity] ?? 0);
         return {
           key: String(host.hostId),
-          cells: [
-            host.hostname,
-            ...counts,
-            counts.reduce((sum, count) => sum + count, 0),
-          ],
+          cells: [host.hostname, ...counts, counts.reduce((sum, count) => sum + count, 0)],
         };
       })}
     />

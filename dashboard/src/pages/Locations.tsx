@@ -1,8 +1,28 @@
 import { useCallback, useEffect, useState } from "react";
-import { Download, MapPin, Plus } from "lucide-react";
+import {
+  AlertTriangle,
+  Download,
+  MapPin,
+  Plus,
+  RefreshCw,
+  Server,
+  Tag,
+} from "lucide-react";
 import { api, ApiError } from "../api";
-import { EmptyState } from "../components/EmptyState";
-import { ToneBadge } from "../components/charts/TableTwin";
+import {
+  Badge,
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  EmptyState,
+  Input,
+  SectionHeader,
+  Skeleton,
+  Stat,
+  useToast,
+} from "../components/ui";
+import { sanitizeText } from "../components/EvidenceDrawer";
 
 export type LocationRow = {
   id: number;
@@ -63,17 +83,15 @@ function parseTagsInput(value: string): string[] {
   ];
 }
 
-function formatFreshness(value: string | null): { label: string; tone: "default" | "warning" | "critical" } {
-  if (!value) return { label: "never seen", tone: "default" };
+function formatFreshness(value: string | null): { label: string; tone: "compliant" | "degraded" | "critical" } {
+  if (!value) return { label: "never seen", tone: "degraded" };
   const at = Date.parse(value);
-  if (!Number.isFinite(at)) return { label: value, tone: "default" };
-  const ageMs = Date.now() - at;
-  const hours = ageMs / 3_600_000;
-  if (hours < 1) return { label: "fresh (<1h)", tone: "default" };
-  if (hours < 24) return { label: `fresh (${Math.floor(hours)}h)`, tone: "default" };
+  if (!Number.isFinite(at)) return { label: value, tone: "degraded" };
+  const hours = (Date.now() - at) / 3_600_000;
+  if (hours < 1) return { label: "fresh (<1h)", tone: "compliant" };
+  if (hours < 24) return { label: `fresh (${Math.floor(hours)}h)`, tone: "compliant" };
   const days = Math.floor(hours / 24);
-  if (days < 7) return { label: `${days}d old`, tone: "default" };
-  if (days < 30) return { label: `stale (${days}d)`, tone: "warning" };
+  if (days < 30) return { label: `stale (${days}d)`, tone: "degraded" };
   return { label: `stale (${days}d)`, tone: "critical" };
 }
 
@@ -101,6 +119,7 @@ export function Locations({ campaignId, onOpenHost, onOpenDownloads }: Locations
   const [tags, setTags] = useState("");
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const toast = useToast();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -126,11 +145,13 @@ export function Locations({ campaignId, onOpenHost, onOpenDownloads }: Locations
       );
       setStats(Object.fromEntries(entries));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "failed to load locations");
+      const message = err instanceof ApiError ? err.message : "failed to load locations";
+      setError(message);
+      toast.error("Could not load locations", { description: message });
     } finally {
       setLoading(false);
     }
-  }, [campaignId]);
+  }, [campaignId, toast]);
 
   useEffect(() => {
     void load();
@@ -145,9 +166,12 @@ export function Locations({ campaignId, onOpenHost, onOpenDownloads }: Locations
       await api.createLocation(campaignId, { name: name.trim(), tags: parseTagsInput(tags) });
       setName("");
       setTags("");
+      toast.success("Location added", { description: name.trim() });
       await load();
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : "could not create location");
+      const message = err instanceof ApiError ? err.message : "could not create location";
+      setFormError(message);
+      toast.error("Could not add location", { description: message });
     } finally {
       setCreating(false);
     }
@@ -156,167 +180,183 @@ export function Locations({ campaignId, onOpenHost, onOpenDownloads }: Locations
   async function retire(location: LocationRow) {
     try {
       await api.retireLocation(campaignId, location.id);
+      toast.info("Location retired", { description: sanitizeText(location.name) });
       await load();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "could not retire location");
+      const message = err instanceof ApiError ? err.message : "could not retire location";
+      setError(message);
+      toast.error("Could not retire location", { description: message });
     }
   }
 
-  if (error && !locations) return <EmptyState title="Could not load locations" detail={error} />;
-  if (loading && locations === null) return <p role="status">Loading locations…</p>;
+  const totalHosts = Object.values(stats).reduce((sum, entry) => sum + entry.hostCount, 0);
+  const totalCritical = Object.values(stats).reduce((sum, entry) => sum + entry.critical, 0);
+  const totalNonCompliant = Object.values(stats).reduce((sum, entry) => sum + entry.nonCompliant, 0);
 
   return (
-    <section aria-label="Locations" className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold">{campaign ? campaign.name : `Campaign #${campaignId}`}</h2>
-        <span className="text-xs text-slate-400">Campaign #{campaignId}</span>
+    <section aria-label="Locations" className="flex flex-col gap-5">
+      <SectionHeader
+        eyebrow="Operate"
+        title={campaign ? sanitizeText(campaign.name) : `Campaign #${campaignId}`}
+        description="Sites and hosts receiving extractors for this campaign."
+        icon={MapPin}
+        actions={
+          <Button variant="secondary" icon={RefreshCw} loading={loading} onClick={() => void load()}>
+            Refresh
+          </Button>
+        }
+      />
+
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <Stat label="Locations" value={locations?.length ?? 0} icon={MapPin} hint={`Campaign #${campaignId}`} />
+        <Stat label="Hosts" value={totalHosts} icon={Server} hint="Distinct machines seen" />
+        <Stat label="Critical" value={totalCritical} icon={AlertTriangle} tone={totalCritical > 0 ? "critical" : "ok"} />
+        <Stat
+          label="Non-compliant"
+          value={totalNonCompliant}
+          tone={totalNonCompliant > 0 ? "high" : "ok"}
+        />
       </div>
 
-      <form onSubmit={createLocation} className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-800 p-3">
-        <label className="flex flex-col gap-1 text-sm">
-          Location name
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            required
-            className="rounded border border-slate-700 bg-slate-900 px-2 py-1"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          Tags (comma separated)
-          <input
-            value={tags}
-            onChange={(event) => setTags(event.target.value)}
-            className="rounded border border-slate-700 bg-slate-900 px-2 py-1"
-          />
-        </label>
-        <button
-          type="submit"
-          disabled={creating}
-          className="inline-flex items-center gap-1 rounded bg-sky-600 px-3 py-1.5 text-sm font-medium disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-        >
-          <Plus size={14} aria-hidden /> {creating ? "Adding…" : "Add location"}
-        </button>
-        {formError ? (
-          <p role="alert" className="text-sm text-red-400">
-            {formError}
-          </p>
-        ) : null}
-      </form>
+      <Card>
+        <CardHeader
+          icon={Plus}
+          title="Add location"
+          description="A location groups hosts and receives immutable extractor issuances."
+          actions={formError ? <Badge tone="critical">{formError}</Badge> : null}
+        />
+        <CardBody>
+          <form onSubmit={createLocation} className="flex flex-wrap items-end gap-3">
+            <Input
+              label="Location name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              required
+              containerClassName="w-56"
+              placeholder="Datacenter A"
+            />
+            <Input
+              label="Tags (comma separated)"
+              value={tags}
+              onChange={(event) => setTags(event.target.value)}
+              containerClassName="w-56"
+              placeholder="prod, pci"
+            />
+            <Button type="submit" variant="primary" icon={Plus} loading={creating}>
+              Add location
+            </Button>
+          </form>
+        </CardBody>
+      </Card>
 
       {error ? (
-        <p role="alert" className="text-sm text-red-400">
-          {error}
-        </p>
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-control border border-critical/40 bg-critical-soft/60 p-3 text-sm text-critical"
+        >
+          <AlertTriangle size={16} aria-hidden className="mt-0.5 shrink-0" />
+          <span>{error}</span>
+        </div>
       ) : null}
 
-      {locations && locations.length === 0 ? (
+      {loading && locations === null ? (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <Card key={index}>
+              <Skeleton width="55%" />
+              <Skeleton className="mt-3" width="100%" />
+            </Card>
+          ))}
+        </div>
+      ) : locations && locations.length === 0 ? (
         <EmptyState
+          icon={MapPin}
           title="No locations yet"
           detail="Add a location to generate immutable extractor issuances and receive reports."
         />
-      ) : null}
-
-      <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {(locations ?? []).map((location) => {
-          const locationStats = stats[location.id];
-          const freshness = formatFreshness(locationStats?.freshness ?? null);
-          const downloadsHref = `/downloads?campaignId=${campaignId}&locationId=${location.id}`;
-          return (
-            <li key={location.id} className="rounded-lg border border-slate-800 bg-slate-900/50 p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="inline-flex items-center gap-1 font-medium">
-                  <MapPin size={14} aria-hidden /> {location.name}
+      ) : (
+        <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {(locations ?? []).map((location) => {
+            const locationStats = stats[location.id];
+            const freshness = formatFreshness(locationStats?.freshness ?? null);
+            return (
+              <li key={location.id} className="hbs-panel flex flex-col gap-3 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <MapPin size={15} aria-hidden className="text-accent" />
+                    <span className="truncate text-sm font-semibold text-ink">{sanitizeText(location.name)}</span>
+                  </div>
+                  {location.retiredAt ? <Badge tone="high">Retired</Badge> : <Badge tone="compliant">Active</Badge>}
                 </div>
-                {location.retiredAt ? (
-                  <ToneBadge label="Retired" tone="warning" />
-                ) : (
-                  <ToneBadge label="Active" tone="ok" />
-                )}
-              </div>
 
-              {location.tags.length > 0 ? (
-                <ul className="mt-2 flex flex-wrap gap-1">
-                  {location.tags.map((tag) => (
-                    <li
-                      key={tag}
-                      className="rounded border border-slate-700 px-1.5 py-0.5 text-xs text-slate-300"
-                    >
-                      {tag}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-
-              <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                <div>
-                  <dt className="text-slate-400">Hosts</dt>
-                  <dd className="tabular-nums">{locationStats?.hostCount ?? 0}</dd>
-                </div>
-                <div>
-                  <dt className="text-slate-400">Critical findings</dt>
-                  <dd className="tabular-nums">{locationStats?.critical ?? 0}</dd>
-                </div>
-                <div>
-                  <dt className="text-slate-400">Non-compliant</dt>
-                  <dd className="tabular-nums">{locationStats?.nonCompliant ?? 0}</dd>
-                </div>
-                <div>
-                  <dt className="text-slate-400">Freshness</dt>
-                  <dd>
-                    <ToneBadge label={freshness.label} tone={freshness.tone} />
-                  </dd>
-                </div>
-              </dl>
-
-              {(locationStats?.hosts.length ?? 0) > 0 ? (
-                <ul className="mt-3 flex flex-wrap gap-1">
-                  {locationStats?.hosts.slice(0, 5).map((host) => (
-                    <li key={host.id}>
-                      <a
-                        href={host.links.host}
-                        onClick={(event) => {
-                          if (onOpenHost) {
-                            event.preventDefault();
-                            onOpenHost(host.id);
-                          }
-                        }}
-                        className="rounded border border-slate-700 px-1.5 py-0.5 text-xs hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                      >
-                        {host.displayId}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <a
-                  href={downloadsHref}
-                  onClick={(event) => {
-                    if (onOpenDownloads) {
-                      event.preventDefault();
-                      onOpenDownloads(location.id);
-                    }
-                  }}
-                  className="inline-flex items-center gap-1 rounded border border-slate-700 px-2 py-1 text-xs hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                >
-                  <Download size={12} aria-hidden /> Downloads
-                </a>
-                {!location.retiredAt ? (
-                  <button
-                    type="button"
-                    onClick={() => void retire(location)}
-                    className="rounded border border-slate-700 px-2 py-1 text-xs hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                  >
-                    Retire
-                  </button>
+                {location.tags.length > 0 ? (
+                  <ul className="flex flex-wrap items-center gap-1">
+                    <Tag size={12} aria-hidden className="text-ink-subtle" />
+                    {location.tags.map((tag) => (
+                      <li key={tag}>
+                        <Badge tone="neutral">{sanitizeText(tag)}</Badge>
+                      </li>
+                    ))}
+                  </ul>
                 ) : null}
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+
+                <dl className="grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <dt className="text-ink-subtle">Hosts</dt>
+                    <dd className="tabular-nums text-ink">{locationStats?.hostCount ?? 0}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-ink-subtle">Critical</dt>
+                    <dd className="tabular-nums text-critical">{locationStats?.critical ?? 0}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-ink-subtle">Non-compliant</dt>
+                    <dd className="tabular-nums text-high">{locationStats?.nonCompliant ?? 0}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-ink-subtle">Freshness</dt>
+                    <dd>
+                      <Badge tone={freshness.tone}>{freshness.label}</Badge>
+                    </dd>
+                  </div>
+                </dl>
+
+                {(locationStats?.hosts.length ?? 0) > 0 ? (
+                  <ul className="flex flex-wrap gap-1">
+                    {locationStats?.hosts.slice(0, 5).map((host) => (
+                      <li key={host.id}>
+                        <button
+                          type="button"
+                          onClick={() => onOpenHost?.(host.id)}
+                          className="rounded-full border border-hairline bg-surface-raised px-2 py-0.5 text-2xs text-ink-muted hover:border-hairline-strong hover:text-ink"
+                        >
+                          {sanitizeText(host.displayId)}
+                        </button>
+                      </li>
+                    ))}
+                    {(locationStats?.hosts.length ?? 0) > 5 ? (
+                      <li className="px-2 py-0.5 text-2xs text-ink-subtle">
+                        +{(locationStats?.hosts.length ?? 0) - 5} more
+                      </li>
+                    ) : null}
+                  </ul>
+                ) : null}
+
+                <div className="mt-auto flex flex-wrap items-center gap-2 pt-1">
+                  <Button size="sm" variant="secondary" icon={Download} onClick={() => onOpenDownloads?.(location.id)}>
+                    Downloads
+                  </Button>
+                  {!location.retiredAt ? (
+                    <Button size="sm" variant="ghost" onClick={() => void retire(location)}>
+                      Retire
+                    </Button>
+                  ) : null}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </section>
   );
 }

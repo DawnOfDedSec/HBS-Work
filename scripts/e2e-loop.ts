@@ -99,6 +99,27 @@ check(run.exitCode === 0, "issued extractor runs offline and seals a report");
 const sealed = readFileSync(reportPath);
 check(sealed.subarray(0, 4).toString("ascii") === "HBS2", "sealed report is an HBS2 v2 envelope");
 
+// Confidentiality: only the dashboard key may open the report, and the issued
+// binary must never carry the dashboard's private key.
+try {
+  const { parseEnvelope, unsealEnvelope } = await import(join(repo, "dashboard", "server", "envelope.ts"));
+  const parsedEnv = parseEnvelope(new Uint8Array(sealed));
+  let openedWithWrongKey = false;
+  try {
+    unsealEnvelope(parsedEnv, new Uint8Array(32).fill(0x5a));
+    openedWithWrongKey = true;
+  } catch {
+    // expected: authentication failure
+  }
+  check(!openedWithWrongKey, "sealed report rejects a wrong key (confidentiality)");
+
+  const priv = new Uint8Array(readFileSync(join(process.env.HBS_DATA_ROOT!, "keys", `${issuanceId}.key`)));
+  check(!Buffer.from(sealed).includes(priv), "dashboard private key is absent from the sealed report");
+  check(!Buffer.from(readFileSync(exePath)).includes(priv), "dashboard private key is absent from the issued binary");
+} catch (error) {
+  check(false, `confidentiality checks errored: ${(error as Error).message}`);
+}
+
 const pushed = await req("/api/ingest", {
   method: "POST",
   headers: { "content-type": "application/octet-stream", authorization: `Bearer ${pushToken}` },

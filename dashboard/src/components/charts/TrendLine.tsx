@@ -49,7 +49,7 @@ export function TrendLine({ points, onDrilldown }: TrendLineProps) {
       <FocusableDot
         cx={props.cx as number}
         cy={props.cy as number}
-        fill="#38bdf8"
+        fill="var(--color-accent)"
         label={`${date}: risk score ${score.toFixed(1)}. Show findings from this day.`}
         onActivate={() => {
           const bounds = dayBounds(date);
@@ -61,7 +61,7 @@ export function TrendLine({ points, onDrilldown }: TrendLineProps) {
 
   const chart =
     points.length === 0 ? (
-      <p role="status" className="py-8 text-center text-sm text-slate-400">
+      <p role="status" className="py-8 text-center text-sm text-ink-muted">
         No trend data in this scope.
       </p>
     ) : (
@@ -72,15 +72,15 @@ export function TrendLine({ points, onDrilldown }: TrendLineProps) {
         margin={{ top: 8, right: 24, bottom: 8, left: 0 }}
         accessibilityLayer={false}
       >
-        <CartesianGrid stroke="#1e293b" vertical={false} />
-        <XAxis dataKey="date" stroke="#94a3b8" fontSize={11} />
-        <YAxis domain={[0, 100]} stroke="#94a3b8" fontSize={11} width={40} />
+        <CartesianGrid stroke="var(--color-hairline)" vertical={false} />
+        <XAxis dataKey="date" stroke="var(--color-ink-subtle)" fontSize={11} />
+        <YAxis domain={[0, 100]} stroke="var(--color-ink-subtle)" fontSize={11} width={40} />
         <Tooltip content={ExactTooltip} />
         <Line
           type="monotone"
           dataKey="score"
           name="Risk score"
-          stroke="#38bdf8"
+          stroke="var(--color-accent)"
           strokeWidth={2}
           dot={renderDot}
           activeDot={false}

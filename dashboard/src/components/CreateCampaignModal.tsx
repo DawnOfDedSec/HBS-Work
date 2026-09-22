@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { api, ApiError } from "../api";
+import { Button, Input, Modal, useToast } from "./ui";
 import type { Campaign } from "../types";
 
 type Props = {
@@ -8,21 +9,37 @@ type Props = {
   onCreated: (campaign: Campaign) => void;
 };
 
+function parseTags(value: string): string[] {
+  return [
+    ...new Set(
+      value
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter((tag) => tag.length > 0),
+    ),
+  ];
+}
+
 /** Accessible campaign creation dialog (with an atomic first location). */
 export function CreateCampaignModal({ open, onClose, onCreated }: Props) {
   const [name, setName] = useState("");
   const [client, setClient] = useState("");
   const [scope, setScope] = useState("");
+  const [tags, setTags] = useState("");
   const [firstLocation, setFirstLocation] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const nameRef = useRef<HTMLInputElement>(null);
+  const toast = useToast();
 
   useEffect(() => {
-    if (open) nameRef.current?.focus();
+    if (!open) return;
+    setName("");
+    setClient("");
+    setScope("");
+    setTags("");
+    setFirstLocation("");
+    setError(null);
   }, [open]);
-
-  if (!open) return null;
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -33,47 +50,70 @@ export function CreateCampaignModal({ open, onClose, onCreated }: Props) {
         name,
         client: client || undefined,
         scope: scope || undefined,
+        tags: parseTags(tags),
         location: firstLocation ? { name: firstLocation } : undefined,
       });
       onCreated(result);
+      toast.success("Campaign created", { description: `${result.name} · campaign #${result.id}` });
       onClose();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "could not create campaign");
+      const message = err instanceof ApiError ? err.message : "could not create campaign";
+      setError(message);
+      toast.error("Could not create campaign", { description: message });
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div role="dialog" aria-modal="true" aria-labelledby="create-campaign-title" className="w-full max-w-md rounded-lg border border-slate-700 bg-slate-950 p-5">
-        <h2 id="create-campaign-title" className="text-lg font-semibold">New campaign</h2>
-        <form onSubmit={submit} className="mt-4 space-y-3">
-          <label className="block text-sm">
-            Name
-            <input ref={nameRef} value={name} onChange={(e) => setName(e.target.value)} required className="mt-1 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1" />
-          </label>
-          <label className="block text-sm">
-            Client
-            <input value={client} onChange={(e) => setClient(e.target.value)} className="mt-1 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1" />
-          </label>
-          <label className="block text-sm">
-            Scope
-            <input value={scope} onChange={(e) => setScope(e.target.value)} className="mt-1 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1" />
-          </label>
-          <label className="block text-sm">
-            First location
-            <input value={firstLocation} onChange={(e) => setFirstLocation(e.target.value)} className="mt-1 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1" />
-          </label>
-          {error ? <p role="alert" className="text-sm text-red-400">{error}</p> : null}
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={onClose} className="rounded border border-slate-700 px-3 py-1.5 text-sm">Cancel</button>
-            <button type="submit" disabled={busy} className="rounded bg-sky-600 px-3 py-1.5 text-sm font-medium disabled:opacity-50">
-              {busy ? "Creating…" : "Create"}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="New campaign"
+      description="A campaign groups locations, hosts, and every report received for an engagement."
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" loading={busy} form="create-campaign-form" type="submit">
+            Create
+          </Button>
+        </>
+      }
+    >
+      <form id="create-campaign-form" onSubmit={submit} className="flex flex-col gap-3">
+        <Input
+          label="Name"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          required
+          autoFocus
+          placeholder="Acme Q3 hardening"
+        />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Input label="Client" value={client} onChange={(event) => setClient(event.target.value)} placeholder="Acme Corp" />
+          <Input label="Scope" value={scope} onChange={(event) => setScope(event.target.value)} placeholder="Internal network" />
+        </div>
+        <Input
+          label="Tags (comma separated)"
+          value={tags}
+          onChange={(event) => setTags(event.target.value)}
+          placeholder="prod, pci, eu"
+        />
+        <Input
+          label="First location"
+          value={firstLocation}
+          onChange={(event) => setFirstLocation(event.target.value)}
+          hint="Optional. You can add more locations after creation."
+          placeholder="Datacenter A"
+        />
+        {error ? (
+          <p role="alert" className="rounded-control border border-critical/40 bg-critical-soft/60 p-2 text-xs text-critical">
+            {error}
+          </p>
+        ) : null}
+      </form>
+    </Modal>
   );
 }

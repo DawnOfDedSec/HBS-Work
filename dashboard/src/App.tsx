@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { FolderKanban, LayoutDashboard, Server } from "lucide-react";
 import { api } from "./api";
-import { EmptyState } from "./components/EmptyState";
 import { Layout } from "./components/Layout";
+import { Toaster } from "./components/Toaster";
+import type { BreadcrumbItem } from "./components/ui";
 import { AdminHub } from "./pages/AdminHub";
 import { CampaignDetail } from "./pages/CampaignDetail";
 import { Campaigns } from "./pages/Campaigns";
@@ -14,9 +16,10 @@ import { Login } from "./pages/Login";
 import { Overview } from "./pages/Overview";
 import { ReportDetail } from "./pages/ReportDetail";
 import { Setup } from "./pages/Setup";
+import { Standards } from "./pages/Standards";
 import { Telemetry } from "./pages/Telemetry";
 import { Treatment } from "./pages/Treatment";
-import type { RouteKey } from "./routes";
+import { navItem, routeLabel, type RouteKey } from "./routes";
 import type { AuthUser } from "./types";
 
 type Phase = "loading" | "setup" | "login" | "ready";
@@ -93,31 +96,50 @@ export function App() {
     }
   }, []);
 
-  if (phase === "loading") return <p className="p-8" role="status">Loading…</p>;
-  if (phase === "setup") {
-    return (
-      <div className="mx-auto max-w-md p-8">
-        <Setup onAuthed={authed} />
-      </div>
-    );
-  }
-  if (phase === "login" || !user) {
-    return (
-      <div className="mx-auto max-w-md p-8">
-        <Login onAuthed={authed} />
-      </div>
-    );
-  }
+  const breadcrumbs = useMemo<BreadcrumbItem[]>(() => {
+    const items: BreadcrumbItem[] = [
+      { label: "Console", icon: LayoutDashboard, onClick: () => navigate("overview") },
+    ];
+    if (campaignId !== null) {
+      items.push({
+        label: `Campaign #${campaignId}`,
+        icon: FolderKanban,
+        onClick: () => {
+          setLocationId(null);
+          setHostId(null);
+          setReportId(null);
+          setCheckId(null);
+        },
+      });
+    }
+    if (hostId !== null) {
+      items.push({
+        label: `Host #${hostId}`,
+        icon: Server,
+        onClick: () => {
+          setReportId(null);
+          setCheckId(null);
+        },
+      });
+    }
+    if (reportId !== null) {
+      items.push({ label: `Report #${reportId}`, onClick: () => setCheckId(null) });
+    }
+    if (checkId !== null) {
+      items.push({ label: `Check ${checkId}` });
+    }
+    items.push({ label: routeLabel(route), icon: navItem(route)?.icon });
+    return items;
+  }, [campaignId, hostId, reportId, checkId, route, navigate]);
 
-  function workspace() {
-    if (route === "overview") return <Overview />;
+  function workspace(): ReactNode {
+    if (!user) return null;
+    if (route === "overview") return <Overview onDrilldown={drilldown} onNavigate={navigate} />;
     if (route === "findings") return <Findings />;
     if (route === "treatment") return <Treatment />;
     if (route === "telemetry") return <Telemetry />;
-    if (route === "admin") return <AdminHub role={user!.role} />;
-    if (route === "standards") {
-      return <EmptyState title="Standards mapping" detail="Open a campaign to view CIS/NIST/ISO coverage for its findings." />;
-    }
+    if (route === "standards") return <Standards onDrilldown={drilldown} onNavigate={navigate} />;
+    if (route === "admin") return <AdminHub role={user.role} />;
 
     if (route === "locations") {
       if (hostId !== null) return <HostDetail hostId={hostId} onBack={() => setHostId(null)} />;
@@ -160,9 +182,32 @@ export function App() {
     return <Campaigns onOpen={setCampaignId} />;
   }
 
-  return (
-    <Layout user={user} route={route} onNavigate={navigate} onLogout={logout}>
-      {workspace()}
-    </Layout>
-  );
+  let content: ReactNode;
+  if (phase === "loading") {
+    content = (
+      <div className="flex min-h-screen items-center justify-center bg-canvas" role="status" aria-live="polite">
+        <span className="h-6 w-6 animate-spin rounded-full border-2 border-hairline border-t-accent" aria-hidden />
+        <span className="sr-only">Loading console…</span>
+      </div>
+    );
+  } else if (phase === "setup") {
+    content = <Setup onAuthed={authed} />;
+  } else if (phase === "login" || !user) {
+    content = <Login onAuthed={authed} />;
+  } else {
+    content = (
+      <Layout
+        user={user}
+        route={route}
+        onNavigate={navigate}
+        onDrilldown={drilldown}
+        onLogout={logout}
+        breadcrumbs={breadcrumbs}
+      >
+        {workspace()}
+      </Layout>
+    );
+  }
+
+  return <Toaster>{content}</Toaster>;
 }

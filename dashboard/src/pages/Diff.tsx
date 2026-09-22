@@ -1,6 +1,29 @@
 import { useEffect, useState } from "react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  GitCompareArrows,
+  Minus,
+  Plus,
+  TrendingDown,
+  TrendingUp,
+} from "lucide-react";
 import { api, ApiError } from "../api";
-import { EmptyState } from "../components/EmptyState";
+import {
+  Badge,
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  EmptyState,
+  Input,
+  SectionHeader,
+  Skeleton,
+  Stat,
+  useToast,
+} from "../components/ui";
+import { cn } from "../components/ui/cn";
+import { SeverityBadge, StatusBadge } from "../components/badges";
 import { sanitizeText } from "../components/EvidenceDrawer";
 
 type DiffEntry = {
@@ -33,54 +56,49 @@ export type DiffProps = {
   onOpenCheck?: (checkId: string) => void;
 };
 
-const SEVERITY_TONE: Record<string, string> = {
-  Critical: "text-red-300",
-  High: "text-amber-300",
-  Medium: "text-yellow-200",
-  Low: "text-sky-300",
-  Informational: "text-slate-300",
-};
-
-function DiffColumn({
-  title,
-  detail,
-  entries,
-  onOpenCheck,
-  tone,
-}: {
+type DiffSectionProps = {
+  id: string;
   title: string;
   detail: string;
   entries: DiffEntry[];
   onOpenCheck?: (checkId: string) => void;
-  tone: string;
-}) {
+  accent: string;
+};
+
+function DiffSection({ id, title, detail, entries, onOpenCheck, accent }: DiffSectionProps) {
   return (
-    <section aria-label={title} className="rounded-lg border border-slate-800">
-      <header className="flex items-baseline justify-between border-b border-slate-800 px-3 py-2">
-        <h3 className={`text-sm font-semibold ${tone}`}>{title}</h3>
-        <span className="text-xs text-slate-400">{entries.length}</span>
+    <section aria-label={title} className="hbs-panel flex flex-col overflow-hidden">
+      <header className="flex items-center justify-between gap-2 border-b border-hairline-soft px-3 py-2">
+        <div className="flex items-center gap-2">
+          <span className={cn("h-2 w-2 rounded-full", accent)} aria-hidden />
+          <h3 className="text-sm font-semibold text-ink">{title}</h3>
+        </div>
+        <Badge tone="neutral">{entries.length}</Badge>
       </header>
-      <p className="px-3 pt-2 text-xs text-slate-500">{detail}</p>
-      <ul className="space-y-1 p-3">
+      <p className="px-3 pt-2 text-xs text-ink-subtle">{detail}</p>
+      <ul className="hbs-scroll max-h-96 space-y-1.5 overflow-y-auto p-3">
         {entries.length === 0 ? (
-          <li className="text-xs text-slate-500">None</li>
+          <li className="text-xs text-ink-subtle">None</li>
         ) : (
           entries.map((entry) => (
-            <li key={entry.checkId} className="rounded border border-slate-800 bg-slate-900/40 p-2 text-xs">
-              <button
-                type="button"
-                onClick={() => onOpenCheck?.(entry.checkId)}
-                disabled={!onOpenCheck}
-                className="font-mono text-sky-300 underline underline-offset-2 disabled:text-slate-300 disabled:no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-              >
-                {sanitizeText(entry.checkId)}
-              </button>
-              <p className="mt-0.5 text-slate-200">{sanitizeText(entry.title)}</p>
-              <p className="mt-0.5 text-slate-500">
-                <span className={SEVERITY_TONE[entry.severity] ?? ""}>{sanitizeText(entry.severity)}</span>
-                {" · "}
-                {sanitizeText(entry.from) || "absent"} → {sanitizeText(entry.to) || "absent"}
-              </p>
+            <li key={entry.checkId} className="hbs-inset p-2 text-xs">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onOpenCheck?.(entry.checkId)}
+                  disabled={!onOpenCheck}
+                  className="rounded font-mono text-xs text-accent underline decoration-dotted underline-offset-2 hover:text-accent-strong disabled:text-ink-muted disabled:no-underline"
+                >
+                  {sanitizeText(entry.checkId)}
+                </button>
+                <SeverityBadge severity={entry.severity} />
+              </div>
+              <p className="mt-1 text-ink">{sanitizeText(entry.title)}</p>
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-2xs text-ink-subtle">
+                {entry.from ? <StatusBadge status={entry.from} /> : <span className="italic">absent</span>}
+                <ArrowRight size={11} aria-hidden />
+                {entry.to ? <StatusBadge status={entry.to} /> : <span className="italic">absent</span>}
+              </div>
             </li>
           ))
         )}
@@ -96,6 +114,7 @@ export function Diff({ baseReportId, targetReportId, onBack, onOpenCheck }: Diff
   const [data, setData] = useState<DiffResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
 
   useEffect(() => {
     setTarget(targetReportId ?? null);
@@ -116,10 +135,11 @@ export function Diff({ baseReportId, targetReportId, onBack, onOpenCheck }: Diff
         if (alive) setData(value);
       })
       .catch((err) => {
-        if (alive) {
-          setData(null);
-          setError(err instanceof ApiError ? err.message : "Request failed. Please retry.");
-        }
+        if (!alive) return;
+        const message = err instanceof ApiError ? err.message : "Request failed. Please retry.";
+        setData(null);
+        setError(message);
+        toast.error("Could not load diff", { description: message });
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -127,120 +147,132 @@ export function Diff({ baseReportId, targetReportId, onBack, onOpenCheck }: Diff
     return () => {
       alive = false;
     };
-  }, [baseReportId, target]);
+  }, [baseReportId, target, toast]);
 
   return (
-    <section aria-label="Report comparison" className="space-y-5">
-      <div className="flex flex-wrap items-end gap-3">
-        {onBack ? (
-          <button
-            type="button"
-            onClick={onBack}
-            className="rounded border border-slate-700 px-2 py-1 text-sm hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+    <section aria-label="Report comparison" className="mx-auto flex max-w-7xl flex-col gap-5">
+      <SectionHeader
+        eyebrow="Compare"
+        title="Report comparison"
+        description={`Diff report #${baseReportId}${target !== null ? ` against #${target}` : ""} for the same host.`}
+        icon={GitCompareArrows}
+        actions={
+          <>
+            {onBack ? (
+              <Button variant="ghost" icon={ArrowLeft} onClick={onBack}>
+                Back
+              </Button>
+            ) : null}
+            {data ? (
+              <Badge tone="accent">{data.fixed.length + data.regressed.length} changed</Badge>
+            ) : null}
+          </>
+        }
+      />
+
+      <Card>
+        <CardHeader
+          title="Baseline checksum"
+          description="Reports must belong to the same host; identity is machine-id keyed."
+          icon={GitCompareArrows}
+        />
+        <CardBody>
+          <form
+            className="flex flex-wrap items-end gap-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const parsed = Number(targetInput);
+              if (Number.isSafeInteger(parsed) && parsed > 0) setTarget(parsed);
+            }}
           >
-            ← Back
-          </button>
-        ) : null}
-        <h2 className="text-lg font-semibold">
-          Diff · report #{baseReportId}
-          {target !== null ? ` → #${target}` : ""}
-        </h2>
-        <form
-          className="flex items-end gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const parsed = Number(targetInput);
-            if (Number.isSafeInteger(parsed) && parsed > 0) setTarget(parsed);
-          }}
-        >
-          <label className="flex flex-col text-xs text-slate-400">
-            Compare against report
-            <input
+            <Input
+              label="Compare against report"
               type="number"
               min={1}
+              inputMode="numeric"
               value={targetInput}
               onChange={(event) => setTargetInput(event.target.value)}
-              className="mt-1 w-32 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-sm"
+              containerClassName="w-40"
             />
-          </label>
-          <button
-            type="submit"
-            className="rounded border border-slate-700 px-2 py-1 text-sm hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-          >
-            Compare
-          </button>
-        </form>
-      </div>
+            <Button type="submit" variant="secondary">
+              Compare
+            </Button>
+          </form>
+        </CardBody>
+      </Card>
 
       {target === null ? (
         <EmptyState title="Choose a report to compare" detail="Enter a report ID from the same host to diff against." />
       ) : error ? (
-        <EmptyState title="Could not load diff" detail={error} />
+        <EmptyState
+          icon={GitCompareArrows}
+          title="Could not load diff"
+          detail={error}
+        />
       ) : loading && !data ? (
-        <p role="status">Loading diff…</p>
+        <Card>
+          <Skeleton width="30%" />
+          <Skeleton className="mt-3" width="100%" />
+        </Card>
       ) : !data ? (
         <EmptyState title="No diff available" />
       ) : (
         <>
-          <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
-            <SummaryStat label="Fixed" value={data.summary.fixed} tone="text-emerald-300" />
-            <SummaryStat label="Regressed" value={data.summary.regressed} tone="text-red-300" />
-            <SummaryStat label="Unchanged" value={data.summary.unchanged} tone="text-slate-300" />
-            <SummaryStat label="Added" value={data.summary.added} tone="text-sky-300" />
-            <SummaryStat label="Removed" value={data.summary.removed} tone="text-amber-300" />
-          </dl>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
+            <Stat label="Fixed" value={data.summary.fixed} icon={TrendingUp} tone="ok" hint="Broken → compliant" />
+            <Stat label="Regressed" value={data.summary.regressed} icon={TrendingDown} tone="critical" hint="Compliant → broken" />
+            <Stat label="Unchanged" value={data.summary.unchanged} icon={Minus} hint="Same status" />
+            <Stat label="Added" value={data.summary.added} icon={Plus} tone="accent" hint="Only in newer" />
+            <Stat label="Removed" value={data.summary.removed} icon={Minus} tone="high" hint="Only in baseline" />
+          </div>
 
           <div className="grid gap-4 lg:grid-cols-3">
-            <DiffColumn
+            <DiffSection
+              id="fixed"
               title="Fixed"
               detail="Broken before, compliant after."
               entries={data.fixed}
               onOpenCheck={onOpenCheck}
-              tone="text-emerald-300"
+              accent="bg-compliant"
             />
-            <DiffColumn
+            <DiffSection
+              id="regressed"
               title="Regressed"
               detail="Compliant before, broken after."
               entries={data.regressed}
               onOpenCheck={onOpenCheck}
-              tone="text-red-300"
+              accent="bg-critical"
             />
-            <DiffColumn
+            <DiffSection
+              id="unchanged"
               title="Unchanged"
               detail="Same status in both reports."
               entries={data.unchanged}
               onOpenCheck={onOpenCheck}
-              tone="text-slate-300"
+              accent="bg-na"
             />
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
-            <DiffColumn
+            <DiffSection
+              id="added"
               title="Added"
               detail="Present only in the newer report."
               entries={data.added}
               onOpenCheck={onOpenCheck}
-              tone="text-sky-300"
+              accent="bg-accent"
             />
-            <DiffColumn
+            <DiffSection
+              id="removed"
               title="Removed"
               detail="Present only in the baseline report."
               entries={data.removed}
               onOpenCheck={onOpenCheck}
-              tone="text-amber-300"
+              accent="bg-high"
             />
           </div>
         </>
       )}
     </section>
-  );
-}
-
-function SummaryStat({ label, value, tone }: { label: string; value: number; tone: string }) {
-  return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
-      <dt className="text-xs uppercase tracking-wide text-slate-500">{label}</dt>
-      <dd className={`mt-0.5 text-2xl font-semibold tabular-nums ${tone}`}>{value}</dd>
-    </div>
   );
 }

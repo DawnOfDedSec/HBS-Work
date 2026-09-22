@@ -1,6 +1,17 @@
 import { useEffect, useState } from "react";
+import { AlertTriangle, DatabaseBackup, Download, Upload } from "lucide-react";
 import { ApiError } from "../../api";
-import { EmptyState } from "../../components/EmptyState";
+import {
+  Badge,
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  EmptyState,
+  Input,
+  SectionHeader,
+  useToast,
+} from "../../components/ui";
 import { AdminGate, useAdminRole, type AdminRole } from "./Users";
 
 async function requestJsonOrBlob(
@@ -63,8 +74,7 @@ function isUnavailable(error: unknown): boolean {
 /**
  * Encrypted backup export and passphrase-authenticated restore. The server
  * endpoints (`POST /api/admin/backup`, `POST /api/admin/backup/restore`) are
- * super-admin only; when this build does not expose them the page says so and
- * offers the redacted diagnostic bundle instead.
+ * super-admin only and validate a passphrase of at least 12 characters.
  */
 export function Backup({ role: providedRole }: { role?: AdminRole | null } = {}) {
   const { role, loading: roleLoading, error: roleError } = useAdminRole(providedRole);
@@ -72,33 +82,35 @@ export function Backup({ role: providedRole }: { role?: AdminRole | null } = {})
   const [restorePassphrase, setRestorePassphrase] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const [busy, setBusy] = useState(false);
+  const toast = useToast();
 
   useEffect(() => {
     if (role === "super_admin") {
       setError(null);
-      setNotice(null);
     }
   }, [role]);
 
   async function downloadBackup() {
-    if (passphrase.length < 8) {
-      setError("Use a backup passphrase of at least 8 characters.");
+    if (passphrase.length < 12) {
+      setError("Use a backup passphrase of at least 12 characters.");
       return;
     }
     setBusy(true);
     setError(null);
-    setNotice(null);
     try {
       const { blob } = await requestJsonOrBlob("POST", "/api/admin/backup", { json: { passphrase } });
-      triggerDownload(blob, `hbs-backup-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
-      setNotice("Encrypted backup downloaded.");
+      triggerDownload(blob, `hbs-backup-${new Date().toISOString().replace(/[:.]/g, "-")}.hbsbak`);
+      toast.success("Encrypted backup downloaded");
       setUnavailable(false);
     } catch (err) {
       if (isUnavailable(err)) setUnavailable(true);
-      else setError(errorMessage(err));
+      else {
+        const message = errorMessage(err);
+        setError(message);
+        toast.error("Backup failed", { description: message });
+      }
     } finally {
       setPassphrase("");
       setBusy(false);
@@ -110,27 +122,30 @@ export function Backup({ role: providedRole }: { role?: AdminRole | null } = {})
       setError("Choose a backup archive to restore.");
       return;
     }
-    if (restorePassphrase.length === 0) {
-      setError("Enter the backup passphrase.");
+    if (restorePassphrase.length < 12) {
+      setError("The restore passphrase must be at least 12 characters.");
       return;
     }
     setBusy(true);
     setError(null);
-    setNotice(null);
     try {
       const form = new FormData();
-      form.append("archive", file, file.name);
+      form.append("file", file, file.name);
       form.append("passphrase", restorePassphrase);
       const { json } = await requestJsonOrBlob("POST", "/api/admin/backup/restore", { form });
-      const detail =
-        json && typeof json === "object" && "restored" in json
-          ? String((json as { restored?: unknown }).restored)
-          : "done";
-      setNotice(`Restore completed (${detail}).`);
+      const message =
+        json && typeof json === "object" && "message" in json
+          ? String((json as { message?: unknown }).message)
+          : "Backup validated and staged.";
+      toast.success("Restore staged", { description: message });
       setUnavailable(false);
     } catch (err) {
       if (isUnavailable(err)) setUnavailable(true);
-      else setError(errorMessage(err));
+      else {
+        const message = errorMessage(err);
+        setError(message);
+        toast.error("Restore failed", { description: message });
+      }
     } finally {
       setRestorePassphrase("");
       setBusy(false);
@@ -142,108 +157,101 @@ export function Backup({ role: providedRole }: { role?: AdminRole | null } = {})
     try {
       const { blob } = await requestJsonOrBlob("GET", "/api/diagnostic", {});
       triggerDownload(blob, "hbs-diagnostic-bundle.json");
-      setNotice("Redacted diagnostic bundle downloaded.");
+      toast.success("Diagnostic bundle downloaded");
     } catch (err) {
-      setError(errorMessage(err));
+      const message = errorMessage(err);
+      setError(message);
+      toast.error("Diagnostic download failed", { description: message });
     }
   }
 
   return (
     <AdminGate role={role} loading={roleLoading} error={roleError} allow={["super_admin"]}>
-      <section aria-label="Backup and restore" className="space-y-5">
-        <h2 className="text-lg font-semibold">Backup &amp; restore</h2>
+      <section aria-label="Backup and restore" className="flex flex-col gap-5">
+        <SectionHeader
+          eyebrow="Govern"
+          title="Backup & restore"
+          description="Snapshot the SQLite database and key material under a passphrase-derived key, or stage a validated restore."
+          icon={DatabaseBackup}
+        />
 
         {error ? (
-          <p role="alert" className="rounded border border-red-500/50 bg-red-500/10 p-3 text-sm text-red-200">
-            {error}
-          </p>
-        ) : null}
-        {notice ? (
-          <p role="status" className="rounded border border-sky-500/40 bg-sky-500/10 p-3 text-sm text-sky-100">
-            {notice}
-          </p>
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-control border border-critical/40 bg-critical-soft/60 p-3 text-sm text-critical"
+          >
+            <AlertTriangle size={16} aria-hidden className="mt-0.5 shrink-0" />
+            <span>{error}</span>
+          </div>
         ) : null}
         {unavailable ? (
-          <p role="status" className="rounded border border-amber-500/40 bg-amber-500/5 p-3 text-sm text-amber-100">
-            This build does not expose the encrypted backup endpoints. The redacted diagnostic bundle is available
-            instead.
-          </p>
+          <div role="status" className="rounded-control border border-high/40 bg-high-soft/60 p-3 text-sm text-high">
+            This build does not expose the encrypted backup endpoints. The redacted diagnostic bundle is available instead.
+          </div>
         ) : null}
 
-        <section aria-labelledby="backup-export" className="space-y-3 rounded-lg border border-slate-800 p-3">
-          <h3 id="backup-export" className="text-sm font-semibold">
-            Encrypted backup
-          </h3>
-          <p className="text-xs text-slate-400">
-            Snapshots the SQLite database and per-issuance key material under a passphrase-derived key. The
-            passphrase is never stored or logged.
-          </p>
-          <label className="block text-xs text-slate-400">
-            Backup passphrase
-            <input
-              type="password"
-              autoComplete="new-password"
-              value={passphrase}
-              onChange={(event) => setPassphrase(event.target.value)}
-              className="mt-1 w-full max-w-sm rounded border border-slate-700 bg-slate-900 px-2 py-1 text-sm"
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card>
+            <CardHeader
+              icon={Download}
+              title="Encrypted backup"
+              description="Snapshots the database and per-issuance key material. The passphrase is never stored or logged."
+              actions={<Badge tone="accent">≥12 chars</Badge>}
             />
-          </label>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void downloadBackup()}
-              className="rounded bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
-            >
-              {busy ? "Working…" : "Download encrypted backup"}
-            </button>
-            <button
-              type="button"
-              onClick={() => void downloadDiagnostic()}
-              className="rounded border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-            >
-              Download redacted diagnostic bundle
-            </button>
-          </div>
-        </section>
+            <CardBody className="flex flex-col gap-3">
+              <Input
+                label="Backup passphrase"
+                type="password"
+                autoComplete="new-password"
+                value={passphrase}
+                onChange={(event) => setPassphrase(event.target.value)}
+                hint="Minimum 12 characters."
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button variant="primary" icon={Download} loading={busy} onClick={() => void downloadBackup()}>
+                  Download encrypted backup
+                </Button>
+                <Button variant="secondary" onClick={() => void downloadDiagnostic()}>
+                  Download redacted diagnostic bundle
+                </Button>
+              </div>
+            </CardBody>
+          </Card>
 
-        <section aria-labelledby="backup-restore" className="space-y-3 rounded-lg border border-slate-800 p-3">
-          <h3 id="backup-restore" className="text-sm font-semibold">
-            Restore
-          </h3>
-          <p className="text-xs text-slate-400">
-            Everything is verified and staged before any key file or database is replaced.
-          </p>
-          <label className="block text-xs text-slate-400">
-            Backup archive
-            <input
-              type="file"
-              accept="application/json,.json,.hbs"
-              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-              className="mt-1 block w-full max-w-sm rounded border border-slate-700 bg-slate-900 px-2 py-1 text-sm file:mr-2 file:rounded file:border-0 file:bg-slate-800 file:px-2 file:py-1 file:text-slate-200"
+          <Card>
+            <CardHeader
+              icon={Upload}
+              title="Restore"
+              description="The archive is verified and decrypted into a staging file; the live database is never overwritten."
             />
-          </label>
-          <label className="block text-xs text-slate-400">
-            Restore passphrase
-            <input
-              type="password"
-              autoComplete="off"
-              value={restorePassphrase}
-              onChange={(event) => setRestorePassphrase(event.target.value)}
-              className="mt-1 w-full max-w-sm rounded border border-slate-700 bg-slate-900 px-2 py-1 text-sm"
-            />
-          </label>
-          <button
-            type="button"
-            disabled={busy || !file}
-            onClick={() => void restoreBackup()}
-            className="rounded border border-red-500/60 px-3 py-1.5 text-sm text-red-100 hover:bg-red-500/10 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
-          >
-            {busy ? "Working…" : "Restore backup"}
-          </button>
-        </section>
+            <CardBody className="flex flex-col gap-3">
+              <label className="flex flex-col gap-1 text-2xs font-medium text-ink-muted">
+                Backup archive
+                <input
+                  type="file"
+                  accept=".hbsbak,.json,application/octet-stream"
+                  onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                  className="mt-0.5 block w-full rounded-control border border-hairline bg-surface-raised px-3 py-2 text-sm text-ink file:mr-2 file:rounded file:border-0 file:bg-surface-overlay file:px-2 file:py-1 file:text-ink-muted"
+                />
+              </label>
+              <Input
+                label="Restore passphrase"
+                type="password"
+                autoComplete="off"
+                value={restorePassphrase}
+                onChange={(event) => setRestorePassphrase(event.target.value)}
+                hint="Minimum 12 characters."
+              />
+              <div>
+                <Button variant="danger" icon={Upload} disabled={busy || !file} loading={busy} onClick={() => void restoreBackup()}>
+                  Restore backup
+                </Button>
+              </div>
+            </CardBody>
+          </Card>
+        </div>
 
-        {!unavailable ? null : <EmptyState title="Backup API unavailable" detail="Ask an operator to deploy the admin backup routes." />}
+        {unavailable ? <EmptyState title="Backup API unavailable" detail="Ask an operator to deploy the admin backup routes." /> : null}
       </section>
     </AdminGate>
   );

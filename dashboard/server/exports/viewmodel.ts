@@ -30,23 +30,59 @@ export const EXPORT_TEMPLATES: readonly ExportTemplate[] = ["executive", "techni
 /** Canonical severity ordering (most severe first). */
 export const SEVERITY_ORDER = ["Critical", "High", "Medium", "Low", "Informational"] as const;
 
-/** ARGB fills shared by the XLSX sheet and reused by the badge colours. */
-export const SEVERITY_ARGB: Record<string, string> = {
-  Critical: "FFC00000",
-  High: "FFE8590C",
-  Medium: "FFFFC000",
-  Low: "FF70AD47",
-  Informational: "FF7F7F7F",
+/**
+ * Canonical severity palette. These hex values intentionally match the
+ * dashboard UI tokens (`src/components/charts/TableTwin.tsx`) so an exported
+ * workbook, PDF, and screen never disagree on what "Critical" looks like.
+ */
+export const SEVERITY_HEX: Record<string, string> = {
+  Critical: "#E11D48",
+  High: "#F59E0B",
+  Medium: "#EAB308",
+  Low: "#0EA5E9",
+  Informational: "#64748B",
 };
+
+const HEX_TO_ARGB = (hex: string): string => `FF${hex.slice(1).toUpperCase()}`;
+
+/** ARGB fills shared by the XLSX sheet and reused by the badge colours. */
+export const SEVERITY_ARGB: Record<string, string> = Object.fromEntries(
+  Object.entries(SEVERITY_HEX).map(([severity, hex]) => [severity, HEX_TO_ARGB(hex)]),
+);
 
 /** Readable foreground for a severity badge fill. */
 export const SEVERITY_TEXT_ARGB: Record<string, string> = {
   Critical: "FFFFFFFF",
-  High: "FFFFFFFF",
+  High: "FF1F2937",
   Medium: "FF1F2937",
   Low: "FF1F2937",
   Informational: "FFFFFFFF",
 };
+
+/** UI-matching hex for a severity, falling back to Informational grey. */
+export function severityHex(severity: string): string {
+  return SEVERITY_HEX[severity] ?? SEVERITY_HEX.Informational;
+}
+
+/** Readable foreground hex (no alpha) for a severity badge. */
+export function severityTextHex(severity: string): string {
+  return `#${(SEVERITY_TEXT_ARGB[severity] ?? "FFFFFFFF").slice(2)}`;
+}
+
+/** Neutral band colour for the risk gauge/score chips. */
+export function scoreHex(score: number): string {
+  if (score >= 80) return "#15803D";
+  if (score >= 60) return "#CA8A04";
+  if (score >= 40) return "#EA580C";
+  return "#BE123C";
+}
+
+/** Confidentiality notice rendered on every deliverable. */
+export const CONFIDENTIALITY_NOTE =
+  "Confidential — prepared for the commissioning client. Contains redacted security findings.";
+
+/** Platform attribution rendered on covers and document metadata. */
+export const GENERATOR_NAME = "HBS Security Review Platform";
 /** Canonical status ordering (worst first). */
 export const STATUS_ORDER = ["NonCompliant", "DegradedPartial", "Error", "Compliant", "NotApplicable"] as const;
 /** Canonical treatment ordering. */
@@ -66,6 +102,7 @@ export type ExportScope = {
   kind: string;
   campaignId: number | null;
   campaignName: string | null;
+  campaignClient: string | null;
   reportId: number | null;
   from: string | null;
   to: string | null;
@@ -193,7 +230,13 @@ export type ExportKpis = {
 export type ExportViewModel = {
   formatVersion: 1;
   title: string;
+  /** Deliverable subtitle, e.g. "Technical Audit Report". */
+  subtitle: string;
   generatedAt: string;
+  /** Commissioning client, from the campaign record when available. */
+  client: string | null;
+  confidentiality: string;
+  generator: string;
   scope: ExportScope;
   kpis: ExportKpis;
   summary: string[];
@@ -202,6 +245,27 @@ export type ExportViewModel = {
   checks: ExportCheckSection[];
   references: ExportReference[];
 };
+
+/**
+ * Human-readable scope line shared by every format's cover/header so the
+ * workbook, CSV header block, PDF cover, and DOCX cover read identically.
+ */
+export function describeScopeText(scope: ExportScope): string {
+  const parts = [`scope=${scope.kind}`];
+  if (scope.campaignName) parts.push(`campaign=${scope.campaignName}`);
+  else if (scope.campaignId) parts.push(`campaign=#${scope.campaignId}`);
+  if (scope.reportId) parts.push(`report=#${scope.reportId}`);
+  if (scope.from) parts.push(`from=${scope.from}`);
+  if (scope.to) parts.push(`to=${scope.to}`);
+  return parts.join(", ");
+}
+
+/** One-line campaign label used on covers ("Alpha" or "Campaign #1"). */
+export function campaignLabel(scope: ExportScope): string {
+  if (scope.campaignName) return scope.campaignName;
+  if (scope.campaignId) return `Campaign #${scope.campaignId}`;
+  return "All campaigns";
+}
 
 // ---------------------------------------------------------------------------
 // Scoping helpers (path-scoped routes merge into the canonical filter set)
@@ -573,11 +637,17 @@ export function buildSummarySentences(kpis: ExportKpis, scope?: ExportScope): st
 // Builder
 // ---------------------------------------------------------------------------
 
-function scopeDescriptor(query: NormalizedQuery, campaignName: string | null): ExportScope {
+function scopeDescriptor(
+  query: NormalizedQuery,
+  campaignId: number | null,
+  campaignName: string | null,
+  campaignClient: string | null,
+): ExportScope {
   return {
     kind: query.scope,
-    campaignId: query.campaignId,
+    campaignId,
     campaignName,
+    campaignClient,
     reportId: query.filters.reportId[0] ?? null,
     from: query.filters.from,
     to: query.filters.to,
@@ -609,16 +679,12 @@ export function buildExportViewModel(
   for (const finding of scoped.findings) hostIds.add(finding.hostId);
   for (const report of scoped.selectedReports) hostIds.add(report.host_id);
   const machineIds = new Map<number, string>();
-  const hostNames = new Map<number, string>();
   if (hostIds.size > 0) {
     const placeholders = [...hostIds].map(() => "?").join(", ");
     const rows = db
-      .query(`SELECT id, machine_id, hostname FROM hosts WHERE id IN (${placeholders})`)
-      .all(...hostIds) as { id: number; machine_id: string; hostname: string | null }[];
-    for (const row of rows) {
-      machineIds.set(row.id, row.machine_id);
-      hostNames.set(row.id, row.hostname ?? "");
-    }
+      .query(`SELECT id, machine_id FROM hosts WHERE id IN (${placeholders})`)
+      .all(...hostIds) as { id: number; machine_id: string }[];
+    for (const row of rows) machineIds.set(row.id, row.machine_id);
   }
 
   const findings = scoped.findings
@@ -642,12 +708,24 @@ export function buildExportViewModel(
     typeof telemetry.coverage === "number" ? telemetry.coverage : computeCoverage(metricInputs),
   );
 
-  const campaignName = query.campaignId
-    ? ((db.query("SELECT name FROM campaigns WHERE id = ?").get(query.campaignId) as {
-        name: string;
-      } | null)?.name ?? null)
-    : null;
-  const scope = scopeDescriptor(query, campaignName);
+  // A report-scoped export still belongs to a campaign; resolve the campaign
+  // from the query first, then from the scoped reports/findings, so the cover
+  // sheet can name the client even when no campaign id was in the URL.
+  const effectiveCampaignId =
+    query.campaignId ??
+    scoped.selectedReports[0]?.campaign_id ??
+    findings[0]?.campaignId ??
+    null;
+  let campaignName: string | null = null;
+  let campaignClient: string | null = null;
+  if (effectiveCampaignId !== null) {
+    const campaign = db
+      .query("SELECT name, client FROM campaigns WHERE id = ?")
+      .get(effectiveCampaignId) as { name: string; client: string | null } | null;
+    campaignName = campaign?.name ?? null;
+    campaignClient = campaign?.client ?? null;
+  }
+  const scope = scopeDescriptor(query, effectiveCampaignId, campaignName, campaignClient);
 
   const references = buildReferences(findings);
   const failingFindings = findings.filter((finding) => BROKEN_STATUSES.has(finding.status));
@@ -676,7 +754,11 @@ export function buildExportViewModel(
   return {
     formatVersion: 1,
     title: exportTitle(scope),
+    subtitle: "Technical Audit Report",
     generatedAt: now,
+    client: campaignClient,
+    confidentiality: CONFIDENTIALITY_NOTE,
+    generator: GENERATOR_NAME,
     scope,
     kpis,
     summary: buildSummarySentences(kpis, scope),

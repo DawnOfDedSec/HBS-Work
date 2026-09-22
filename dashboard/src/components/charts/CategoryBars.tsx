@@ -37,10 +37,10 @@ const CHART_WIDTH = 560;
 const MAX_BARS = 12;
 
 function barColor(datum: CategoryDatum): string {
-  if (datum.nonCompliant === 0) return "#38bdf8";
-  if (datum.complianceRate < 50) return "#dc2626";
-  if (datum.complianceRate < 80) return "#f59e0b";
-  return "#eab308";
+  if (datum.nonCompliant === 0) return "var(--color-low)";
+  if (datum.complianceRate < 50) return "var(--color-critical-strong)";
+  if (datum.complianceRate < 80) return "var(--color-high-strong)";
+  return "var(--color-medium)";
 }
 
 /** Non-compliant findings per category (single shared axis, never dual). */
@@ -80,7 +80,7 @@ export function CategoryBars({ data, onDrilldown }: CategoryBarsProps) {
 
   const chart =
     shown.length === 0 ? (
-      <p role="status" className="py-8 text-center text-sm text-slate-400">
+      <p role="status" className="py-8 text-center text-sm text-ink-muted">
         No category data in this scope.
       </p>
     ) : (
@@ -92,17 +92,17 @@ export function CategoryBars({ data, onDrilldown }: CategoryBarsProps) {
         margin={{ top: 8, right: 24, bottom: 8, left: 8 }}
         accessibilityLayer={false}
       >
-        <CartesianGrid horizontal={false} stroke="#1e293b" />
-        <XAxis type="number" allowDecimals={false} stroke="#94a3b8" fontSize={11} />
+        <CartesianGrid horizontal={false} stroke="var(--color-hairline)" />
+        <XAxis type="number" allowDecimals={false} stroke="var(--color-ink-subtle)" fontSize={11} />
         <YAxis
           type="category"
           dataKey="category"
           width={140}
-          stroke="#94a3b8"
+          stroke="var(--color-ink-subtle)"
           fontSize={11}
           tickFormatter={(value: string) => (value.length > 20 ? `${value.slice(0, 19)}…` : value)}
         />
-        <Tooltip content={ExactTooltip} cursor={{ fill: "rgba(148,163,184,0.08)" }} />
+        <Tooltip content={ExactTooltip} cursor={{ fill: "var(--color-surface-raised)" }} />
         <Bar
           dataKey="nonCompliant"
           name="Non-compliant"

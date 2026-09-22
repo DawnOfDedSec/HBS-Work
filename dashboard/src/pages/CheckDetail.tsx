@@ -1,7 +1,22 @@
 import { useEffect, useState } from "react";
+import { AlertTriangle, ArrowLeft, ListChecks, RefreshCw, Users } from "lucide-react";
 import { api, ApiError } from "../api";
-import { EmptyState } from "../components/EmptyState";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  EmptyState,
+  SectionHeader,
+  Skeleton,
+  Stat,
+  Table,
+  type TableColumn,
+  useToast,
+} from "../components/ui";
+import { SeverityBadge, StatusBadge, TreatmentBadge } from "../components/badges";
 import { sanitizeText } from "../components/EvidenceDrawer";
+import { TREATMENT_STATES } from "./Treatment";
 
 /** `GET /api/checks/:checkId` (the By Check pivot). */
 type CheckHost = {
@@ -30,12 +45,19 @@ export type CheckDetailProps = {
   onOpenReport?: (reportId: number) => void;
 };
 
-const TREATMENT_STATES = ["open", "accepted_risk", "false_positive", "remediated"] as const;
+const STATE_LABEL: Record<string, string> = {
+  open: "Open",
+  accepted_risk: "Accepted risk",
+  false_positive: "False positive",
+  remediated: "Remediated",
+};
 
 export function CheckDetail({ checkId, onBack, onOpenReport }: CheckDetailProps) {
   const [data, setData] = useState<CheckDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const toast = useToast();
 
   useEffect(() => {
     let alive = true;
@@ -47,7 +69,10 @@ export function CheckDetail({ checkId, onBack, onOpenReport }: CheckDetailProps)
         if (alive) setData(value);
       })
       .catch((err) => {
-        if (alive) setError(err instanceof ApiError ? err.message : "Request failed. Please retry.");
+        if (!alive) return;
+        const message = err instanceof ApiError ? err.message : "Request failed. Please retry.";
+        setError(message);
+        toast.error("Could not load check", { description: message });
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -55,87 +80,129 @@ export function CheckDetail({ checkId, onBack, onOpenReport }: CheckDetailProps)
     return () => {
       alive = false;
     };
-  }, [checkId]);
+  }, [checkId, reloadKey, toast]);
 
-  if (error) return <EmptyState title="Could not load check" detail={error} />;
-  if (loading && !data) return <p role="status">Loading check…</p>;
-  if (!data) return <EmptyState title="Check not available" />;
+  const hosts = Array.isArray(data?.hosts) ? data.hosts : [];
+  const statusCounts = data?.statusCounts ?? {};
 
-  const hosts = Array.isArray(data.hosts) ? data.hosts : [];
+  const columns: Array<TableColumn<CheckHost>> = [
+    {
+      key: "displayId",
+      header: "Host",
+      render: (row) => <span className="text-ink">{sanitizeText(row.displayId)}</span>,
+    },
+    { key: "status", header: "Status", render: (row) => <StatusBadge status={row.status} /> },
+    { key: "severity", header: "Severity", render: (row) => <SeverityBadge severity={row.severity} /> },
+    {
+      key: "category",
+      header: "Category",
+      render: (row) => <span className="text-xs text-ink-muted">{sanitizeText(row.category)}</span>,
+    },
+    {
+      key: "treatment",
+      header: "Treatment",
+      render: (row) => <TreatmentBadge state={row.treatment} />,
+    },
+    {
+      key: "receivedAt",
+      header: "Received",
+      sortable: true,
+      render: (row) => <span className="text-xs text-ink-muted">{sanitizeText(row.receivedAt)}</span>,
+    },
+    {
+      key: "actions",
+      header: <span className="sr-only">Actions</span>,
+      align: "right",
+      render: (row) =>
+        onOpenReport ? (
+          <Button size="sm" variant="secondary" onClick={() => onOpenReport(row.reportId)}>
+            Open #{row.reportId}
+          </Button>
+        ) : (
+          <span className="text-2xs text-ink-subtle">—</span>
+        ),
+    },
+  ];
 
   return (
-    <section aria-label={`Check ${checkId}`} className="space-y-5">
-      <div className="flex flex-wrap items-center gap-3">
-        {onBack ? (
-          <button
-            type="button"
-            onClick={onBack}
-            className="rounded border border-slate-700 px-2 py-1 text-sm hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-          >
-            ← Back
-          </button>
-        ) : null}
-        <h2 className="font-mono text-lg font-semibold">{sanitizeText(data.checkId)}</h2>
-        <span className="text-sm text-slate-400">
-          {data.total} host result{data.total === 1 ? "" : "s"}
-        </span>
-      </div>
+    <section aria-label={`Check ${checkId}`} className="mx-auto flex max-w-7xl flex-col gap-5">
+      <SectionHeader
+        eyebrow="By Check"
+        title={<span className="font-mono">{sanitizeText(checkId)}</span>}
+        description={
+          data
+            ? `${data.total} host result${data.total === 1 ? "" : "s"} across the current scope.`
+            : "Host-by-host breakdown for this check."
+        }
+        icon={ListChecks}
+        actions={
+          <>
+            {onBack ? (
+              <Button variant="ghost" icon={ArrowLeft} onClick={onBack}>
+                Back
+              </Button>
+            ) : null}
+            <Button variant="secondary" icon={RefreshCw} loading={loading} onClick={() => setReloadKey((key) => key + 1)}>
+              Refresh
+            </Button>
+          </>
+        }
+      />
 
-      <section aria-labelledby="check-treatments" className="rounded-lg border border-slate-800 p-3">
-        <h3 id="check-treatments" className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-          Treatment breakdown
-        </h3>
-        <dl className="mt-2 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
-          {TREATMENT_STATES.map((state) => (
-            <div key={state}>
-              <dt className="uppercase tracking-wide text-slate-500">{state.replace(/_/g, " ")}</dt>
-              <dd className="mt-0.5 text-lg font-semibold tabular-nums">{data.statusCounts?.[state] ?? 0}</dd>
-            </div>
-          ))}
-        </dl>
-      </section>
-
-      {hosts.length === 0 ? (
-        <EmptyState title="No hosts currently report this check" />
+      {error && !data ? (
+        <EmptyState
+          icon={AlertTriangle}
+          title="Could not load check"
+          detail={error}
+          action={
+            <Button variant="secondary" icon={RefreshCw} onClick={() => setReloadKey((key) => key + 1)}>
+              Try again
+            </Button>
+          }
+        />
+      ) : loading && !data ? (
+        <Card>
+          <Skeleton width="40%" />
+          <Skeleton className="mt-3" width="70%" height={28} />
+        </Card>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-sm">
-            <caption className="sr-only">Hosts reporting this check</caption>
-            <thead>
-              <tr className="text-left text-slate-400">
-                <th scope="col" className="border-b border-slate-800 py-2 pr-3">Host</th>
-                <th scope="col" className="border-b border-slate-800 py-2 pr-3">Status</th>
-                <th scope="col" className="border-b border-slate-800 py-2 pr-3">Category</th>
-                <th scope="col" className="border-b border-slate-800 py-2 pr-3">Severity</th>
-                <th scope="col" className="border-b border-slate-800 py-2 pr-3">Treatment</th>
-                <th scope="col" className="border-b border-slate-800 py-2 pr-3">Received</th>
-                <th scope="col" className="border-b border-slate-800 py-2">Report</th>
-              </tr>
-            </thead>
-            <tbody>
-              {hosts.map((host) => (
-                <tr key={`${host.hostId}:${host.reportId}`} className="align-top">
-                  <td className="border-b border-slate-900 py-2 pr-3">{sanitizeText(host.displayId)}</td>
-                  <td className="border-b border-slate-900 py-2 pr-3">{sanitizeText(host.status)}</td>
-                  <td className="border-b border-slate-900 py-2 pr-3">{sanitizeText(host.category)}</td>
-                  <td className="border-b border-slate-900 py-2 pr-3">{sanitizeText(host.severity)}</td>
-                  <td className="border-b border-slate-900 py-2 pr-3">{sanitizeText(host.treatment)}</td>
-                  <td className="border-b border-slate-900 py-2 pr-3">{sanitizeText(host.receivedAt)}</td>
-                  <td className="border-b border-slate-900 py-2">
-                    <button
-                      type="button"
-                      onClick={() => onOpenReport?.(host.reportId)}
-                      disabled={!onOpenReport}
-                      className="rounded border border-slate-700 px-2 py-0.5 text-xs hover:bg-slate-800 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                    >
-                      Open #{host.reportId}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            {TREATMENT_STATES.map((state) => (
+              <Stat
+                key={state}
+                label={STATE_LABEL[state] ?? state}
+                value={statusCounts[state] ?? 0}
+                icon={state === "remediated" ? Users : undefined}
+                tone={state === "false_positive" ? "default" : state === "accepted_risk" ? "high" : state === "remediated" ? "ok" : "accent"}
+              />
+            ))}
+          </div>
+
+          <Card flush className="overflow-hidden">
+            <div className="p-4">
+              <CardHeader
+                title="Hosts reporting this check"
+                description="Each row is one host's latest result for the check in scope."
+                icon={Users}
+                actions={<Badge tone="accent">{hosts.length} hosts</Badge>}
+              />
+            </div>
+            {hosts.length === 0 ? (
+              <div className="p-4">
+                <EmptyState title="No hosts currently report this check" />
+              </div>
+            ) : (
+              <Table
+                label="Hosts reporting this check"
+                columns={columns}
+                rows={hosts}
+                rowKey={(row) => `${row.hostId}:${row.reportId}`}
+                stickyHeader
+              />
+            )}
+          </Card>
+        </>
       )}
     </section>
   );

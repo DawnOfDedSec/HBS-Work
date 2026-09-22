@@ -1,6 +1,20 @@
 import { useEffect, useState } from "react";
+import { AlertTriangle, Download, KeyRound, RefreshCw, ShieldOff } from "lucide-react";
 import { api, ApiError } from "../../api";
-import { EmptyState } from "../../components/EmptyState";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  EmptyState,
+  Modal,
+  SectionHeader,
+  Select,
+  Skeleton,
+  Table,
+  type TableColumn,
+  useToast,
+} from "../../components/ui";
 import { sanitizeText } from "../../components/EvidenceDrawer";
 import type { Campaign, Location } from "../../types";
 import { AdminGate, useAdminRole, type AdminRole } from "./Users";
@@ -31,10 +45,29 @@ function errorMessage(error: unknown): string {
   return error instanceof ApiError ? error.message : "Request failed. Please retry.";
 }
 
-function statusOf(issuance: Issuance): string {
+function statusOf(issuance: Issuance): "active" | "expired" | "revoked" {
   if (issuance.revoked) return "revoked";
   if (issuance.expired) return "expired";
   return "active";
+}
+
+const STATUS_TONE: Record<"active" | "expired" | "revoked", "compliant" | "high" | "critical"> = {
+  active: "compliant",
+  expired: "high",
+  revoked: "critical",
+};
+
+function formatBytes(bytes: number | null): string {
+  if (bytes === null || !Number.isFinite(bytes) || bytes <= 0) return "—";
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KiB", "MiB", "GiB"];
+  let size = bytes / 1024;
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024;
+    unit += 1;
+  }
+  return `${size.toFixed(1)} ${units[unit]}`;
 }
 
 export function Keys({ role: providedRole }: { role?: AdminRole | null } = {}) {
@@ -46,8 +79,9 @@ export function Keys({ role: providedRole }: { role?: AdminRole | null } = {}) {
   const [issuances, setIssuances] = useState<Issuance[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [revoking, setRevoking] = useState<Issuance | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const toast = useToast();
 
   useEffect(() => {
     if (role !== "super_admin" && role !== "auditor") return;
@@ -86,7 +120,7 @@ export function Keys({ role: providedRole }: { role?: AdminRole | null } = {}) {
     };
   }, [campaignId]);
 
-  async function loadIssuances(campaign: number, location: number) {
+  const loadIssuances = async (campaign: number, location: number) => {
     setLoading(true);
     setError(null);
     try {
@@ -101,7 +135,7 @@ export function Keys({ role: providedRole }: { role?: AdminRole | null } = {}) {
     } finally {
       setLoading(false);
     }
-  }
+  };
 
   useEffect(() => {
     if (campaignId === null || locationId === null) {
@@ -109,150 +143,181 @@ export function Keys({ role: providedRole }: { role?: AdminRole | null } = {}) {
       return;
     }
     void loadIssuances(campaignId, locationId);
-  }, [campaignId, locationId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campaignId, locationId, reloadKey]);
 
   async function revoke(issuance: Issuance, reason: string) {
-    await api.revokeIssuance(issuance.campaignId, issuance.extractorId, reason);
-    setNotice(`Revoked ${issuance.extractorId}.`);
-    setRevoking(null);
-    if (campaignId !== null && locationId !== null) await loadIssuances(campaignId, locationId);
+    try {
+      await api.revokeIssuance(issuance.campaignId, issuance.extractorId, reason);
+      toast.success("Issuance revoked", { description: sanitizeText(issuance.extractorId) });
+      setRevoking(null);
+      setReloadKey((key) => key + 1);
+    } catch (err) {
+      const message = errorMessage(err);
+      setError(message);
+      toast.error("Could not revoke issuance", { description: message });
+      throw err;
+    }
   }
+
+  const columns: Array<TableColumn<Issuance>> = [
+    {
+      key: "extractorId",
+      header: "Extractor",
+      render: (issuance) => (
+        <div className="flex flex-col gap-1">
+          <span className="break-all font-mono text-2xs text-ink">{sanitizeText(issuance.extractorId)}</span>
+          {issuance.versionStalenessWarning ? (
+            <span className="text-2xs text-high">{sanitizeText(issuance.versionStalenessWarning)}</span>
+          ) : null}
+        </div>
+      ),
+    },
+    { key: "platform", header: "Platform", render: (issuance) => <Badge tone="info">{sanitizeText(issuance.platform)}</Badge> },
+    { key: "keyId", header: "Key ID", align: "right", sortable: true },
+    {
+      key: "status",
+      header: "Status",
+      render: (issuance) => {
+        const status = statusOf(issuance);
+        return (
+          <div className="flex flex-col gap-1">
+            <Badge tone={STATUS_TONE[status]}>{status}</Badge>
+            {issuance.revokedReason ? (
+              <span className="text-2xs text-ink-subtle">{sanitizeText(issuance.revokedReason)}</span>
+            ) : null}
+          </div>
+        );
+      },
+    },
+    { key: "downloadCount", header: "Downloads", align: "right", sortable: true },
+    {
+      key: "artifactSha256",
+      header: "SHA-256",
+      render: (issuance) => (
+        <span className="break-all font-mono text-2xs text-ink-subtle">{sanitizeText(issuance.artifactSha256).slice(0, 16)}…</span>
+      ),
+    },
+    {
+      key: "expiresAt",
+      header: "Expires",
+      sortable: true,
+      render: (issuance) => <span className="text-xs text-ink-muted">{sanitizeText(issuance.expiresAt) || "—"}</span>,
+    },
+    {
+      key: "actions",
+      header: <span className="sr-only">Actions</span>,
+      align: "right",
+      render: (issuance) => (
+        <div className="flex items-center justify-end gap-1.5">
+          <a
+            href={api.downloadUrl(issuance.id)}
+            className="inline-flex items-center gap-1 rounded-control border border-hairline bg-surface-raised px-2 py-1 text-xs text-ink hover:border-hairline-strong"
+          >
+            <Download size={12} aria-hidden /> Artifact
+          </a>
+          <Button size="sm" variant="secondary" disabled={issuance.revoked} onClick={() => setRevoking(issuance)}>
+            Revoke
+          </Button>
+        </div>
+      ),
+    },
+  ];
 
   return (
     <AdminGate role={role} loading={roleLoading} error={roleError} allow={["super_admin", "auditor"]}>
-      <section aria-label="Issuance key inventory" className="space-y-5">
-        <h2 className="text-lg font-semibold">Issuance keys</h2>
+      <section aria-label="Issuance key inventory" className="flex flex-col gap-5">
+        <SectionHeader
+          eyebrow="Govern"
+          title="Issuance keys"
+          description="Every issued extractor and its artifact hash. Revocation stops future ingest and download."
+          icon={KeyRound}
+          actions={
+            <Button
+              variant="secondary"
+              icon={RefreshCw}
+              loading={loading}
+              onClick={() => setReloadKey((key) => key + 1)}
+            >
+              Refresh
+            </Button>
+          }
+        />
 
         {error ? (
-          <p role="alert" className="rounded border border-red-500/50 bg-red-500/10 p-3 text-sm text-red-200">
-            {error}
-          </p>
-        ) : null}
-        {notice ? (
-          <p role="status" className="rounded border border-sky-500/40 bg-sky-500/10 p-3 text-sm text-sky-100">
-            {notice}
-          </p>
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-control border border-critical/40 bg-critical-soft/60 p-3 text-sm text-critical"
+          >
+            <AlertTriangle size={16} aria-hidden className="mt-0.5 shrink-0" />
+            <span>{error}</span>
+          </div>
         ) : null}
 
-        <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-800 p-3">
-          <label className="flex flex-col text-xs text-slate-400">
-            Campaign
-            <select
-              value={campaignId ?? ""}
-              onChange={(event) => {
-                const value = Number(event.target.value);
-                setCampaignId(Number.isSafeInteger(value) && value > 0 ? value : null);
+        <Card>
+          <CardHeader
+            icon={KeyRound}
+            title="Scope"
+            description="Issuances are listed per campaign location."
+          />
+          <div className="flex flex-wrap items-end gap-3 pt-3">
+            <Select
+              label="Campaign"
+              value={campaignId === null ? "" : String(campaignId)}
+              onChange={(value) => {
+                const parsed = Number(value);
+                setCampaignId(Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null);
                 setLocationId(null);
               }}
-              className="mt-1 min-w-48 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-sm"
-            >
-              <option value="">Select a campaign…</option>
-              {campaigns.map((campaign) => (
-                <option key={campaign.id} value={campaign.id}>
-                  {campaign.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col text-xs text-slate-400">
-            Location
-            <select
-              value={locationId ?? ""}
+              options={campaigns.map((campaign) => ({ value: String(campaign.id), label: campaign.name }))}
+              placeholder="Select a campaign…"
+              className="w-56"
+            />
+            <Select
+              label="Location"
+              value={locationId === null ? "" : String(locationId)}
               disabled={campaignId === null}
-              onChange={(event) => {
-                const value = Number(event.target.value);
-                setLocationId(Number.isSafeInteger(value) && value > 0 ? value : null);
+              onChange={(value) => {
+                const parsed = Number(value);
+                setLocationId(Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null);
               }}
-              className="mt-1 min-w-48 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-sm disabled:opacity-50"
-            >
-              <option value="">Select a location…</option>
-              {locations.map((location) => (
-                <option key={location.id} value={location.id}>
-                  {location.name}
-                  {location.retiredAt ? " (retired)" : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        {locationId === null ? (
-          <EmptyState title="Choose a campaign and location" detail="Issuances are listed per location." />
-        ) : loading ? (
-          <p role="status">Loading issuances…</p>
-        ) : issuances.length === 0 ? (
-          <EmptyState title="No issuances for this location" />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm">
-              <caption className="sr-only">Issuance inventory</caption>
-              <thead>
-                <tr className="text-left text-slate-400">
-                  <th scope="col" className="border-b border-slate-800 py-2 pr-3">Extractor</th>
-                  <th scope="col" className="border-b border-slate-800 py-2 pr-3">Platform</th>
-                  <th scope="col" className="border-b border-slate-800 py-2 pr-3">Key ID</th>
-                  <th scope="col" className="border-b border-slate-800 py-2 pr-3">Status</th>
-                  <th scope="col" className="border-b border-slate-800 py-2 pr-3">Downloads</th>
-                  <th scope="col" className="border-b border-slate-800 py-2 pr-3">Expires</th>
-                  <th scope="col" className="border-b border-slate-800 py-2">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {issuances.map((issuance) => {
-                  const status = statusOf(issuance);
-                  return (
-                    <tr key={issuance.id} className="align-top">
-                      <td className="border-b border-slate-900 py-2 pr-3">
-                        <span className="font-mono text-xs text-slate-200">{sanitizeText(issuance.extractorId)}</span>
-                        {issuance.versionStalenessWarning ? (
-                          <p className="mt-0.5 text-xs text-amber-300">{sanitizeText(issuance.versionStalenessWarning)}</p>
-                        ) : null}
-                      </td>
-                      <td className="border-b border-slate-900 py-2 pr-3">{sanitizeText(issuance.platform)}</td>
-                      <td className="border-b border-slate-900 py-2 pr-3 tabular-nums">{issuance.keyId}</td>
-                      <td className="border-b border-slate-900 py-2 pr-3">
-                        <span
-                          className={
-                            status === "active"
-                              ? "text-emerald-300"
-                              : status === "revoked"
-                                ? "text-red-300"
-                                : "text-amber-300"
-                          }
-                        >
-                          {status}
-                        </span>
-                        {issuance.revokedReason ? (
-                          <p className="mt-0.5 text-xs text-slate-500">{sanitizeText(issuance.revokedReason)}</p>
-                        ) : null}
-                      </td>
-                      <td className="border-b border-slate-900 py-2 pr-3 tabular-nums">{issuance.downloadCount}</td>
-                      <td className="border-b border-slate-900 py-2 pr-3">{sanitizeText(issuance.expiresAt) || "—"}</td>
-                      <td className="border-b border-slate-900 py-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <a
-                            href={api.downloadUrl(issuance.id)}
-                            className="rounded border border-slate-700 px-2 py-0.5 text-xs hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                          >
-                            Download artifact
-                          </a>
-                          <button
-                            type="button"
-                            disabled={issuance.revoked}
-                            onClick={() => setRevoking(issuance)}
-                            className="rounded border border-slate-700 px-2 py-0.5 text-xs hover:bg-slate-800 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                          >
-                            Revoke
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+              options={locations.map((location) => ({
+                value: String(location.id),
+                label: `${location.name}${location.retiredAt ? " (retired)" : ""}`,
+              }))}
+              placeholder="Select a location…"
+              className="w-56"
+            />
           </div>
-        )}
+        </Card>
+
+        <Card flush className="overflow-hidden">
+          <div className="p-4">
+            <CardHeader
+              icon={KeyRound}
+              title="Issuance inventory"
+              description="Download the immutable artifact or revoke with a reason."
+              actions={<Badge tone="accent">{issuances.length} issuances</Badge>}
+            />
+          </div>
+          {locationId === null ? (
+            <div className="p-4">
+              <EmptyState title="Choose a campaign and location" detail="Issuances are listed per location." />
+            </div>
+          ) : loading && issuances.length === 0 ? (
+            <div className="flex flex-col gap-2 p-4">
+              {Array.from({ length: 3 }).map((_, index) => (
+                <Skeleton key={index} height={30} />
+              ))}
+            </div>
+          ) : issuances.length === 0 ? (
+            <div className="p-4">
+              <EmptyState title="No issuances for this location" />
+            </div>
+          ) : (
+            <Table label="Issuance inventory" columns={columns} rows={issuances} rowKey={(row) => row.id} stickyHeader />
+          )}
+        </Card>
 
         <RevokeModal issuance={revoking} onCancel={() => setRevoking(null)} onConfirm={revoke} />
       </section>
@@ -277,79 +342,66 @@ function RevokeModal({
     if (!issuance) return;
     setReason("");
     setError(null);
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onCancel();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [issuance, onCancel]);
+  }, [issuance]);
 
   if (!issuance) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="revoke-title"
-        className="w-full max-w-md rounded-lg border border-slate-700 bg-slate-900 p-4 shadow-2xl"
+    <Modal
+      open
+      onClose={onCancel}
+      title="Revoke issuance"
+      description={`Future ingest and download for ${sanitizeText(issuance.extractorId)} stop immediately. Existing reports stay queryable.`}
+      size="sm"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button
+            variant="danger"
+            icon={ShieldOff}
+            loading={submitting}
+            form="revoke-issuance-form"
+            type="submit"
+          >
+            Revoke
+          </Button>
+        </>
+      }
+    >
+      <form
+        id="revoke-issuance-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!reason.trim()) {
+            setError("A reason is required to revoke an issuance.");
+            return;
+          }
+          setSubmitting(true);
+          setError(null);
+          void onConfirm(issuance, reason.trim())
+            .catch((err) => setError(errorMessage(err)))
+            .finally(() => setSubmitting(false));
+        }}
+        className="flex flex-col gap-3"
       >
-        <h2 id="revoke-title" className="text-base font-semibold">
-          Revoke issuance
-        </h2>
-        <p className="mt-1 text-xs text-slate-400">
-          Future ingest and download for{" "}
-          <span className="font-mono text-slate-200">{sanitizeText(issuance.extractorId)}</span> stop immediately.
-          Existing reports stay queryable.
-        </p>
-        <form
-          className="mt-3 space-y-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!reason.trim()) {
-              setError("A reason is required to revoke an issuance.");
-              return;
-            }
-            setSubmitting(true);
-            setError(null);
-            void onConfirm(issuance, reason.trim())
-              .catch((err) => setError(errorMessage(err)))
-              .finally(() => setSubmitting(false));
-          }}
-        >
-          <label className="block text-xs text-slate-400">
-            Reason (required)
-            <textarea
-              required
-              rows={3}
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-              className="mt-1 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1 text-sm"
-            />
-          </label>
-          {error ? (
-            <p role="alert" className="rounded border border-red-500/50 bg-red-500/10 p-2 text-xs text-red-200">
-              {error}
-            </p>
-          ) : null}
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={onCancel}
-              className="rounded border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
-            >
-              {submitting ? "Revoking…" : "Revoke"}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        <label className="block">
+          <span className="text-2xs font-medium text-ink-muted">Reason (required)</span>
+          <textarea
+            required
+            rows={3}
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            className="mt-1 w-full rounded-control border border-hairline bg-surface-raised px-3 py-2 text-sm text-ink placeholder:text-ink-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+          />
+        </label>
+        {error ? (
+          <p role="alert" className="rounded-control border border-critical/40 bg-critical-soft/60 p-2 text-xs text-critical">
+            {error}
+          </p>
+        ) : null}
+      </form>
+    </Modal>
   );
 }

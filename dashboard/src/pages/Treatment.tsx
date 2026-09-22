@@ -1,9 +1,37 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  CircleDot,
+  History,
+  RefreshCw,
+  ShieldAlert,
+  ShieldCheck,
+  Wrench,
+  X,
+} from "lucide-react";
 import { api, ApiError } from "../api";
-import { EmptyState } from "../components/EmptyState";
+import {
+  Badge,
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  Chip,
+  EmptyState,
+  Input,
+  Modal,
+  SectionHeader,
+  Select,
+  Skeleton,
+  Stat,
+  useToast,
+} from "../components/ui";
+import { cn } from "../components/ui/cn";
+import { SeverityBadge, StatusBadge, TreatmentBadge } from "../components/badges";
 import { sanitizeText } from "../components/EvidenceDrawer";
-import { resolveScope, serializeFilters, type ScopeFilters } from "../filters";
+import { ScopeControls, clearScopeKeys } from "../components/ScopeSelector";
+import { resolveScope, type ScopeFilters } from "../filters";
 import { useScopeFilters } from "../useScopeFilters";
 
 /** Persisted states only — the schema rejects anything else. */
@@ -49,15 +77,16 @@ type TreatmentMutation = {
   historyId: number;
 };
 
+/** `GET /api/reports/:id/findings/:checkId/history` entry. */
 type HistoryEntry = {
-  historyId: number;
-  reportId: number;
-  checkId: string;
-  state: string;
+  id: number;
+  actor: string | null;
+  changedAt: string;
+  fromState: string | null;
+  toState: string;
   justification: string | null;
   assignee: string | null;
   dueDate: string | null;
-  changedAt: string;
 };
 
 const STATE_LABEL: Record<TreatmentState, string> = {
@@ -67,11 +96,25 @@ const STATE_LABEL: Record<TreatmentState, string> = {
   remediated: "Remediated",
 };
 
-const STATE_TONE: Record<TreatmentState, string> = {
-  open: "border-sky-500/50",
-  accepted_risk: "border-amber-500/50",
-  false_positive: "border-fuchsia-500/50",
-  remediated: "border-emerald-500/50",
+const STATE_ICON: Record<TreatmentState, typeof CircleDot> = {
+  open: CircleDot,
+  accepted_risk: ShieldAlert,
+  false_positive: CircleDot,
+  remediated: ShieldCheck,
+};
+
+const STATE_ACCENT: Record<TreatmentState, string> = {
+  open: "bg-treatment-open",
+  accepted_risk: "bg-treatment-accepted",
+  false_positive: "bg-treatment-false-positive",
+  remediated: "bg-treatment-remediated",
+};
+
+const STATE_CARD: Record<TreatmentState, string> = {
+  open: "border-treatment-open/35",
+  accepted_risk: "border-treatment-accepted/35",
+  false_positive: "border-treatment-false-positive/35",
+  remediated: "border-treatment-remediated/35",
 };
 
 function isTreatmentState(value: string): value is TreatmentState {
@@ -82,28 +125,28 @@ function errorMessage(error: unknown): string {
   return error instanceof ApiError ? error.message : "Request failed. Please retry.";
 }
 
-/** Atomically drop scope keys and re-parse the URL-backed filter state. */
-function clearScopeKeys(filters: ScopeFilters): void {
-  const next: ScopeFilters = { ...filters };
-  delete next.scope;
-  delete next.reportId;
-  delete next.from;
-  delete next.to;
-  const query = serializeFilters(next);
-  const url = query ? `${window.location.pathname}?${query}` : window.location.pathname;
-  window.history.pushState({}, "", url);
-  window.dispatchEvent(new PopStateEvent("popstate"));
+function InlineAlert({ children }: { children: ReactNode }) {
+  return (
+    <div
+      role="alert"
+      className="flex items-start gap-2 rounded-control border border-critical/40 bg-critical-soft/60 p-3 text-sm text-critical"
+    >
+      <AlertTriangle size={16} aria-hidden className="mt-0.5 shrink-0" />
+      <span>{children}</span>
+    </div>
+  );
 }
 
 export function Treatment() {
   const { filters, query, chips, toggle } = useScopeFilters();
+  const toast = useToast();
   const [findings, setFindings] = useState<TreatmentFinding[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<TreatmentFinding | null>(null);
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -120,7 +163,10 @@ export function Treatment() {
         }
       })
       .catch((err) => {
-        if (alive) setError(errorMessage(err));
+        if (!alive) return;
+        const message = errorMessage(err);
+        setError(message);
+        toast.error("Could not load the treatment board", { description: message });
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -128,7 +174,7 @@ export function Treatment() {
     return () => {
       alive = false;
     };
-  }, [query]);
+  }, [query, reloadKey, toast]);
 
   const grouped = useMemo(() => {
     const map = new Map<TreatmentState, TreatmentFinding[]>();
@@ -140,203 +186,179 @@ export function Treatment() {
     return map;
   }, [findings]);
 
-  const historyByFinding = useMemo(() => {
-    const map = new Map<string, HistoryEntry[]>();
-    for (const entry of history) {
-      const key = `${entry.reportId}:${entry.checkId}`;
-      const bucket = map.get(key) ?? [];
-      bucket.push(entry);
-      map.set(key, bucket);
-    }
-    return map;
-  }, [history]);
-
-  async function apply(
-    finding: TreatmentFinding,
-    input: { state: TreatmentState; justification: string; assignee: string; dueDate: string },
-  ) {
-    const response = await api.raw<TreatmentMutation>(
-      "POST",
-      `/api/reports/${finding.reportId}/findings/${encodeURIComponent(finding.checkId)}/treatment`,
-      {
-        state: input.state,
-        ...(input.justification ? { justification: input.justification } : {}),
-        ...(input.assignee ? { assignee: input.assignee } : {}),
-        ...(input.dueDate ? { dueDate: input.dueDate } : {}),
-      },
-    );
-    setFindings((current) =>
-      current.map((entry) =>
-        entry.reportId === finding.reportId && entry.checkId === finding.checkId
-          ? {
-              ...entry,
-              treatment: response.state,
-              treatmentAssignee: response.assignee,
-              treatmentDueDate: response.dueDate,
-              treatmentUpdatedAt: response.updatedAt,
-            }
-          : entry,
-      ),
-    );
-    setCounts((current) => {
-      const next = { ...current };
-      next[finding.treatment] = Math.max(0, (next[finding.treatment] ?? 1) - 1);
-      next[response.state] = (next[response.state] ?? 0) + 1;
-      return next;
-    });
-    setHistory((current) => [
-      {
-        historyId: response.historyId,
-        reportId: response.reportId,
-        checkId: response.checkId,
-        state: response.state,
-        justification: response.justification,
-        assignee: response.assignee,
-        dueDate: response.dueDate,
-        changedAt: response.updatedAt,
-      },
-      ...current,
-    ]);
-    setNotice(`Recorded ${STATE_LABEL[isTreatmentState(response.state) ? response.state : "open"]} for ${finding.checkId}.`);
-    setEditing(null);
-  }
+  const apply = useCallback(
+    async (
+      finding: TreatmentFinding,
+      input: { state: TreatmentState; justification: string; assignee: string; dueDate: string },
+    ) => {
+      const response = await api.raw<TreatmentMutation>(
+        "POST",
+        `/api/reports/${finding.reportId}/findings/${encodeURIComponent(finding.checkId)}/treatment`,
+        {
+          state: input.state,
+          ...(input.justification ? { justification: input.justification } : {}),
+          ...(input.assignee ? { assignee: input.assignee } : {}),
+          ...(input.dueDate ? { dueDate: input.dueDate } : {}),
+        },
+      );
+      setFindings((current) =>
+        current.map((entry) =>
+          entry.reportId === finding.reportId && entry.checkId === finding.checkId
+            ? {
+                ...entry,
+                treatment: response.state,
+                treatmentAssignee: response.assignee,
+                treatmentDueDate: response.dueDate,
+                treatmentUpdatedAt: response.updatedAt,
+              }
+            : entry,
+        ),
+      );
+      setCounts((current) => {
+        const next = { ...current };
+        next[finding.treatment] = Math.max(0, (next[finding.treatment] ?? 1) - 1);
+        next[response.state] = (next[response.state] ?? 0) + 1;
+        return next;
+      });
+      const label = STATE_LABEL[isTreatmentState(response.state) ? response.state : "open"];
+      setNotice(`Recorded ${label} for ${finding.checkId}.`);
+      toast.success(`Treatment updated: ${label}`, { description: `${finding.checkId} · report #${finding.reportId}` });
+      setEditing(null);
+    },
+    [toast],
+  );
 
   const scope = resolveScope(filters);
+  const totalFindings = Object.values(counts).reduce((sum, value) => sum + value, 0);
 
   return (
-    <section aria-label="Treatment board" className="space-y-4">
-      <fieldset className="flex flex-wrap items-end gap-4 rounded-lg border border-slate-800 p-3">
-        <legend className="px-1 text-xs uppercase tracking-wide text-slate-400">Scope</legend>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="radio" name="treatment-scope" checked={scope === "latest"} onChange={() => clearScopeKeys(filters)} />
-          Latest state
-        </label>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="radio"
-            name="treatment-scope"
-            checked={scope === "report"}
-            onChange={() => toggle("scope", "report")}
+    <section aria-label="Treatment board" className="mx-auto flex max-w-7xl flex-col gap-5">
+      <SectionHeader
+        eyebrow="Operate"
+        title="Treatment"
+        description="Own, accept, or remediate findings. Accepted risk and false positives require a written justification."
+        icon={Wrench}
+        actions={
+          <Button variant="secondary" icon={RefreshCw} loading={loading} onClick={() => setReloadKey((key) => key + 1)}>
+            Refresh
+          </Button>
+        }
+      />
+
+      <ScopeControls filters={filters} onToggle={toggle} onClearScope={() => clearScopeKeys(filters)} />
+
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {TREATMENT_STATES.map((state) => (
+          <Stat
+            key={state}
+            label={STATE_LABEL[state]}
+            value={counts[state] ?? 0}
+            icon={STATE_ICON[state]}
+            tone={
+              state === "remediated"
+                ? "ok"
+                : state === "accepted_risk"
+                  ? "high"
+                  : state === "false_positive"
+                    ? "default"
+                    : "accent"
+            }
+            hint={state === "open" ? "Awaiting triage" : "In the current scope"}
           />
-          Single report
-        </label>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="radio"
-            name="treatment-scope"
-            checked={scope === "range"}
-            onChange={() => toggle("scope", "range")}
-          />
-          Date range
-        </label>
-        {scope === "report" ? (
-          <label className="flex items-center gap-2 text-sm">
-            Report ID
-            <input
-              type="number"
-              min={1}
-              value={filters.reportId?.[0] ?? ""}
-              onChange={(event) => event.target.value && toggle("reportId", event.target.value)}
-              className="w-28 rounded border border-slate-700 bg-slate-900 px-2 py-1"
-            />
-          </label>
-        ) : null}
-        {scope === "range" ? (
-          <>
-            <label className="flex items-center gap-2 text-sm">
-              From
-              <input
-                type="datetime-local"
-                value={filters.from?.[0] ?? ""}
-                onChange={(event) => event.target.value && toggle("from", event.target.value)}
-                className="rounded border border-slate-700 bg-slate-900 px-2 py-1"
-              />
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              To
-              <input
-                type="datetime-local"
-                value={filters.to?.[0] ?? ""}
-                onChange={(event) => event.target.value && toggle("to", event.target.value)}
-                className="rounded border border-slate-700 bg-slate-900 px-2 py-1"
-              />
-            </label>
-          </>
-        ) : null}
-        {chips.length > 0 ? (
-          <span className="text-xs text-slate-400">{chips.length} active filter(s)</span>
-        ) : null}
-      </fieldset>
+        ))}
+      </div>
 
       {notice ? (
-        <p role="status" className="rounded border border-sky-500/40 bg-sky-500/10 p-2 text-sm text-sky-100">
-          {notice}
-          <button
-            type="button"
-            onClick={() => setNotice(null)}
-            className="ml-2 underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
-          >
-            Dismiss
-          </button>
-        </p>
+        <div
+          role="status"
+          className="flex items-center justify-between gap-3 rounded-control border border-accent/40 bg-accent-soft/60 p-3 text-sm text-accent"
+        >
+          <span>{notice}</span>
+          <Button size="sm" variant="ghost" icon={X} onClick={() => setNotice(null)} aria-label="Dismiss notice" />
+        </div>
       ) : null}
 
-      {error ? (
-        <EmptyState title="Could not load the treatment board" detail={error} />
-      ) : loading && findings.length === 0 ? (
-        <p role="status">Loading treatment board…</p>
+      {error ? <InlineAlert>{error}</InlineAlert> : null}
+
+      {chips.length > 0 ? (
+        <div aria-label="Active filters" className="flex flex-wrap items-center gap-2">
+          <span className="text-2xs font-semibold uppercase tracking-wide text-ink-subtle">Active</span>
+          {chips.map((chip) => (
+            <Chip
+              key={`${chip.key}:${chip.value}`}
+              label={`${chip.key}:`}
+              value={chip.value}
+              active
+              onRemove={() => toggle(chip.key, chip.value)}
+            />
+          ))}
+        </div>
+      ) : null}
+
+      {loading && findings.length === 0 ? (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {TREATMENT_STATES.map((state) => (
+            <Card key={state}>
+              <Skeleton width="50%" />
+              <Skeleton className="mt-3" width="100%" height={48} />
+              <Skeleton className="mt-2" width="100%" height={48} />
+            </Card>
+          ))}
+        </div>
       ) : findings.length === 0 ? (
-        <EmptyState title="No findings in scope" detail="Choose a scope above to populate treatment states." />
+        <EmptyState
+          icon={Wrench}
+          title="No findings in scope"
+          detail={`Choose a scope above to populate treatment states (${scope}).`}
+        />
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {TREATMENT_STATES.map((state) => {
             const column = grouped.get(state) ?? [];
             return (
-              <section key={state} aria-label={STATE_LABEL[state]} className="space-y-2">
-                <h3 className="flex items-center justify-between text-sm font-semibold">
-                  <span>{STATE_LABEL[state]}</span>
-                  <span className="text-xs text-slate-400 tabular-nums">{column.length}</span>
-                </h3>
-                <ul className="space-y-2">
+              <section key={state} aria-label={STATE_LABEL[state]} className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-ink">
+                    <span className={cn("h-2 w-2 rounded-full", STATE_ACCENT[state])} aria-hidden />
+                    {STATE_LABEL[state]}
+                  </h3>
+                  <Badge tone="neutral">{column.length}</Badge>
+                </div>
+                <ul className="flex flex-col gap-2">
                   {column.length === 0 ? (
-                    <li className="rounded border border-dashed border-slate-800 p-3 text-xs text-slate-500">
+                    <li className="rounded-control border border-dashed border-hairline p-3 text-xs text-ink-subtle">
                       No findings
                     </li>
                   ) : (
                     column.map((finding) => (
                       <li
                         key={`${finding.reportId}:${finding.checkId}`}
-                        className={`rounded-lg border bg-slate-900/50 p-3 text-xs ${STATE_TONE[state]}`}
+                        className={cn("hbs-panel flex flex-col gap-2 p-3", STATE_CARD[state])}
                       >
-                        <p className="font-mono text-[11px] text-slate-400">
-                          {sanitizeText(finding.checkId)} · #{finding.reportId}
-                        </p>
-                        <p className="mt-1 text-sm text-slate-100">{sanitizeText(finding.title)}</p>
-                        <p className="mt-1 text-slate-400">
-                          {sanitizeText(finding.displayId)} · {sanitizeText(finding.severity)} ·{" "}
-                          {sanitizeText(finding.status)}
-                        </p>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate font-mono text-2xs text-ink-subtle">
+                            {sanitizeText(finding.checkId)} · #{finding.reportId}
+                          </span>
+                          <SeverityBadge severity={finding.severity} />
+                        </div>
+                        <p className="text-xs font-medium text-ink">{sanitizeText(finding.title)}</p>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-2xs text-ink-subtle">
+                          <span>{sanitizeText(finding.displayId)}</span>
+                          <StatusBadge status={finding.status} />
+                        </div>
                         {finding.treatmentUpdatedAt ? (
-                          <p className="mt-1 text-[11px] text-slate-500">
+                          <p className="text-2xs text-ink-subtle">
                             Updated {sanitizeText(finding.treatmentUpdatedAt)}
                             {finding.treatmentAssignee ? ` · ${sanitizeText(finding.treatmentAssignee)}` : ""}
                             {finding.treatmentDueDate ? ` · due ${sanitizeText(finding.treatmentDueDate)}` : ""}
                           </p>
                         ) : null}
-                        {(historyByFinding.get(`${finding.reportId}:${finding.checkId}`) ?? [])
-                          .slice(0, 2)
-                          .map((entry) => (
-                          <p key={entry.historyId} className="mt-1 text-[11px] text-slate-500">
-                            {sanitizeText(entry.changedAt)}: {STATE_LABEL[isTreatmentState(entry.state) ? entry.state : "open"]}
-                          </p>
-                        ))}
-                        <button
-                          type="button"
-                          onClick={() => setEditing(finding)}
-                          className="mt-2 rounded border border-slate-700 px-2 py-0.5 text-slate-200 hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                        >
-                          Change treatment
-                        </button>
+                        <div className="mt-auto flex items-center justify-between gap-2 pt-1">
+                          <TreatmentBadge state={finding.treatment} />
+                          <Button size="sm" variant="secondary" onClick={() => setEditing(finding)}>
+                            Change treatment
+                          </Button>
+                        </div>
                       </li>
                     ))
                   )}
@@ -347,33 +369,19 @@ export function Treatment() {
         </div>
       )}
 
-      <section aria-labelledby="treatment-history" className="rounded-lg border border-slate-800 p-3">
-        <h3 id="treatment-history" className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-          Change history
-        </h3>
-        <p className="mt-1 text-xs text-slate-500">
-          The treatment API returns the current projection plus a `historyId` per mutation; this session&apos;s
-          recorded transitions appear below.
-        </p>
-        {history.length === 0 ? (
-          <p className="mt-2 text-xs text-slate-500">No changes recorded in this session.</p>
-        ) : (
-          <ol className="mt-2 space-y-1 text-xs">
-            {history.map((entry) => (
-              <li key={entry.historyId} className="rounded border border-slate-800 p-2">
-                <span className="font-mono text-slate-400">{sanitizeText(entry.checkId)}</span> →{" "}
-                <span className="text-slate-100">
-                  {STATE_LABEL[isTreatmentState(entry.state) ? entry.state : "open"]}
-                </span>{" "}
-                <span className="text-slate-500">at {sanitizeText(entry.changedAt)}</span>
-                {entry.justification ? (
-                  <span className="ml-1 text-slate-400">· {sanitizeText(entry.justification)}</span>
-                ) : null}
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
+      <Card>
+        <CardHeader
+          icon={History}
+          title="Change history"
+          description="Every transition is append-only; the timeline is fetched per finding when you open the treatment dialog."
+        />
+        <CardBody>
+          <p className="text-xs text-ink-subtle">
+            {totalFindings} finding{totalFindings === 1 ? "" : "s"} in scope ·{" "}
+            {counts.remediated ?? 0} remediated · {counts.open ?? 0} open.
+          </p>
+        </CardBody>
+      </Card>
 
       <TreatmentModal
         finding={editing}
@@ -393,14 +401,14 @@ function TreatmentModal({
   onCancel: () => void;
   onSubmit: (input: { state: TreatmentState; justification: string; assignee: string; dueDate: string }) => Promise<void>;
 }) {
-  const titleId = useId();
-  const dialogRef = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<TreatmentState>("open");
   const [justification, setJustification] = useState("");
   const [assignee, setAssignee] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   useEffect(() => {
     if (!finding) return;
@@ -409,18 +417,27 @@ function TreatmentModal({
     setAssignee(finding.treatmentAssignee ?? "");
     setDueDate(finding.treatmentDueDate ? finding.treatmentDueDate.slice(0, 10) : "");
     setError(null);
-    const node = dialogRef.current;
-    node?.focus();
-  }, [finding]);
-
-  useEffect(() => {
-    if (!finding) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onCancel();
+    setHistory([]);
+    setHistoryLoading(true);
+    let alive = true;
+    api
+      .raw<{ history: HistoryEntry[] }>(
+        "GET",
+        `/api/reports/${finding.reportId}/findings/${encodeURIComponent(finding.checkId)}/history`,
+      )
+      .then((response) => {
+        if (alive) setHistory(Array.isArray(response.history) ? response.history : []);
+      })
+      .catch(() => {
+        if (alive) setHistory([]);
+      })
+      .finally(() => {
+        if (alive) setHistoryLoading(false);
+      });
+    return () => {
+      alive = false;
     };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [finding, onCancel]);
+  }, [finding]);
 
   if (!finding) return null;
 
@@ -428,68 +445,48 @@ function TreatmentModal({
   const justificationMissing = justificationRequired && justification.trim().length === 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4">
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        tabIndex={-1}
-        className="w-full max-w-lg rounded-lg border border-slate-700 bg-slate-900 p-4 shadow-2xl focus:outline-none"
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 id={titleId} className="text-base font-semibold">
-              Change treatment
-            </h2>
-            <p className="mt-0.5 font-mono text-xs text-slate-400">
-              {sanitizeText(finding.checkId)} · report #{finding.reportId}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onCancel}
-            aria-label="Close"
-            className="rounded border border-slate-700 p-1 text-slate-300 hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+    <Modal
+      open={Boolean(finding)}
+      onClose={onCancel}
+      title="Change treatment"
+      description={`${sanitizeText(finding.checkId)} · report #${finding.reportId} · ${sanitizeText(finding.displayId)}`}
+      size="lg"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            loading={submitting}
+            disabled={justificationMissing}
+            onClick={() => {
+              if (justificationMissing) {
+                setError("Justification is required for accepted risk and false positive.");
+                return;
+              }
+              setSubmitting(true);
+              setError(null);
+              void onSubmit({ state, justification: justification.trim(), assignee: assignee.trim(), dueDate })
+                .catch((err) => setError(errorMessage(err)))
+                .finally(() => setSubmitting(false));
+            }}
           >
-            <X size={16} aria-hidden />
-          </button>
-        </div>
-
-        <form
-          className="mt-4 space-y-3 text-sm"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (justificationMissing) {
-              setError("Justification is required for accepted risk and false positive.");
-              return;
-            }
-            setSubmitting(true);
-            setError(null);
-            void onSubmit({ state, justification: justification.trim(), assignee: assignee.trim(), dueDate })
-              .catch((err) => {
-                setError(errorMessage(err));
-              })
-              .finally(() => setSubmitting(false));
-          }}
-        >
+            Save treatment
+          </Button>
+        </>
+      }
+    >
+      <div className="grid gap-4 lg:grid-cols-[1fr_18rem]">
+        <div className="flex flex-col gap-3">
+          <Select
+            label="State"
+            value={state}
+            onChange={(value) => setState(value as TreatmentState)}
+            options={TREATMENT_STATES.map((option) => ({ value: option, label: STATE_LABEL[option] }))}
+          />
           <label className="block">
-            <span className="text-xs uppercase tracking-wide text-slate-400">State</span>
-            <select
-              value={state}
-              onChange={(event) => setState(event.target.value as TreatmentState)}
-              className="mt-1 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1"
-            >
-              {TREATMENT_STATES.map((option) => (
-                <option key={option} value={option}>
-                  {STATE_LABEL[option]}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="block">
-            <span className="text-xs uppercase tracking-wide text-slate-400">
+            <span className="text-2xs font-medium text-ink-muted">
               Justification {justificationRequired ? "(required)" : "(optional)"}
             </span>
             <textarea
@@ -497,54 +494,52 @@ function TreatmentModal({
               onChange={(event) => setJustification(event.target.value)}
               rows={3}
               aria-invalid={justificationMissing}
-              className="mt-1 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1"
+              className="mt-1 w-full rounded-control border border-hairline bg-surface-raised px-3 py-2 text-sm text-ink placeholder:text-ink-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
             />
           </label>
-
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block">
-              <span className="text-xs uppercase tracking-wide text-slate-400">Assignee (optional)</span>
-              <input
-                value={assignee}
-                onChange={(event) => setAssignee(event.target.value)}
-                className="mt-1 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1"
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs uppercase tracking-wide text-slate-400">Due date (optional)</span>
-              <input
-                type="date"
-                value={dueDate}
-                onChange={(event) => setDueDate(event.target.value)}
-                className="mt-1 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1"
-              />
-            </label>
+            <Input label="Assignee (optional)" value={assignee} onChange={(event) => setAssignee(event.target.value)} />
+            <Input label="Due date (optional)" type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} />
           </div>
+          {error ? <InlineAlert>{error}</InlineAlert> : null}
+        </div>
 
-          {error ? (
-            <p role="alert" className="rounded border border-red-500/50 bg-red-500/10 p-2 text-red-200">
-              {error}
+        <div className="hbs-inset hbs-scroll max-h-80 overflow-y-auto p-3">
+          <h4 className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-ink-subtle">
+            <History size={13} aria-hidden /> History
+          </h4>
+          {historyLoading ? (
+            <div className="mt-2 flex flex-col gap-2">
+              <Skeleton height={32} />
+              <Skeleton height={32} />
+            </div>
+          ) : history.length === 0 ? (
+            <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-subtle">
+              <CheckCircle2 size={13} aria-hidden /> No recorded transitions.
             </p>
-          ) : null}
-
-          <div className="flex justify-end gap-2 pt-1">
-            <button
-              type="button"
-              onClick={onCancel}
-              className="rounded border border-slate-700 px-3 py-1.5 hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="rounded bg-sky-600 px-3 py-1.5 font-medium text-white hover:bg-sky-500 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
-            >
-              {submitting ? "Saving…" : "Save treatment"}
-            </button>
-          </div>
-        </form>
+          ) : (
+            <ol className="mt-2 space-y-2">
+              {history.map((entry) => (
+                <li key={entry.id} className="border-l-2 border-hairline pl-2.5 text-2xs">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {entry.fromState ? <Badge tone="neutral">{STATE_LABEL[isTreatmentState(entry.fromState) ? entry.fromState : "open"]}</Badge> : null}
+                    <span className="text-ink-subtle">→</span>
+                    <Badge tone="accent">{STATE_LABEL[isTreatmentState(entry.toState) ? entry.toState : "open"]}</Badge>
+                  </div>
+                  <p className="mt-1 text-ink-muted">
+                    {sanitizeText(entry.actor) || "system"} · {sanitizeText(entry.changedAt)}
+                  </p>
+                  {entry.assignee ? <p className="text-ink-subtle">assignee {sanitizeText(entry.assignee)}</p> : null}
+                  {entry.dueDate ? <p className="text-ink-subtle">due {sanitizeText(entry.dueDate)}</p> : null}
+                  {entry.justification ? (
+                    <p className="mt-1 text-ink-muted">{sanitizeText(entry.justification)}</p>
+                  ) : null}
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
       </div>
-    </div>
+    </Modal>
   );
 }

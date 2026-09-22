@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState, type DragEvent } from "react";
-import { FolderDown, Upload } from "lucide-react";
+import { FileUp, FolderDown, Upload } from "lucide-react";
 import { api, ApiError } from "../api";
+import {
+  Badge,
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  EmptyState,
+  ProgressBar,
+  useToast,
+} from "./ui";
 import type { IngestResult } from "../types";
 
 /** Max files per multipart batch (Global Constraints fixed ingest bound). */
@@ -40,6 +50,12 @@ function resultLabel(entry: UploadEntry): string {
   return entry.result.code;
 }
 
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+}
+
 /**
  * Drag-and-drop multipart report upload with live SSE refresh.
  *
@@ -55,6 +71,7 @@ export function DropZone({ onReportArrived, className }: DropZoneProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const filesRef = useRef<File[]>([]);
   const handlerRef = useRef(onReportArrived);
+  const toast = useToast();
 
   useEffect(() => {
     handlerRef.current = onReportArrived;
@@ -113,142 +130,151 @@ export function DropZone({ onReportArrived, className }: DropZoneProps) {
     try {
       const response = await api.uploadReports(filesRef.current);
       setEntries((current) =>
-        current.map((entry, index) => {
-          const match = response.results[index];
-          return {
-            ...entry,
-            state: "done",
-            result: match?.result,
-          };
-        }),
+        current.map((entry, index) => ({
+          ...entry,
+          state: "done",
+          result: response.results[index]?.result,
+        })),
       );
+      const ingested = response.results.filter((item) => item.result.ok && !item.result.duplicate).length;
+      toast.success("Batch uploaded", { description: `${ingested} ingested` });
     } catch (err) {
       const message = err instanceof ApiError ? err.message : "upload failed";
       setEntries((current) => current.map((entry) => ({ ...entry, state: "error", message })));
+      toast.error("Upload failed", { description: message });
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <section aria-label="Report upload" className={className}>
-      <div
-        onDragOver={(event) => {
-          event.preventDefault();
-          setDragging(true);
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={onDrop}
-        className={`rounded-lg border-2 border-dashed p-6 text-center transition ${
-          dragging ? "border-sky-400 bg-sky-950/30" : "border-slate-700 bg-slate-900/40"
-        }`}
-      >
-        <FolderDown className="mx-auto text-slate-400" size={28} aria-hidden />
-        <p className="mt-2 text-sm">Drag sealed `.hbs` reports here</p>
-        <p className="text-xs text-slate-400">Up to {MAX_BATCH_FILES} files per batch.</p>
-        <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-          <input
-            ref={inputRef}
-            type="file"
-            multiple
-            className="sr-only"
-            onChange={(event) => {
-              const files = Array.from(event.target.files ?? []);
-              if (files.length > 0) addFiles(files);
-              event.target.value = "";
-            }}
-          />
-          <button
-            type="button"
-            onClick={() => inputRef.current?.click()}
-            className="rounded border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-          >
-            Choose files
-          </button>
-          <button
-            type="button"
-            disabled={busy || filesRef.current.length === 0}
-            onClick={() => void upload()}
-            className="inline-flex items-center gap-1 rounded bg-sky-600 px-3 py-1.5 text-sm font-medium disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-          >
-            <Upload size={14} aria-hidden /> {busy ? "Uploading…" : "Upload batch"}
-          </button>
+    <Card aria-label="Report upload" className={className}>
+      <CardHeader
+        icon={FolderDown}
+        title="Ingest sealed reports"
+        description={`Drag .hbs envelopes or choose files. Up to ${MAX_BATCH_FILES} files per batch.`}
+        actions={filesRef.current.length > 0 ? <Badge tone="accent">{filesRef.current.length} queued</Badge> : null}
+      />
+      <CardBody className="flex flex-col gap-3">
+        <div
+          onDragOver={(event) => {
+            event.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={onDrop}
+          className={
+            dragging
+              ? "rounded-panel border-2 border-dashed border-accent bg-accent-soft/50 p-6 text-center"
+              : "rounded-panel border-2 border-dashed border-hairline bg-surface-sunken/60 p-6 text-center"
+          }
+        >
+          <FileUp className="mx-auto text-ink-subtle" size={26} aria-hidden />
+          <p className="mt-2 text-sm text-ink">Drag sealed `.hbs` reports here</p>
+          <p className="text-xs text-ink-muted">Files are hashed and deduplicated server-side.</p>
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+            <input
+              ref={inputRef}
+              type="file"
+              multiple
+              className="sr-only"
+              onChange={(event) => {
+                const files = Array.from(event.target.files ?? []);
+                if (files.length > 0) addFiles(files);
+                event.target.value = "";
+              }}
+            />
+            <Button variant="secondary" onClick={() => inputRef.current?.click()}>
+              Choose files
+            </Button>
+            <Button
+              variant="primary"
+              icon={Upload}
+              disabled={busy || filesRef.current.length === 0}
+              loading={busy}
+              onClick={() => void upload()}
+            >
+              Upload batch
+            </Button>
+          </div>
         </div>
-      </div>
 
-      {notice ? (
-        <p role="status" className="mt-2 text-xs text-amber-300">
-          {notice}
-        </p>
-      ) : null}
+        {notice ? (
+          <p role="status" className="text-xs text-high">
+            {notice}
+          </p>
+        ) : null}
 
-      {entries.length > 0 ? (
-        <ul className="mt-3 space-y-2">
-          {entries.map((entry) => (
-            <li key={entry.key} className="rounded border border-slate-800 bg-slate-900/50 p-3 text-sm">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="break-all font-mono text-xs">{entry.name}</span>
-                <span
-                  className={
-                    entry.state === "error"
-                      ? "text-xs text-red-400"
-                      : entry.state === "done"
-                        ? "text-xs text-emerald-300"
-                        : "text-xs text-slate-400"
-                  }
-                >
-                  {resultLabel(entry)}
-                </span>
-              </div>
-              <progress
-                className="mt-2 h-1.5 w-full"
-                max={100}
-                value={entry.state === "done" || entry.state === "error" ? 100 : undefined}
-                aria-label={`Upload progress for ${entry.name}`}
-              />
-              {entry.result?.ok ? (
-                <div className="mt-2 flex flex-wrap items-center gap-1 text-xs">
-                  {entry.result.duplicate ? (
-                    <span className="rounded border border-amber-500 px-1.5 py-0.5 text-amber-300">
-                      Duplicate replay
-                    </span>
-                  ) : null}
-                  <a
-                    href={entry.result.links.campaign}
-                    className="rounded border border-slate-700 px-1.5 py-0.5 hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                  >
-                    Campaign #{entry.result.campaignId}
-                  </a>
-                  <span aria-hidden className="text-slate-500">
-                    →
+        {entries.length === 0 ? (
+          <EmptyState title="No files queued" detail="Choose or drop sealed reports to ingest them." />
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {entries.map((entry) => (
+              <li key={entry.key} className="hbs-inset flex flex-col gap-2 p-3 text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="break-all font-mono text-xs text-ink-muted">{entry.name}</span>
+                  <span className="flex items-center gap-2">
+                    <span className="text-2xs text-ink-subtle">{formatSize(entry.size)}</span>
+                    <Badge
+                      tone={
+                        entry.state === "error"
+                          ? "critical"
+                          : entry.state === "done"
+                            ? "compliant"
+                            : entry.state === "uploading"
+                              ? "accent"
+                              : "neutral"
+                      }
+                    >
+                      {resultLabel(entry)}
+                    </Badge>
                   </span>
-                  <a
-                    href={entry.result.links.location}
-                    className="rounded border border-slate-700 px-1.5 py-0.5 hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                  >
-                    Location #{entry.result.locationId}
-                  </a>
-                  <span aria-hidden className="text-slate-500">
-                    →
-                  </span>
-                  <a
-                    href={entry.result.links.host}
-                    className="rounded border border-slate-700 px-1.5 py-0.5 hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                  >
-                    Host #{entry.result.hostId}
-                  </a>
-                  <a
-                    href={entry.result.links.report}
-                    className="rounded border border-slate-700 px-1.5 py-0.5 text-sky-300 hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                  >
-                    Report #{entry.result.reportId}
-                  </a>
                 </div>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </section>
+                <ProgressBar
+                  value={entry.state === "done" || entry.state === "error" ? 100 : entry.state === "uploading" ? 60 : 0}
+                  tone={entry.state === "error" ? "critical" : entry.state === "done" ? "compliant" : "accent"}
+                  className={entry.state === "uploading" ? "animate-pulse" : undefined}
+                />
+                {entry.result?.ok ? (
+                  <div className="flex flex-wrap items-center gap-1.5 text-2xs">
+                    {entry.result.duplicate ? <Badge tone="high">Duplicate replay</Badge> : null}
+                    <a
+                      href={entry.result.links.campaign}
+                      className="rounded-full border border-hairline bg-surface-raised px-2 py-0.5 text-ink-muted hover:text-ink"
+                    >
+                      Campaign #{entry.result.campaignId}
+                    </a>
+                    <span aria-hidden className="text-ink-subtle">
+                      →
+                    </span>
+                    <a
+                      href={entry.result.links.location}
+                      className="rounded-full border border-hairline bg-surface-raised px-2 py-0.5 text-ink-muted hover:text-ink"
+                    >
+                      Location #{entry.result.locationId}
+                    </a>
+                    <span aria-hidden className="text-ink-subtle">
+                      →
+                    </span>
+                    <a
+                      href={entry.result.links.host}
+                      className="rounded-full border border-hairline bg-surface-raised px-2 py-0.5 text-ink-muted hover:text-ink"
+                    >
+                      Host #{entry.result.hostId}
+                    </a>
+                    <a
+                      href={entry.result.links.report}
+                      className="rounded-full border border-accent/40 bg-accent-soft px-2 py-0.5 text-accent"
+                    >
+                      Report #{entry.result.reportId}
+                    </a>
+                  </div>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardBody>
+    </Card>
   );
 }

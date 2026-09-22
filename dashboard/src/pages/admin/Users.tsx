@@ -1,12 +1,35 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { AlertTriangle, ShieldCheck, UserPlus, UsersRound } from "lucide-react";
 import { api, ApiError } from "../../api";
-import { EmptyState } from "../../components/EmptyState";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  EmptyState,
+  Input,
+  Modal,
+  SectionHeader,
+  Select,
+  Skeleton,
+  Table,
+  type TableColumn,
+  useToast,
+} from "../../components/ui";
 import { sanitizeText } from "../../components/EvidenceDrawer";
 import type { AuthUser } from "../../types";
 
 export type AdminRole = AuthUser["role"];
 
 export type RoleState = { role: AdminRole | null; loading: boolean; error: string | null };
+
+const ROLES: AdminRole[] = ["super_admin", "auditor", "viewer"];
+
+const ROLE_LABEL: Record<AdminRole, string> = {
+  super_admin: "Super admin",
+  auditor: "Auditor",
+  viewer: "Viewer",
+};
 
 /**
  * Resolve the signed-in user's role. Pages may pass the role straight from the
@@ -59,11 +82,19 @@ export function AdminGate({
   allow: AdminRole[];
   children: ReactNode;
 }) {
-  if (loading) return <p role="status">Checking permissions…</p>;
-  if (error) return <EmptyState title="Permission check failed" detail={error} />;
+  if (loading) {
+    return (
+      <Card>
+        <Skeleton width="40%" />
+        <Skeleton className="mt-3" width="80%" />
+      </Card>
+    );
+  }
+  if (error) return <EmptyState icon={AlertTriangle} title="Permission check failed" detail={error} />;
   if (!role || !allow.includes(role)) {
     return (
       <EmptyState
+        icon={ShieldCheck}
         title="Not authorized"
         detail="This area is restricted to administrators. Ask a super admin for access."
       />
@@ -81,8 +112,6 @@ type AdminUser = {
   updated_at: string;
 };
 
-const ROLES: AdminRole[] = ["super_admin", "auditor", "viewer"];
-
 function isActive(user: AdminUser): boolean {
   return Boolean(user.active);
 }
@@ -96,28 +125,33 @@ export function Users({ role: providedRole }: { role?: AdminRole | null } = {}) 
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
+  const [creating, setCreating] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [newRole, setNewRole] = useState<AdminRole>("viewer");
+  const [formError, setFormError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const toast = useToast();
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const response = await api.raw<{ users: AdminUser[] }>("GET", "/api/users");
       setUsers(Array.isArray(response.users) ? response.users : []);
     } catch (err) {
-      setError(errorMessage(err));
+      const message = errorMessage(err);
+      setError(message);
+      toast.error("Could not load users", { description: message });
     } finally {
       setLoading(false);
     }
-  }
+  }, [toast]);
 
   useEffect(() => {
     if (role === "super_admin") void refresh();
-  }, [role]);
+  }, [role, refresh]);
 
   const activeSuperAdmins = users.filter((user) => user.role === "super_admin" && isActive(user)).length;
 
@@ -126,10 +160,12 @@ export function Users({ role: providedRole }: { role?: AdminRole | null } = {}) 
     setError(null);
     try {
       await api.raw("PATCH", `/api/users/${id}`, body);
-      setNotice("User updated.");
+      toast.success("User updated");
       await refresh();
     } catch (err) {
-      setError(errorMessage(err));
+      const message = errorMessage(err);
+      setError(message);
+      toast.error("Could not update user", { description: message });
     } finally {
       setBusy(null);
     }
@@ -140,10 +176,12 @@ export function Users({ role: providedRole }: { role?: AdminRole | null } = {}) 
     setError(null);
     try {
       await api.raw("DELETE", `/api/users/${id}`);
-      setNotice("User deactivated.");
+      toast.success("User deactivated");
       await refresh();
     } catch (err) {
-      setError(errorMessage(err));
+      const message = errorMessage(err);
+      setError(message);
+      toast.error("Could not deactivate user", { description: message });
     } finally {
       setBusy(null);
     }
@@ -151,154 +189,172 @@ export function Users({ role: providedRole }: { role?: AdminRole | null } = {}) 
 
   async function create(event: React.FormEvent) {
     event.preventDefault();
-    setError(null);
+    setSubmitting(true);
+    setFormError(null);
     try {
       await api.raw("POST", "/api/users", { username, password, role: newRole });
+      toast.success("User created", { description: username });
+      setCreating(false);
       setUsername("");
       setPassword("");
       setNewRole("viewer");
-      setNotice("User created.");
       await refresh();
     } catch (err) {
-      setError(errorMessage(err));
+      setFormError(errorMessage(err));
+    } finally {
+      setSubmitting(false);
     }
   }
 
+  const columns: Array<TableColumn<AdminUser>> = [
+    {
+      key: "username",
+      header: "Username",
+      render: (user) => <span className="font-medium text-ink">{sanitizeText(user.username)}</span>,
+    },
+    {
+      key: "role",
+      header: "Role",
+      render: (user) => {
+        const lastSuperAdmin = user.role === "super_admin" && isActive(user) && activeSuperAdmins <= 1;
+        return (
+          <Select
+            aria-label={`Role for ${user.username}`}
+            value={user.role}
+            disabled={busy === user.id || lastSuperAdmin}
+            onChange={(value) => void mutate(user.id, { role: value })}
+            options={ROLES.map((option) => ({ value: option, label: ROLE_LABEL[option] }))}
+            size="sm"
+            className="w-40"
+          />
+        );
+      },
+    },
+    {
+      key: "active",
+      header: "Status",
+      render: (user) =>
+        isActive(user) ? <Badge tone="compliant">Active</Badge> : <Badge tone="na">Deactivated</Badge>,
+    },
+    {
+      key: "created_at",
+      header: "Created",
+      sortable: true,
+      render: (user) => <span className="text-xs text-ink-muted">{sanitizeText(user.created_at)}</span>,
+    },
+    {
+      key: "actions",
+      header: <span className="sr-only">Actions</span>,
+      align: "right",
+      render: (user) => {
+        const lastSuperAdmin = user.role === "super_admin" && isActive(user) && activeSuperAdmins <= 1;
+        return isActive(user) ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={busy === user.id || lastSuperAdmin}
+            title={lastSuperAdmin ? "Cannot deactivate the last active super admin" : undefined}
+            onClick={() => void deactivate(user.id)}
+          >
+            Deactivate
+          </Button>
+        ) : (
+          <Button size="sm" variant="secondary" disabled={busy === user.id} onClick={() => void mutate(user.id, { active: true })}>
+            Reactivate
+          </Button>
+        );
+      },
+    },
+  ];
+
   return (
     <AdminGate role={role} loading={roleLoading} error={roleError} allow={["super_admin"]}>
-      <section aria-label="User administration" className="space-y-5">
-        <h2 className="text-lg font-semibold">Users</h2>
+      <section aria-label="User administration" className="flex flex-col gap-5">
+        <SectionHeader
+          eyebrow="Govern"
+          title="Users"
+          description="Console identities and roles. The last active super admin can never be deactivated."
+          icon={UsersRound}
+          actions={
+            <Button variant="primary" icon={UserPlus} onClick={() => setCreating(true)}>
+              Create user
+            </Button>
+          }
+        />
 
         {error ? (
-          <p role="alert" className="rounded border border-red-500/50 bg-red-500/10 p-3 text-sm text-red-200">
-            {error}
-          </p>
-        ) : null}
-        {notice ? (
-          <p role="status" className="rounded border border-sky-500/40 bg-sky-500/10 p-3 text-sm text-sky-100">
-            {notice}
-          </p>
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-control border border-critical/40 bg-critical-soft/60 p-3 text-sm text-critical"
+          >
+            <AlertTriangle size={16} aria-hidden className="mt-0.5 shrink-0" />
+            <span>{error}</span>
+          </div>
         ) : null}
 
-        <form onSubmit={create} className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-800 p-3">
-          <label className="flex flex-col text-xs text-slate-400">
-            Username
-            <input
-              required
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              className="mt-1 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-sm"
+        <Card flush className="overflow-hidden">
+          <div className="p-4">
+            <CardHeader
+              icon={UsersRound}
+              title="Console users"
+              description="Change a role inline or deactivate an account."
+              actions={<Badge tone="accent">{users.length} users</Badge>}
             />
-          </label>
-          <label className="flex flex-col text-xs text-slate-400">
-            Password
-            <input
-              required
+          </div>
+          {loading && users.length === 0 ? (
+            <div className="flex flex-col gap-2 p-4">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <Skeleton key={index} height={30} />
+              ))}
+            </div>
+          ) : users.length === 0 ? (
+            <div className="p-4">
+              <EmptyState title="No users yet" detail="Create the first console user." />
+            </div>
+          ) : (
+            <Table label="Console users" columns={columns} rows={users} rowKey={(user) => String(user.id)} stickyHeader />
+          )}
+        </Card>
+
+        <Modal
+          open={creating}
+          onClose={() => setCreating(false)}
+          title="Create user"
+          description="New accounts start with the selected role and an argon2id password hash."
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setCreating(false)}>
+                Cancel
+              </Button>
+              <Button variant="primary" loading={submitting} form="create-user-form" type="submit">
+                Create user
+              </Button>
+            </>
+          }
+        >
+          <form id="create-user-form" onSubmit={create} className="flex flex-col gap-3">
+            <Input label="Username" value={username} onChange={(event) => setUsername(event.target.value)} required autoFocus />
+            <Input
+              label="Password"
               type="password"
+              autoComplete="new-password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              className="mt-1 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-sm"
+              required
             />
-          </label>
-          <label className="flex flex-col text-xs text-slate-400">
-            Role
-            <select
+            <Select
+              label="Role"
               value={newRole}
-              onChange={(event) => setNewRole(event.target.value as AdminRole)}
-              className="mt-1 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-sm"
-            >
-              {ROLES.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="submit"
-            className="rounded bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
-          >
-            Create user
-          </button>
-        </form>
-
-        {loading && users.length === 0 ? (
-          <p role="status">Loading users…</p>
-        ) : users.length === 0 ? (
-          <EmptyState title="No users yet" />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm">
-              <caption className="sr-only">Console users</caption>
-              <thead>
-                <tr className="text-left text-slate-400">
-                  <th scope="col" className="border-b border-slate-800 py-2 pr-3">Username</th>
-                  <th scope="col" className="border-b border-slate-800 py-2 pr-3">Role</th>
-                  <th scope="col" className="border-b border-slate-800 py-2 pr-3">Status</th>
-                  <th scope="col" className="border-b border-slate-800 py-2 pr-3">Created</th>
-                  <th scope="col" className="border-b border-slate-800 py-2">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((user) => {
-                  const lastSuperAdmin = user.role === "super_admin" && isActive(user) && activeSuperAdmins <= 1;
-                  return (
-                    <tr key={user.id} className="align-top">
-                      <td className="border-b border-slate-900 py-2 pr-3">{sanitizeText(user.username)}</td>
-                      <td className="border-b border-slate-900 py-2 pr-3">
-                        <label className="sr-only" htmlFor={`role-${user.id}`}>
-                          Role for {user.username}
-                        </label>
-                        <select
-                          id={`role-${user.id}`}
-                          value={user.role}
-                          disabled={busy === user.id || lastSuperAdmin}
-                          onChange={(event) => void mutate(user.id, { role: event.target.value })}
-                          className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs disabled:opacity-50"
-                        >
-                          {ROLES.map((option) => (
-                            <option key={option} value={option}>
-                              {option}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="border-b border-slate-900 py-2 pr-3">
-                        {isActive(user) ? "active" : "deactivated"}
-                      </td>
-                      <td className="border-b border-slate-900 py-2 pr-3">{sanitizeText(user.created_at)}</td>
-                      <td className="border-b border-slate-900 py-2">
-                        {isActive(user) ? (
-                          <button
-                            type="button"
-                            disabled={busy === user.id || lastSuperAdmin}
-                            onClick={() => void deactivate(user.id)}
-                            title={lastSuperAdmin ? "Cannot deactivate the last active super admin" : undefined}
-                            className="rounded border border-slate-700 px-2 py-0.5 text-xs hover:bg-slate-800 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                          >
-                            Deactivate
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            disabled={busy === user.id}
-                            onClick={() => void mutate(user.id, { active: true })}
-                            className="rounded border border-slate-700 px-2 py-0.5 text-xs hover:bg-slate-800 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                          >
-                            Reactivate
-                          </button>
-                        )}
-                        {lastSuperAdmin ? (
-                          <span className="ml-2 text-xs text-amber-300">last super admin</span>
-                        ) : null}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+              onChange={(value) => setNewRole(value as AdminRole)}
+              options={ROLES.map((option) => ({ value: option, label: ROLE_LABEL[option] }))}
+            />
+            {formError ? (
+              <p role="alert" className="rounded-control border border-critical/40 bg-critical-soft/60 p-2 text-xs text-critical">
+                {formError}
+              </p>
+            ) : null}
+          </form>
+        </Modal>
       </section>
     </AdminGate>
   );

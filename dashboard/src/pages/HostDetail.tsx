@@ -1,8 +1,29 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, Clock, Server } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Clock,
+  Cpu,
+  MapPin,
+  RefreshCw,
+  Server,
+} from "lucide-react";
 import { api, ApiError } from "../api";
-import { EmptyState } from "../components/EmptyState";
+import {
+  Badge,
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  EmptyState,
+  SectionHeader,
+  Skeleton,
+  Stat,
+  useToast,
+} from "../components/ui";
+import { PlatformBadge } from "../components/badges";
 import { SEVERITY_ORDER, StatusLabel, severityColor } from "../components/charts/TableTwin";
+import { sanitizeText } from "../components/EvidenceDrawer";
 
 export type HostIdentity = {
   id: number;
@@ -77,7 +98,20 @@ export type HostDetailProps = {
 function formatTimestamp(value: string | null): string {
   if (!value) return "—";
   const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? new Date(parsed).toLocaleString() : value;
+  return Number.isFinite(parsed) ? new Date(parsed).toLocaleString() : sanitizeText(value);
+}
+
+function formatBytes(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "—";
+  if (value < 1024) return `${value} B`;
+  const units = ["KiB", "MiB", "GiB"];
+  let size = value / 1024;
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024;
+    unit += 1;
+  }
+  return `${size.toFixed(1)} ${units[unit]}`;
 }
 
 /** Host identity, every location it was seen in, and its report timeline. */
@@ -85,6 +119,8 @@ export function HostDetail({ hostId, onBack }: HostDetailProps) {
   const [data, setData] = useState<HostDetailResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
+  const toast = useToast();
 
   useEffect(() => {
     let alive = true;
@@ -96,7 +132,10 @@ export function HostDetail({ hostId, onBack }: HostDetailProps) {
         if (alive) setData(response);
       })
       .catch((err) => {
-        if (alive) setError(err instanceof ApiError ? err.message : "failed to load host");
+        if (!alive) return;
+        const message = err instanceof ApiError ? err.message : "failed to load host";
+        setError(message);
+        toast.error("Could not load host", { description: message });
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -104,167 +143,238 @@ export function HostDetail({ hostId, onBack }: HostDetailProps) {
     return () => {
       alive = false;
     };
-  }, [hostId]);
+  }, [hostId, reloadKey, toast]);
 
-  if (error) return <EmptyState title="Could not load host" detail={error} />;
-  if (loading && !data) return <p role="status">Loading host…</p>;
-  if (!data) return <EmptyState title="No host available" />;
-
-  const { host, locations, reports, findings, summary } = data;
+  const host = data?.host;
+  const locations = data?.locations ?? [];
+  const reports = data?.reports ?? [];
+  const findings = data?.findings ?? [];
+  const summary = data?.summary;
 
   const statusCounts = new Map<string, number>();
   for (const finding of findings) {
     statusCounts.set(finding.status, (statusCounts.get(finding.status) ?? 0) + 1);
   }
-  const statusRows = STATUS_ORDER.filter((status) => (statusCounts.get(status) ?? 0) > 0).map(
-    (status) => ({ status, count: statusCounts.get(status) ?? 0 }),
-  );
+  const statusRows = STATUS_ORDER.filter((status) => (statusCounts.get(status) ?? 0) > 0).map((status) => ({
+    status,
+    count: statusCounts.get(status) ?? 0,
+  }));
 
   return (
-    <section aria-label={`Host ${host.displayId}`} className="space-y-5">
-      <div className="flex items-center gap-3">
-        {onBack ? (
-          <button
-            type="button"
-            onClick={onBack}
-            className="inline-flex items-center gap-1 rounded border border-slate-700 px-2 py-1 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-          >
-            <ArrowLeft size={14} aria-hidden /> Back
-          </button>
-        ) : null}
-        <h2 className="text-lg font-semibold">{host.displayId}</h2>
-      </div>
+    <section aria-label={host ? `Host ${host.displayId}` : `Host ${hostId}`} className="mx-auto flex max-w-7xl flex-col gap-5">
+      <SectionHeader
+        eyebrow="Host"
+        title={host ? sanitizeText(host.displayId) : `Host #${hostId}`}
+        description="Identity, location history, and the full report timeline."
+        icon={Server}
+        actions={
+          <>
+            {onBack ? (
+              <Button variant="ghost" icon={ArrowLeft} onClick={onBack}>
+                Back
+              </Button>
+            ) : null}
+            <Button variant="secondary" icon={RefreshCw} loading={loading} onClick={() => setReloadKey((key) => key + 1)}>
+              Refresh
+            </Button>
+          </>
+        }
+      />
 
-      <div className="grid gap-3 rounded-lg border border-slate-800 bg-slate-900/50 p-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div>
-          <div className="text-xs uppercase tracking-wide text-slate-400">Hostname</div>
-          <div className="mt-0.5 inline-flex items-center gap-1">
-            <Server size={14} aria-hidden /> {host.hostname ?? "—"}
+      {error && !data ? (
+        <EmptyState
+          icon={AlertTriangle}
+          title="Could not load host"
+          detail={error}
+          action={
+            <Button variant="secondary" icon={RefreshCw} onClick={() => setReloadKey((key) => key + 1)}>
+              Try again
+            </Button>
+          }
+        />
+      ) : loading && !data ? (
+        <Card>
+          <Skeleton width="30%" />
+          <Skeleton className="mt-3" width="100%" />
+        </Card>
+      ) : !host ? (
+        <EmptyState title="No host available" />
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <Stat
+              label="Risk score"
+              value={host.riskScore === null ? "—" : host.riskScore.toFixed(1)}
+              tone={host.riskScore === null ? "default" : host.riskScore >= 80 ? "ok" : host.riskScore >= 50 ? "default" : "high"}
+              hint="Latest report"
+            />
+            <Stat
+              label="Coverage"
+              value={host.coverage === null ? "—" : `${host.coverage.toFixed(1)}%`}
+              tone={host.coverage !== null && host.coverage >= 90 ? "ok" : "default"}
+              hint="Authoritative decided"
+            />
+            <Stat label="Reports" value={reports.length} icon={Clock} hint={formatTimestamp(host.lastSeenAt)} />
+            <Stat label="Findings" value={findings.length} icon={Server} hint={`${locations.length} location(s)`} />
           </div>
-        </div>
-        <div>
-          <div className="text-xs uppercase tracking-wide text-slate-400">Machine ID</div>
-          <div className="mt-0.5 break-all font-mono text-xs">{host.machineId}</div>
-        </div>
-        <div>
-          <div className="text-xs uppercase tracking-wide text-slate-400">Platform</div>
-          <div className="mt-0.5">
-            {host.platform ?? "—"} {host.arch ? `· ${host.arch}` : ""}
-          </div>
-        </div>
-        <div>
-          <div className="text-xs uppercase tracking-wide text-slate-400">OS</div>
-          <div className="mt-0.5">{host.os ?? "—"}</div>
-        </div>
-        <div>
-          <div className="text-xs uppercase tracking-wide text-slate-400">First seen</div>
-          <div className="mt-0.5">{formatTimestamp(host.firstSeenAt)}</div>
-        </div>
-        <div>
-          <div className="text-xs uppercase tracking-wide text-slate-400">Last seen</div>
-          <div className="mt-0.5">{formatTimestamp(host.lastSeenAt)}</div>
-        </div>
-        <div>
-          <div className="text-xs uppercase tracking-wide text-slate-400">Risk score</div>
-          <div className="mt-0.5 tabular-nums">{host.riskScore === null ? "—" : host.riskScore.toFixed(1)}</div>
-        </div>
-        <div>
-          <div className="text-xs uppercase tracking-wide text-slate-400">Coverage</div>
-          <div className="mt-0.5 tabular-nums">{host.coverage === null ? "—" : `${host.coverage.toFixed(1)}%`}</div>
-        </div>
-      </div>
 
-      <section aria-label="Severity summary" className="rounded-lg border border-slate-800 p-4">
-        <h3 className="text-sm font-medium">Findings by severity</h3>
-        <ul className="mt-2 flex flex-wrap gap-2">
-          {SEVERITY_ORDER.map((severity) => (
-            <li
-              key={severity}
-              className="inline-flex items-center gap-1 rounded border border-slate-700 px-2 py-0.5 text-xs"
-            >
-              <span
-                aria-hidden
-                className="inline-block h-2 w-2 rounded-full"
-                style={{ backgroundColor: severityColor(severity) }}
+          <Card>
+            <CardHeader icon={Server} title="Identity" description="Stable machine identity and platform metadata." />
+            <CardBody>
+              <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+                <div className="min-w-0">
+                  <dt className="text-2xs font-semibold uppercase tracking-wide text-ink-subtle">Hostname</dt>
+                  <dd className="mt-0.5 truncate text-sm text-ink">{sanitizeText(host.hostname) || "—"}</dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="text-2xs font-semibold uppercase tracking-wide text-ink-subtle">Machine ID</dt>
+                  <dd className="mt-0.5 truncate font-mono text-xs text-ink-muted">{sanitizeText(host.machineId)}</dd>
+                </div>
+                <div>
+                  <dt className="text-2xs font-semibold uppercase tracking-wide text-ink-subtle">Platform</dt>
+                  <dd className="mt-0.5 flex items-center gap-2">
+                    <PlatformBadge platform={host.platform} />
+                    {host.arch ? <span className="text-xs text-ink-muted">{sanitizeText(host.arch)}</span> : null}
+                  </dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="text-2xs font-semibold uppercase tracking-wide text-ink-subtle">OS</dt>
+                  <dd className="mt-0.5 truncate text-sm text-ink">{sanitizeText(host.os) || "—"}</dd>
+                </div>
+                <div>
+                  <dt className="text-2xs font-semibold uppercase tracking-wide text-ink-subtle">First seen</dt>
+                  <dd className="mt-0.5 text-sm text-ink">{formatTimestamp(host.firstSeenAt)}</dd>
+                </div>
+                <div>
+                  <dt className="text-2xs font-semibold uppercase tracking-wide text-ink-subtle">Last seen</dt>
+                  <dd className="mt-0.5 text-sm text-ink">{formatTimestamp(host.lastSeenAt)}</dd>
+                </div>
+                <div>
+                  <dt className="text-2xs font-semibold uppercase tracking-wide text-ink-subtle">Latest report</dt>
+                  <dd className="mt-0.5 text-sm text-ink">
+                    {host.latestReportId === null ? "—" : `#${host.latestReportId}`}
+                    {host.latestReceivedAt ? ` · ${formatTimestamp(host.latestReceivedAt)}` : ""}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-2xs font-semibold uppercase tracking-wide text-ink-subtle">Campaign</dt>
+                  <dd className="mt-0.5 text-sm text-ink">{reports[0] ? `#${reports[0].campaignId}` : "—"}</dd>
+                </div>
+              </dl>
+            </CardBody>
+          </Card>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader icon={AlertTriangle} title="Findings by severity" description="Across the latest report per location." />
+              <CardBody>
+                <ul className="flex flex-wrap gap-2">
+                  {SEVERITY_ORDER.map((severity) => (
+                    <li key={severity}>
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-hairline bg-surface-raised px-2.5 py-1 text-xs text-ink-muted">
+                        <span
+                          aria-hidden
+                          className="inline-block h-2 w-2 rounded-full"
+                          style={{ backgroundColor: severityColor(severity) }}
+                        />
+                        {severity}: <span className="tabular-nums text-ink">{summary?.severity[severity] ?? 0}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </CardBody>
+            </Card>
+
+            <Card>
+              <CardHeader icon={Cpu} title="Checks by status" description="Authoritative status distribution." />
+              <CardBody>
+                {statusRows.length === 0 ? (
+                  <p className="text-sm text-ink-muted">No check results in this scope.</p>
+                ) : (
+                  <ul className="flex flex-wrap gap-3">
+                    {statusRows.map((row) => (
+                      <li key={row.status} className="inline-flex items-center gap-1.5">
+                        <StatusLabel status={row.status} />
+                        <span className="tabular-nums text-xs text-ink">{row.count}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </CardBody>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader
+              icon={MapPin}
+              title="Locations"
+              description="Every campaign/location this machine has been seen in."
+            />
+            <CardBody>
+              {locations.length === 0 ? (
+                <EmptyState title="No location history" />
+              ) : (
+                <ul className="grid gap-2 sm:grid-cols-2">
+                  {locations.map((location) => (
+                    <li key={`${location.campaignId}-${location.id}`} className="hbs-inset flex flex-col gap-1 p-3">
+                      <a href={location.links.location} className="text-sm font-medium text-accent underline decoration-dotted underline-offset-2">
+                        {sanitizeText(location.name)}
+                      </a>
+                      <span className="text-2xs text-ink-subtle">
+                        Campaign #{location.campaignId} · last seen {formatTimestamp(location.lastSeenAt)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardBody>
+          </Card>
+
+          <Card flush className="overflow-hidden">
+            <div className="p-4">
+              <CardHeader
+                icon={Clock}
+                title="Report timeline"
+                description="Newest first. Select a report to open its sealed detail."
+                actions={<Badge tone="accent">{reports.length} reports</Badge>}
               />
-              {severity}: <span className="tabular-nums">{summary.severity[severity] ?? 0}</span>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section aria-label="Check status summary" className="rounded-lg border border-slate-800 p-4">
-        <h3 className="text-sm font-medium">Checks by status</h3>
-        {statusRows.length === 0 ? (
-          <p className="mt-1 text-sm text-slate-400">No check results in this scope.</p>
-        ) : (
-          <ul className="mt-2 flex flex-wrap gap-3">
-            {statusRows.map((row) => (
-              <li key={row.status} className="inline-flex items-center gap-1">
-                <StatusLabel status={row.status} />
-                <span className="tabular-nums text-xs text-slate-300">{row.count}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section aria-label="Locations" className="space-y-2">
-        <h3 className="text-sm font-medium">Locations</h3>
-        {locations.length === 0 ? (
-          <EmptyState title="No location history" />
-        ) : (
-          <ul className="grid gap-2 sm:grid-cols-2">
-            {locations.map((location) => (
-              <li key={`${location.campaignId}-${location.id}`} className="rounded border border-slate-800 p-3 text-sm">
-                <a
-                  href={location.links.location}
-                  className="font-medium text-sky-300 underline focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                >
-                  {location.name}
-                </a>
-                <div className="mt-1 text-xs text-slate-400">
-                  Campaign #{location.campaignId} · last seen {formatTimestamp(location.lastSeenAt)}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section aria-label="Report timeline" className="space-y-2">
-        <h3 className="text-sm font-medium">Report timeline</h3>
-        {reports.length === 0 ? (
-          <EmptyState title="No reports for this host" />
-        ) : (
-          <ol className="space-y-2">
-            {reports.map((report) => (
-              <li key={report.id} className="rounded border border-slate-800 bg-slate-900/40 p-3 text-sm">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <a
-                    href={report.links.report}
-                    className="font-medium text-sky-300 underline focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                  >
-                    Report #{report.id}
-                  </a>
-                  <span className="inline-flex items-center gap-1 text-xs text-slate-400">
-                    <Clock size={12} aria-hidden /> {formatTimestamp(report.receivedAt)}
-                  </span>
-                </div>
-                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
-                  <span>via {report.via ?? "—"}</span>
-                  <span>extractor {report.extractorVersion ?? "—"}</span>
-                  <span>scan {formatTimestamp(report.scanTimestamp)}</span>
-                  <span>score {report.score === null ? "—" : report.score.toFixed(1)}</span>
-                  <span>coverage {report.coverage === null ? "—" : `${report.coverage.toFixed(1)}%`}</span>
-                  <span>privilege {report.privilegeLevel ?? "—"}</span>
-                  <span>evidence {report.evidenceDepth ?? "—"}</span>
-                </div>
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
+            </div>
+            {reports.length === 0 ? (
+              <div className="p-4">
+                <EmptyState title="No reports for this host" />
+              </div>
+            ) : (
+              <ol className="flex flex-col">
+                {reports.map((report) => (
+                  <li key={report.id} className="flex flex-col gap-2 border-b border-hairline-soft p-4 last:border-b-0">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <a
+                        href={report.links.report}
+                        className="inline-flex items-center gap-2 text-sm font-medium text-accent underline decoration-dotted underline-offset-2"
+                      >
+                        <Clock size={14} aria-hidden /> Report #{report.id}
+                      </a>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {report.score !== null ? <Badge tone="accent">risk {report.score.toFixed(1)}</Badge> : null}
+                        {report.coverage !== null ? <Badge tone="neutral">coverage {report.coverage.toFixed(1)}%</Badge> : null}
+                        <span className="text-2xs text-ink-subtle">{formatTimestamp(report.receivedAt)}</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-2xs text-ink-subtle">
+                      <span>via {sanitizeText(report.via) || "—"}</span>
+                      <span>extractor {sanitizeText(report.extractorVersion) || "—"}</span>
+                      <span>scan {formatTimestamp(report.scanTimestamp)}</span>
+                      <span>privilege {sanitizeText(report.privilegeLevel) || "—"}</span>
+                      <span>evidence {sanitizeText(report.evidenceDepth) || "—"}</span>
+                      <span>size {formatBytes(report.bytes)}</span>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </Card>
+        </>
+      )}
     </section>
   );
 }

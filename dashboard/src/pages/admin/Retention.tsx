@@ -1,6 +1,19 @@
 import { useEffect, useState } from "react";
+import { AlertTriangle, Play, ShieldCheck, Trash2 } from "lucide-react";
 import { api, ApiError } from "../../api";
-import { EmptyState } from "../../components/EmptyState";
+import {
+  Badge,
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  EmptyState,
+  Input,
+  SectionHeader,
+  Select,
+  Stat,
+  useToast,
+} from "../../components/ui";
 import { sanitizeText } from "../../components/EvidenceDrawer";
 import type { Campaign } from "../../types";
 import { AdminGate, useAdminRole, type AdminRole } from "./Users";
@@ -38,6 +51,7 @@ export function Retention({ role: providedRole }: { role?: AdminRole | null } = 
   const [result, setResult] = useState<RetentionResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const toast = useToast();
 
   useEffect(() => {
     if (role !== "super_admin") return;
@@ -68,8 +82,10 @@ export function Retention({ role: providedRole }: { role?: AdminRole | null } = 
       );
       setPreview(response);
     } catch (err) {
-      setError(errorMessage(err));
+      const message = errorMessage(err);
+      setError(message);
       setPreview(null);
+      toast.error("Dry-run failed", { description: message });
     } finally {
       setBusy(false);
     }
@@ -88,8 +104,11 @@ export function Retention({ role: providedRole }: { role?: AdminRole | null } = 
       setResult(response);
       setPreview(null);
       setConfirmation("");
+      toast.success("Cleanup applied", { description: `${response.reportsDeleted} reports deleted` });
     } catch (err) {
-      setError(errorMessage(err));
+      const message = errorMessage(err);
+      setError(message);
+      toast.error("Cleanup failed", { description: message });
     } finally {
       setBusy(false);
     }
@@ -99,84 +118,89 @@ export function Retention({ role: providedRole }: { role?: AdminRole | null } = 
 
   return (
     <AdminGate role={role} loading={roleLoading} error={roleError} allow={["super_admin"]}>
-      <section aria-label="Retention policy" className="space-y-5">
-        <h2 className="text-lg font-semibold">Retention</h2>
+      <section aria-label="Retention policy" className="flex flex-col gap-5">
+        <SectionHeader
+          eyebrow="Govern"
+          title="Retention"
+          description="Preview an expiry sweep against a campaign, then confirm with the exact token. Legal-hold reports are never deleted."
+          icon={Trash2}
+        />
 
         {error ? (
-          <p role="alert" className="rounded border border-red-500/50 bg-red-500/10 p-3 text-sm text-red-200">
-            {error}
-          </p>
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-control border border-critical/40 bg-critical-soft/60 p-3 text-sm text-critical"
+          >
+            <AlertTriangle size={16} aria-hidden className="mt-0.5 shrink-0" />
+            <span>{error}</span>
+          </div>
         ) : null}
 
-        <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-800 p-3">
-          <label className="flex flex-col text-xs text-slate-400">
-            Campaign
-            <select
-              value={campaignId ?? ""}
-              onChange={(event) => {
-                const value = Number(event.target.value);
-                setCampaignId(Number.isSafeInteger(value) && value > 0 ? value : null);
-                setPreview(null);
-                setResult(null);
-                setConfirmation("");
-              }}
-              className="mt-1 min-w-56 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-sm"
-            >
-              <option value="">Select a campaign…</option>
-              {campaigns.map((campaign) => (
-                <option key={campaign.id} value={campaign.id}>
-                  {campaign.name}
-                  {campaign.retentionDays ? ` · ${campaign.retentionDays}d` : " · no retention set"}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            disabled={campaignId === null || busy}
-            onClick={() => void dryRun()}
-            className="rounded border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-          >
-            {busy ? "Working…" : "Run dry-run"}
-          </button>
-        </div>
+        <Card>
+          <CardHeader
+            icon={Play}
+            title="Choose a campaign"
+            description="A dry-run never mutates data; it only reports what an apply would remove."
+          />
+          <CardBody>
+            <div className="flex flex-wrap items-end gap-3">
+              <Select
+                label="Campaign"
+                value={campaignId === null ? "" : String(campaignId)}
+                onChange={(value) => {
+                  const parsed = Number(value);
+                  setCampaignId(Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null);
+                  setPreview(null);
+                  setResult(null);
+                  setConfirmation("");
+                }}
+                options={campaigns.map((campaign) => ({
+                  value: String(campaign.id),
+                  label: `${campaign.name}${campaign.retentionDays ? ` · ${campaign.retentionDays}d` : " · no retention set"}`,
+                }))}
+                placeholder="Select a campaign…"
+                className="w-72"
+              />
+              <Button variant="secondary" icon={Play} loading={busy} disabled={campaignId === null} onClick={() => void dryRun()}>
+                Run dry-run
+              </Button>
+            </div>
+          </CardBody>
+        </Card>
 
         {preview ? (
           preview.enabled ? (
-            <section aria-labelledby="retention-preview" className="space-y-3 rounded-lg border border-amber-500/40 p-3">
-              <h3 id="retention-preview" className="text-sm font-semibold text-amber-200">
-                Dry-run preview — nothing has been deleted
-              </h3>
-              <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-                <Stat label="Expired reports" value={preview.expiredReports} />
-                <Stat label="Legal-hold reports" value={preview.heldReports} />
-                <Stat label="Unlinked hosts" value={preview.unlinkedHosts} />
-                <Stat label="Keys retained" value={preview.retainedKeys} />
-              </dl>
-              <p className="text-xs text-slate-400">
-                Cutoff {sanitizeText(preview.cutoff) || "—"}. Reports under legal hold are never deleted.
-              </p>
-              <div className="space-y-2">
-                <label className="block text-xs text-slate-400">
-                  Type <span className="font-mono text-slate-200">{preview.confirmation}</span> to confirm
-                  <input
+            <Card className="border-high/40">
+              <CardHeader
+                icon={AlertTriangle}
+                title="Dry-run preview — nothing has been deleted"
+                description={`Cutoff ${sanitizeText(preview.cutoff) || "—"}. Reports under legal hold are never deleted.`}
+                actions={<Badge tone="degraded">Preview only</Badge>}
+              />
+              <CardBody className="flex flex-col gap-4">
+                <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+                  <Stat label="Expired reports" value={preview.expiredReports} tone={preview.expiredReports > 0 ? "high" : "ok"} />
+                  <Stat label="Legal-hold reports" value={preview.heldReports} />
+                  <Stat label="Unlinked hosts" value={preview.unlinkedHosts} />
+                  <Stat label="Keys retained" value={preview.retainedKeys} />
+                </div>
+                <div className="flex flex-wrap items-end gap-3">
+                  <Input
+                    label={`Type ${preview.confirmation} to confirm`}
                     value={confirmation}
                     onChange={(event) => setConfirmation(event.target.value)}
-                    className="mt-1 w-full max-w-md rounded border border-slate-700 bg-slate-900 px-2 py-1 text-sm"
+                    containerClassName="w-96"
+                    placeholder={preview.confirmation}
                   />
-                </label>
-                <button
-                  type="button"
-                  disabled={!mayApply || busy}
-                  onClick={() => void apply()}
-                  className="rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
-                >
-                  Apply cleanup
-                </button>
-              </div>
-            </section>
+                  <Button variant="danger" icon={Trash2} disabled={!mayApply || busy} onClick={() => void apply()}>
+                    Apply cleanup
+                  </Button>
+                </div>
+              </CardBody>
+            </Card>
           ) : (
             <EmptyState
+              icon={ShieldCheck}
               title="Retention is disabled for this campaign"
               detail="Set a retention policy on the campaign before running cleanup."
             />
@@ -184,28 +208,19 @@ export function Retention({ role: providedRole }: { role?: AdminRole | null } = 
         ) : null}
 
         {result ? (
-          <section aria-labelledby="retention-result" className="rounded-lg border border-emerald-500/40 p-3">
-            <h3 id="retention-result" className="text-sm font-semibold text-emerald-200">
-              Cleanup applied
-            </h3>
-            <dl className="mt-2 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-              <Stat label="Reports deleted" value={result.reportsDeleted} />
-              <Stat label="Hosts deleted" value={result.hostsDeleted} />
-              <Stat label="Held reports" value={result.heldReports} />
-              <Stat label="Keys retained" value={result.keysRetained} />
-            </dl>
-          </section>
+          <Card className="border-compliant/40">
+            <CardHeader icon={ShieldCheck} title="Cleanup applied" description="The sweep committed to the database." />
+            <CardBody>
+              <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+                <Stat label="Reports deleted" value={result.reportsDeleted} tone="ok" />
+                <Stat label="Hosts deleted" value={result.hostsDeleted} />
+                <Stat label="Held reports" value={result.heldReports} />
+                <Stat label="Keys retained" value={result.keysRetained} />
+              </div>
+            </CardBody>
+          </Card>
         ) : null}
       </section>
     </AdminGate>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: number }) {
-  return (
-    <div>
-      <dt className="text-xs uppercase tracking-wide text-slate-500">{label}</dt>
-      <dd className="mt-0.5 text-xl font-semibold tabular-nums">{value}</dd>
-    </div>
   );
 }

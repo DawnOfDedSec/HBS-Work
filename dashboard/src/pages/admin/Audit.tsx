@@ -1,273 +1,246 @@
-import { useCallback, useEffect, useState } from "react";
-import { Search } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AlertTriangle, RefreshCw, ScrollText, Search } from "lucide-react";
 import { api, ApiError } from "../../api";
-import { EmptyState } from "../../components/EmptyState";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  EmptyState,
+  Input,
+  Pagination,
+  SectionHeader,
+  Select,
+  Skeleton,
+  Table,
+  Toolbar,
+  ToolbarGroup,
+  ToolbarSpacer,
+  type TableColumn,
+  useToast,
+} from "../../components/ui";
 import { sanitizeText } from "../../components/EvidenceDrawer";
 import { AdminGate, useAdminRole, type AdminRole } from "./Users";
 
-/** Shape of `GET /api/admin/audit` once the server exposes it. */
+/** `GET /api/admin/audit` → `{ total, limit, offset, events }`. */
 type AuditEntry = {
   id: number;
-  actor: string;
+  actor: string | null;
   actorIp: string | null;
   action: string;
-  resource: string;
+  resource: string | null;
   details: string | null;
   createdAt: string;
 };
 
-type AuditResponse = { entries: AuditEntry[]; total: number; page: number; pageSize: number };
-
-type DiagnosticEvent = {
-  receivedAt: string;
-  via: string | null;
-  envelopeBytes: number | null;
-  durationMs: number | null;
-  accepted: boolean;
-  reasonCode: string | null;
-  reportId: number | null;
-  issuanceId: string | null;
-};
-
-type DiagnosticBundle = {
-  generatedAt: string;
-  ingestEvents: DiagnosticEvent[];
-};
+type AuditResponse = { total: number; limit: number; offset: number; events: AuditEntry[] };
 
 function errorMessage(error: unknown): string {
   return error instanceof ApiError ? error.message : "Request failed. Please retry.";
 }
 
 /**
- * Append-only log explorer. The canonical security audit log is served by
- * `GET /api/admin/audit`; when this build does not expose it (404), the page
- * falls back to the redacted ingest/self-audit events in `GET /api/diagnostic`
- * so operators still have a read-only, append-only record.
+ * Append-only audit log explorer. The server exposes limit/offset paging and an
+ * exact `action` filter; free-text search filters the loaded page.
  */
 export function Audit({ role: providedRole }: { role?: AdminRole | null } = {}) {
   const { role, loading: roleLoading, error: roleError } = useAdminRole(providedRole);
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(100);
+  const [action, setAction] = useState("");
+  const [actions, setActions] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [applied, setApplied] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [unavailable, setUnavailable] = useState(false);
-  const [diagnostic, setDiagnostic] = useState<DiagnosticBundle | null>(null);
-  const [diagnosticLoading, setDiagnosticLoading] = useState(false);
-  const pageSize = 50;
+  const toast = useToast();
 
-  const loadAudit = useCallback(async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
-      if (applied) params.set("q", applied);
+      const params = new URLSearchParams({
+        limit: String(pageSize),
+        offset: String((page - 1) * pageSize),
+      });
+      if (action) params.set("action", action);
       const response = await api.raw<AuditResponse>("GET", `/api/admin/audit?${params.toString()}`);
-      setEntries(Array.isArray(response.entries) ? response.entries : []);
-      setTotal(typeof response.total === "number" ? response.total : 0);
-      setUnavailable(false);
+      const rows = Array.isArray(response.events) ? response.events : [];
+      setEntries(rows);
+      setTotal(typeof response.total === "number" ? response.total : rows.length);
+      setActions((current) => [...new Set([...current, ...rows.map((row) => row.action)])].sort());
     } catch (err) {
-      if (err instanceof ApiError && (err.status === 404 || err.status === 405)) {
-        setUnavailable(true);
-        setEntries([]);
-        setTotal(0);
-      } else {
-        setError(errorMessage(err));
-      }
+      const message = errorMessage(err);
+      setError(message);
+      toast.error("Could not load the audit log", { description: message });
     } finally {
       setLoading(false);
     }
-  }, [page, applied]);
+  }, [page, pageSize, action, toast]);
 
   useEffect(() => {
-    if (role === "super_admin") void loadAudit();
-  }, [role, loadAudit]);
+    if (role === "super_admin") void load();
+  }, [role, load]);
 
-  async function loadDiagnostic() {
-    setDiagnosticLoading(true);
-    setError(null);
-    try {
-      const response = await api.raw<{ diagnostic: DiagnosticBundle }>("GET", "/api/diagnostic");
-      setDiagnostic(response.diagnostic ?? null);
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setDiagnosticLoading(false);
-    }
-  }
+  const visible = useMemo(() => {
+    const term = applied.trim().toLowerCase();
+    if (!term) return entries;
+    return entries.filter((entry) =>
+      [entry.actor ?? "", entry.action, entry.resource ?? "", entry.details ?? "", entry.actorIp ?? ""]
+        .join("\n")
+        .toLowerCase()
+        .includes(term),
+    );
+  }, [entries, applied]);
 
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const columns: Array<TableColumn<AuditEntry>> = [
+    {
+      key: "createdAt",
+      header: "When",
+      sortable: true,
+      render: (entry) => <span className="text-xs text-ink-muted">{sanitizeText(entry.createdAt)}</span>,
+    },
+    {
+      key: "actor",
+      header: "Actor",
+      render: (entry) => (
+        <div className="flex flex-col gap-0.5">
+          <span className="text-ink">{sanitizeText(entry.actor) || "—"}</span>
+          {entry.actorIp ? <span className="text-2xs text-ink-subtle">{sanitizeText(entry.actorIp)}</span> : null}
+        </div>
+      ),
+    },
+    {
+      key: "action",
+      header: "Action",
+      render: (entry) => <Badge tone="accent">{sanitizeText(entry.action)}</Badge>,
+    },
+    {
+      key: "resource",
+      header: "Resource",
+      render: (entry) => (
+        <span className="break-all font-mono text-2xs text-ink-muted">{sanitizeText(entry.resource) || "—"}</span>
+      ),
+    },
+    {
+      key: "details",
+      header: "Details",
+      render: (entry) => (
+        <span className="break-words font-mono text-2xs text-ink-subtle">{sanitizeText(entry.details) || "—"}</span>
+      ),
+    },
+  ];
 
   return (
     <AdminGate role={role} loading={roleLoading} error={roleError} allow={["super_admin"]}>
-      <section aria-label="Audit log" className="space-y-5">
-        <h2 className="text-lg font-semibold">Audit log</h2>
-
-        <form
-          role="search"
-          className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-800 p-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setPage(1);
-            setApplied(search.trim());
-          }}
-        >
-          <label className="flex flex-col text-xs text-slate-400">
-            Search actor, action, or resource
-            <div className="mt-1 flex items-center gap-1 rounded border border-slate-700 bg-slate-900 px-2">
-              <Search size={14} aria-hidden className="text-slate-500" />
-              <input
-                type="search"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                className="w-64 bg-transparent py-1 text-sm focus:outline-none"
-              />
-            </div>
-          </label>
-          <button
-            type="submit"
-            className="rounded border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-          >
-            Search
-          </button>
-          <button
-            type="button"
-            onClick={() => void loadAudit()}
-            className="rounded border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-          >
-            Refresh
-          </button>
-        </form>
+      <section aria-label="Audit log" className="flex flex-col gap-5">
+        <SectionHeader
+          eyebrow="Govern"
+          title="Audit log"
+          description="Append-only record of every privileged action: actors, resources, and redacted details."
+          icon={ScrollText}
+          actions={
+            <Button variant="secondary" icon={RefreshCw} loading={loading} onClick={() => void load()}>
+              Refresh
+            </Button>
+          }
+        />
 
         {error ? (
-          <p role="alert" className="rounded border border-red-500/50 bg-red-500/10 p-3 text-sm text-red-200">
-            {error}
-          </p>
-        ) : null}
-
-        {unavailable ? (
-          <div className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm text-amber-100">
-            <p role="status">
-              This build does not expose <code className="font-mono">/api/admin/audit</code>. The redacted diagnostic
-              bundle is the closest append-only record available.
-            </p>
-            <button
-              type="button"
-              disabled={diagnosticLoading}
-              onClick={() => void loadDiagnostic()}
-              className="rounded border border-amber-500/60 px-3 py-1.5 text-amber-100 hover:bg-amber-500/10 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
-            >
-              {diagnosticLoading ? "Loading…" : "Load redacted diagnostic log"}
-            </button>
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-control border border-critical/40 bg-critical-soft/60 p-3 text-sm text-critical"
+          >
+            <AlertTriangle size={16} aria-hidden className="mt-0.5 shrink-0" />
+            <span>{error}</span>
           </div>
         ) : null}
 
-        {diagnostic ? (
-          <section aria-labelledby="diagnostic-log" className="space-y-2">
-            <h3 id="diagnostic-log" className="text-sm font-semibold">
-              Redacted ingest log · generated {sanitizeText(diagnostic.generatedAt)}
-            </h3>
-            {diagnostic.ingestEvents.length === 0 ? (
-              <EmptyState title="No ingest events recorded" />
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-sm">
-                  <caption className="sr-only">Redacted diagnostic ingest events</caption>
-                  <thead>
-                    <tr className="text-left text-slate-400">
-                      <th scope="col" className="border-b border-slate-800 py-2 pr-3">Received</th>
-                      <th scope="col" className="border-b border-slate-800 py-2 pr-3">Via</th>
-                      <th scope="col" className="border-b border-slate-800 py-2 pr-3">Accepted</th>
-                      <th scope="col" className="border-b border-slate-800 py-2 pr-3">Bytes</th>
-                      <th scope="col" className="border-b border-slate-800 py-2 pr-3">Duration</th>
-                      <th scope="col" className="border-b border-slate-800 py-2 pr-3">Report</th>
-                      <th scope="col" className="border-b border-slate-800 py-2">Reason</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {diagnostic.ingestEvents.map((event, index) => (
-                      <tr key={`${event.reportId ?? "x"}:${index}`} className="align-top">
-                        <td className="border-b border-slate-900 py-2 pr-3">{sanitizeText(event.receivedAt)}</td>
-                        <td className="border-b border-slate-900 py-2 pr-3">{sanitizeText(event.via) || "—"}</td>
-                        <td className="border-b border-slate-900 py-2 pr-3">
-                          <span className={event.accepted ? "text-emerald-300" : "text-red-300"}>
-                            {event.accepted ? "accepted" : "rejected"}
-                          </span>
-                        </td>
-                        <td className="border-b border-slate-900 py-2 pr-3 tabular-nums">{event.envelopeBytes ?? "—"}</td>
-                        <td className="border-b border-slate-900 py-2 pr-3 tabular-nums">{event.durationMs ?? "—"}</td>
-                        <td className="border-b border-slate-900 py-2 pr-3 tabular-nums">{event.reportId ?? "—"}</td>
-                        <td className="border-b border-slate-900 py-2">{sanitizeText(event.reasonCode) || "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-        ) : null}
+        <Toolbar label="Audit filters">
+          <ToolbarGroup>
+            <form
+              role="search"
+              className="flex items-center gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                setApplied(search.trim());
+              }}
+            >
+              <Input
+                type="search"
+                aria-label="Search audit entries"
+                icon={Search}
+                placeholder="Search actor, resource, details…"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                containerClassName="w-72"
+              />
+              <Button size="sm" variant="secondary" type="submit">
+                Search
+              </Button>
+            </form>
+          </ToolbarGroup>
+          <ToolbarGroup>
+            <Select
+              aria-label="Filter by action"
+              value={action}
+              onChange={(value) => {
+                setAction(value);
+                setPage(1);
+              }}
+              options={[
+                { value: "", label: "All actions" },
+                ...actions.map((item) => ({ value: item, label: item })),
+              ]}
+              className="w-56"
+            />
+          </ToolbarGroup>
+          <ToolbarSpacer />
+          <Badge tone="accent">
+            {applied ? `${visible.length} of ${entries.length} on page` : `${total} entries`}
+          </Badge>
+        </Toolbar>
 
-        {!unavailable ? (
-          loading && entries.length === 0 ? (
-            <p role="status">Loading audit log…</p>
-          ) : entries.length === 0 ? (
-            <EmptyState title="No audit entries match" />
+        <Card flush className="overflow-hidden">
+          <div className="p-4">
+            <CardHeader
+              icon={ScrollText}
+              title="Audit events"
+              description="Newest first. Details are redacted server-side before they reach the console."
+            />
+          </div>
+          {loading && entries.length === 0 ? (
+            <div className="flex flex-col gap-2 p-4">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <Skeleton key={index} height={30} />
+              ))}
+            </div>
+          ) : visible.length === 0 ? (
+            <div className="p-4">
+              <EmptyState
+                title={applied ? "No audit entries match your search" : "No audit entries yet"}
+                detail={applied ? "Clear the search to see every loaded entry." : undefined}
+              />
+            </div>
           ) : (
-            <>
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-sm">
-                  <caption className="sr-only">Audit log entries</caption>
-                  <thead>
-                    <tr className="text-left text-slate-400">
-                      <th scope="col" className="border-b border-slate-800 py-2 pr-3">When</th>
-                      <th scope="col" className="border-b border-slate-800 py-2 pr-3">Actor</th>
-                      <th scope="col" className="border-b border-slate-800 py-2 pr-3">Action</th>
-                      <th scope="col" className="border-b border-slate-800 py-2 pr-3">Resource</th>
-                      <th scope="col" className="border-b border-slate-800 py-2">Details</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {entries.map((entry) => (
-                      <tr key={entry.id} className="align-top">
-                        <td className="border-b border-slate-900 py-2 pr-3">{sanitizeText(entry.createdAt)}</td>
-                        <td className="border-b border-slate-900 py-2 pr-3">{sanitizeText(entry.actor)}</td>
-                        <td className="border-b border-slate-900 py-2 pr-3 font-mono text-xs">{sanitizeText(entry.action)}</td>
-                        <td className="border-b border-slate-900 py-2 pr-3">{sanitizeText(entry.resource)}</td>
-                        <td className="border-b border-slate-900 py-2 font-mono text-xs text-slate-400">
-                          {sanitizeText(entry.details) || "—"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {totalPages > 1 ? (
-                <nav aria-label="Audit pagination" className="flex items-center justify-between text-sm">
-                  <button
-                    type="button"
-                    disabled={page <= 1}
-                    onClick={() => setPage((value) => Math.max(1, value - 1))}
-                    className="rounded border border-slate-700 px-2 py-1 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                  >
-                    Previous
-                  </button>
-                  <span className="text-slate-400">
-                    Page {page} of {totalPages}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={page >= totalPages}
-                    onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
-                    className="rounded border border-slate-700 px-2 py-1 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                  >
-                    Next
-                  </button>
-                </nav>
-              ) : null}
-            </>
-          )
+            <Table label="Audit log entries" columns={columns} rows={visible} rowKey={(row) => String(row.id)} stickyHeader />
+          )}
+        </Card>
+
+        {total > 0 ? (
+          <Pagination
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            pageSizeOptions={[50, 100, 250, 500]}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setPage(1);
+            }}
+          />
         ) : null}
       </section>
     </AdminGate>

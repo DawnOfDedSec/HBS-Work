@@ -1,12 +1,14 @@
 // Flat CSV export (Task 57, spec §6.6).
 //
-// Pure serializer over the shared export view model. Every cell is escaped per
-// RFC 4180 and guarded against spreadsheet formula injection: a cell whose text
-// begins with `=`, `+`, `-`, or `@` is prefixed with a single quote so Excel /
-// Sheets / LibreOffice treat it as inert text rather than a formula. Output
-// carries a UTF-8 BOM so Excel detects the encoding on double-click.
+// Pure serializer over the shared export view model. The document is a
+// metadata header block (title, client, campaign, scope, generated date, and
+// the headline metrics) followed by the flat findings table. Every cell is
+// escaped per RFC 4180 and guarded against spreadsheet formula injection: a
+// cell whose text begins with `=`, `+`, `-`, `@`, tab, or CR is prefixed with a
+// single quote so Excel / Sheets / LibreOffice treat it as inert text rather
+// than a formula. Output carries a UTF-8 BOM so Excel detects the encoding.
 
-import type { ExportFinding, ExportViewModel } from "./viewmodel";
+import { campaignLabel, describeScopeText, type ExportFinding, type ExportViewModel } from "./viewmodel";
 
 export const UTF8_BOM = "\uFEFF";
 
@@ -37,17 +39,17 @@ const FINDING_COLUMNS = [
   "Title",
   "Severity",
   "Status",
-  "Category",
   "Treatment",
+  "Evidence Depth",
+  "Category",
+  "References",
+  "Repro",
   "Assignee",
   "Due Date",
   "Platform",
   "OS",
   "Arch",
-  "Evidence Depth",
   "Location",
-  "References",
-  "Repro",
   "Evidence",
   "Evidence Excerpt",
   "Fallback Log",
@@ -58,6 +60,9 @@ const FINDING_COLUMNS = [
 ] as const;
 
 export const CSV_FINDING_COLUMNS: readonly string[] = FINDING_COLUMNS;
+
+/** Column index (1-based) of the "Severity" column in the findings table. */
+export const CSV_SEVERITY_COLUMN = FINDING_COLUMNS.indexOf("Severity") + 1;
 
 function firstOffending(finding: ExportFinding): string {
   for (const block of finding.evidenceBlocks) {
@@ -83,17 +88,17 @@ function findingRow(finding: ExportFinding): (string | number | null)[] {
     finding.title,
     finding.severity,
     finding.status,
-    finding.category,
     finding.treatment,
+    finding.evidenceDepth,
+    finding.category,
+    finding.references.join("; "),
+    finding.repro,
     finding.treatmentAssignee,
     finding.treatmentDueDate,
     finding.platform,
     finding.os,
     finding.arch,
-    finding.evidenceDepth,
     finding.location,
-    finding.references.join("; "),
-    finding.repro,
     finding.evidence,
     firstOffending(finding),
     fallbackSummary(finding),
@@ -104,9 +109,39 @@ function findingRow(finding: ExportFinding): (string | number | null)[] {
   ];
 }
 
-/** Render the flat findings table (header + one row per finding). */
+/**
+ * Metadata rows that precede the findings table. Kept as `key,value` CSV
+ * records so a strict parser still sees a well-formed document; the leading
+ * `#` marks them as provenance rather than findings.
+ */
+export function csvHeaderBlock(viewModel: ExportViewModel): (string | number)[][] {
+  const kpis = viewModel.kpis;
+  return [
+    ["# HBS Security Review Export", ""],
+    ["# Title", viewModel.title],
+    ["# Deliverable", viewModel.subtitle],
+    ["# Client", viewModel.client ?? ""],
+    ["# Campaign", campaignLabel(viewModel.scope)],
+    ["# Scope", describeScopeText(viewModel.scope)],
+    ["# Generated", viewModel.generatedAt],
+    ["# Risk Score", kpis.riskScore],
+    ["# Coverage (%)", kpis.coverage],
+    ["# Total Findings", kpis.totalFindings],
+    ["# Failing Findings", kpis.failingFindings],
+    ["# Open Findings", kpis.openFindings],
+    ["# Open Critical Findings", kpis.openCriticals],
+    ["# Hosts", kpis.hostCount],
+    ["# Scan Reports", kpis.totalReports],
+    ["# Standard References", kpis.referenceCount],
+    ["# Confidentiality", viewModel.confidentiality],
+  ];
+}
+
+/** Render the header block + flat findings table. */
 export function renderCsv(viewModel: ExportViewModel): string {
   const rows: (string | number | null)[][] = [
+    ...csvHeaderBlock(viewModel),
+    [],
     [...FINDING_COLUMNS],
     ...viewModel.findings.map(findingRow),
   ];

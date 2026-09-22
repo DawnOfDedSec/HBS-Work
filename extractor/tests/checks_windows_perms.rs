@@ -13,8 +13,7 @@ use hbs_extractor::evidence::CmdInjector;
 use hbs_extractor::model::{CheckResult, RegisteredCheck, Status};
 use hbs_extractor::platform::{detect, Os};
 
-const ADMIN_ONLY_SAM: &str = r"O:SYG:SYD:PAI(A;CI;KA;;;BA)(A;CI;KA;;;SY)";
-const BROAD_SAM: &str = r"O:SYG:SYD:PAI(A;CI;KA;;;WD)(A;CI;KA;;;BA)(A;CI;KA;;;SY)";
+const ADMIN_ONLY_SAM: &str = r"O:SYG:SYD:PAI(A;CI;KA;;;BA)(A;CI;KA;;;SY)";const BROAD_SAM: &str = r"O:SYG:SYD:PAI(A;CI;KA;;;WD)(A;CI;KA;;;BA)(A;CI;KA;;;SY)";
 const DIR_NO_WORLD: &str = r"O:SYG:SYD:PAI(A;OICI;FA;;;BA)(A;OICI;FA;;;SY)";
 const DIR_WORLD_WRITABLE: &str = r"O:SYG:SYD:PAI(A;OICI;FA;;;WD)(A;OICI;FA;;;BA)";
 
@@ -30,6 +29,13 @@ fn run_one(ctx: &mut ScanContext, id: &str) -> CheckResult {
     let subset: Vec<_> = registry.into_iter().filter(|c| c.tc.id == id).collect();
     assert!(!subset.is_empty(), "Check {id} not found in registry");
     run_all(&subset, ctx).remove(0)
+}
+
+/// Leak a runtime path so it can be used in a `&'static` fixture table. The
+/// real system root varies by host (e.g. `C:\WINDOWS`), so tests must resolve
+/// it instead of assuming `C:\Windows`.
+fn leaked(value: String) -> &'static str {
+    Box::leak(value.into_boxed_str())
 }
 
 fn acl_injector(
@@ -113,15 +119,16 @@ fn sam_security_system_acls_restricted_or_flagged() {
 #[test]
 fn directory_world_writable_flagged_absent_degrades() {
     // 004 %SystemRoot% fine.
+    let root = leaked(windows::system_root());
     let good: &'static [(&'static str, Option<&'static str>)] =
-        &[("C:\\Windows", Some(DIR_NO_WORLD))];
+        Box::leak(vec![(root, Some(DIR_NO_WORLD))].into_boxed_slice());
     let mut ctx = windows_ctx(acl_injector(good));
     let res = run_one(&mut ctx, "WIN-REG-004");
     assert_eq!(res.status, Status::Compliant, "{}", res.evidence);
 
     // World-writable -> NonCompliant.
     let bad: &'static [(&'static str, Option<&'static str>)] =
-        &[("C:\\Windows", Some(DIR_WORLD_WRITABLE))];
+        Box::leak(vec![(root, Some(DIR_WORLD_WRITABLE))].into_boxed_slice());
     let mut ctx2 = windows_ctx(acl_injector(bad));
     let res2 = run_one(&mut ctx2, "WIN-REG-004");
     assert_eq!(res2.status, Status::NonCompliant, "{}", res2.evidence);
@@ -167,18 +174,21 @@ fn unquoted_service_path_detected() {
 
 #[test]
 fn perm_checks_query_only_verbs() {
-    let responses: &'static [(&'static str, Option<&'static str>)] = &[
-        ("SAM", Some(ADMIN_ONLY_SAM)),
-        ("SECURITY", Some(ADMIN_ONLY_SAM)),
-        ("SYSTEM", Some(ADMIN_ONLY_SAM)),
-        ("C:\\Windows", Some(DIR_NO_WORLD)),
-        ("Program Files", Some(DIR_NO_WORLD)),
-        ("System32", Some(DIR_NO_WORLD)),
-        ("PerfLogs", Some(DIR_NO_WORLD)),
-        ("Run", Some("")),
-        ("RunOnce", Some("")),
-        ("Startup", Some(DIR_NO_WORLD)),
-    ];
+    let responses: &'static [(&'static str, Option<&'static str>)] = Box::leak(
+        vec![
+            ("SAM", Some(ADMIN_ONLY_SAM)),
+            ("SECURITY", Some(ADMIN_ONLY_SAM)),
+            ("SYSTEM", Some(ADMIN_ONLY_SAM)),
+            (leaked(windows::system_root()), Some(DIR_NO_WORLD)),
+            ("Program Files", Some(DIR_NO_WORLD)),
+            ("System32", Some(DIR_NO_WORLD)),
+            ("PerfLogs", Some(DIR_NO_WORLD)),
+            ("Run", Some("")),
+            ("RunOnce", Some("")),
+            ("Startup", Some(DIR_NO_WORLD)),
+        ]
+        .into_boxed_slice(),
+    );
     let mut ctx = windows_ctx(acl_injector(responses));
     for i in 1..=9 {
         run_one(&mut ctx, &format!("WIN-REG-{i:03}"));
