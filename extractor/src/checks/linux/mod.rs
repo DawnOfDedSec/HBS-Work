@@ -3,6 +3,7 @@
 
 pub mod firewall;
 pub mod auditd;
+pub mod containers;
 pub mod fsck;
 pub mod logging;
 pub mod network;
