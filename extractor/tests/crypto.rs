@@ -1,4 +1,4 @@
-use hbs_extractor::crypto::{derive_key, seal, unseal};
+use hbs_extractor::crypto::{seal, unseal};
 
 const PRIV: [u8; 32] = [0x41; 32];
 // derived once via x25519 keypair with private = 0x41*32

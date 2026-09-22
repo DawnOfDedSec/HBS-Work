@@ -38,7 +38,7 @@ fn linux(p: &crate::platform::PlatformInfo) -> bool {
 /// Compare one sysctl to an expected value. `default_one` marks keys
 /// that are 1 by default on modern kernels — absence is degraded (safe
 /// default) rather than non-compliant.
-fn sysctl_eq(ctx: &mut ScanContext, key: &str, want: &str, default_one: bool) -> CheckOutcome {
+pub(crate) fn sysctl_eq(ctx: &mut ScanContext, key: &str, want: &str, default_one: bool) -> CheckOutcome {
     let mut log = Vec::new();
     match sysctl_value(ctx, key) {
         Some(v) => {
@@ -59,6 +59,24 @@ fn sysctl_eq(ctx: &mut ScanContext, key: &str, want: &str, default_one: bool) ->
                 err_outcome(log)
             }
         }
+    }
+}
+
+/// Numeric sysctl at least `want`.
+pub(crate) fn sysctl_num_at_least(ctx: &mut ScanContext, key: &str, want: i64) -> CheckOutcome {
+    let mut log = Vec::new();
+    match super::sysctl_value(ctx, key) {
+        Some(v) => {
+            let n: i64 = v.trim().parse().unwrap_or(-1);
+            let loc = format!("/proc/sys/{}", key.replace('.', "/"));
+            log.push(FallbackAttempt { source: loc.clone(), outcome: format!("value={}", v.trim()) });
+            if n >= want {
+                ok(format!("{key}={}", v.trim()), loc, format!("sysctl {key}"))
+            } else {
+                nok(format!("{Key}={n} (expected >= {want})", Key = key), loc, format!("sysctl {key}"))
+            }
+        }
+        None => degraded(&format!("{key} not readable; kernel default applies — verify")),
     }
 }
 

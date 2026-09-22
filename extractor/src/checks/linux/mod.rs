@@ -10,6 +10,7 @@ pub mod pam;
 pub mod services;
 pub mod users;
 pub mod ssh;
+pub mod threat;
 
 use crate::context::ScanContext;
 

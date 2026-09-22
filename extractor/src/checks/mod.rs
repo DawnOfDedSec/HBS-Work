@@ -19,6 +19,7 @@ pub fn register_all(reg: &mut Vec<RegisteredCheck>) {
     linux::services::register(reg);
     linux::users::register(reg);
     linux::ssh::register(reg);
+    linux::threat::register(reg);
     shared::register(reg);
     toy::register(reg);
     // Further Phase 2/3 modules register here as they land.
