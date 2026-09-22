@@ -2,6 +2,7 @@
 //! section below.
 
 pub mod fsck;
+pub mod network;
 pub mod services;
 
 use crate::context::ScanContext;
