@@ -87,6 +87,8 @@ HBS-Work/
 
 Detection uses capability probes (kernel interfaces, syscall availability, service managers, registry paths) rather than rigid OS-version string assumptions.
 
+**Legacy-server policy:** required support is the tested matrix below. Older releases within the supported Linux/Windows families are best-effort: the extractor must start without modifying the host, use only capabilities actually present, and report unavailable modern controls as `NotApplicable` when the platform cannot provide them or `DegradedPartial` when evidence cannot be read. It must never invent compliance or convert an unavailable feature/tool into `Error`. Windows older than Server 2016, Linux kernels older than 3.10, and non-Linux/non-Windows OSes are not compatibility guarantees until added to CI. “Broad compatibility” never means an untested claim of every historical OS version.
+
 | Target | Architecture / OS | Distro / Version Support | Status |
 |---|---|---|---|
 | `x86_64-unknown-linux-musl` | amd64 Linux | Fully static musl; kernel ≥ 3.10; RHEL/CentOS 7-9, Ubuntu 16.04-24.04, Debian 9-12, Alpine 3.x, SUSE, Arch | Required |
