@@ -7,6 +7,7 @@ pub mod fsck;
 pub mod logging;
 pub mod network;
 pub mod services;
+pub mod ssh;
 
 use crate::context::ScanContext;
 

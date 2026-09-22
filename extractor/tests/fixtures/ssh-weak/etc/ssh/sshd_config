@@ -1,0 +1,5 @@
+PermitRootLogin yes
+LogLevel QUIET
+Ciphers aes128-cbc,3des-cbc
+PermitEmptyPasswords yes
+MaxAuthTries 20
