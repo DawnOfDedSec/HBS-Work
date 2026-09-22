@@ -37,7 +37,7 @@ import { SeverityBadge, StatusBadge, TreatmentBadge } from "../components/badges
 import { DensityToggle } from "../components/DensityToggle";
 import { LastUpdated } from "../components/LastUpdated";
 import { sanitizeText } from "../components/EvidenceDrawer";
-import { ScopeControls } from "../components/ScopeSelector";
+import { ScopeControls, clearScopeKeys } from "../components/ScopeSelector";
 import { serializeFilters } from "../filters";
 import { useScopeFilters } from "../useScopeFilters";
 import { useDensity } from "../useDensity";
@@ -368,7 +368,7 @@ export function Remediation({ onDrilldown }: RemediationProps) {
         filters={filters}
         onToggle={toggle}
         onClearScope={() => {
-          clearKey("scope");
+          clearScopeKeys(filters);
         }}
       />
 

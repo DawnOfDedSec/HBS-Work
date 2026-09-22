@@ -4,7 +4,7 @@
 //! touch the filesystem or process spawning directly.
 
 use crate::evidence::{self, CmdInjector};
-use crate::model::SelfAudit;
+use crate::model::{bounded_redact, AuditKind, AuditStatus, EvidenceBlock, SelfAudit};
 use crate::platform::{EnvironmentInfo, EnvProbe, PlatformInfo};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -85,13 +85,23 @@ impl ScanContext {
         self.path(abs_path).exists()
     }
 
-    /// Cached, capped read. Cache hit does not re-log the audit entry.
+    /// Cached, capped read. A cache hit records a `cached: true` attempt
+    /// (the original attempt is preserved) but does not re-log the compact
+    /// `files_read` list.
     pub fn read(&mut self, abs_path: &str) -> Option<String> {
-        if let Some(hit) = self.caches.get(abs_path) {
-            return Some(hit.clone());
+        if let Some(hit) = self.caches.get(abs_path).cloned() {
+            let idx = self.audit.begin_attempt(AuditKind::File, abs_path);
+            let bytes = hit.len() as u64;
+            self.audit.finish_attempt(idx, |a| {
+                a.status = AuditStatus::Cached;
+                a.cached = true;
+                a.bytes = Some(bytes);
+                a.outcome = format!("cache hit; {bytes} bytes");
+            });
+            return Some(hit);
         }
         let full = self.path(abs_path);
-        let out = evidence::read_file_capped(&full, &mut self.audit)?;
+        let out = evidence::read_file_capped_as(&full, abs_path, &mut self.audit)?;
         self.caches.insert(abs_path.to_string(), out.clone());
         Some(out)
     }
@@ -102,6 +112,25 @@ impl ScanContext {
 
     pub fn cmd_timeout(&mut self, program: &str, args: &[&str], timeout_ms: u64) -> Option<String> {
         evidence::run_command(program, args, timeout_ms, &mut self.audit, &self.injector)
+    }
+
+    /// Back-reference the attempts that produced a finding's evidence
+    /// blocks. `start` is the attempts length captured before the check
+    /// ran, so only this check's attempts are touched. Matches by redacted
+    /// source path (file attempts), including cache hits.
+    pub fn link_evidence(&mut self, start: usize, check_id: &str, blocks: &[EvidenceBlock]) {
+        if blocks.is_empty() || start >= self.audit.attempts.len() {
+            return;
+        }
+        for b in blocks {
+            let want = bounded_redact(&b.path);
+            let reference = bounded_redact(&format!("{}:{}", check_id, b.line));
+            for a in self.audit.attempts[start..].iter_mut() {
+                if a.kind == AuditKind::File && a.source == want {
+                    a.evidence_ref = Some(reference.clone());
+                }
+            }
+        }
     }
 
     /// Unix permission bits (mode) of a path, via stat. None when the

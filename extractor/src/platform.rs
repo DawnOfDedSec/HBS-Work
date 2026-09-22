@@ -225,7 +225,9 @@ fn detect_windows() -> PlatformInfo {
 
 #[cfg(not(windows))]
 fn detect_windows() -> PlatformInfo {
-    unreachable!("detect_windows called on non-windows")
+    // `detect` only calls this on Windows; keep the function total so no
+    // platform combination can panic.
+    detect_linux()
 }
 
 pub fn detect() -> PlatformInfo {
@@ -429,7 +431,7 @@ fn detect_environment_linux(probe: &mut impl EnvProbe) -> EnvironmentInfo {
         observed = true;
         let overlay_root = mi.lines().any(|l| {
             let f: Vec<&str> = l.split_whitespace().collect();
-            f.len() >= 7 && f[4] == "/" && f.iter().any(|t| *t == "overlay")
+            f.len() >= 7 && f.get(4) == Some(&"/") && f.iter().any(|t| *t == "overlay")
         });
         if overlay_root {
             container.get_or_insert_with(|| "overlay-rootfs".into());

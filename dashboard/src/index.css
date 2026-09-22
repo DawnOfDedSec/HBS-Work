@@ -359,3 +359,121 @@
     opacity: 0.85;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Presentation mode
+ *
+ * Toggled by the Executive Summary page through `document.body`. It removes the
+ * console chrome (sidebar + topbar) and scales the content for a projector or a
+ * screen-share, while leaving the page's own exit control in place.
+ * ------------------------------------------------------------------------ */
+.hbs-print-only {
+  display: none;
+}
+
+body.hbs-presentation aside,
+body.hbs-presentation header {
+  display: none !important;
+}
+
+body.hbs-presentation main {
+  padding: 2.5rem 2rem !important;
+  font-size: 1.0625rem;
+  line-height: 1.65;
+}
+
+body.hbs-presentation main h1 {
+  font-size: 1.75rem;
+}
+
+body.hbs-presentation main .hbs-presentation-hide {
+  display: none !important;
+}
+
+/* ---------------------------------------------------------------------------
+ * Print stylesheet
+ *
+ * Executive Summary and Report Detail print as a clean one/two-page document:
+ * navigation and controls are removed, cards never split across pages, and a
+ * branded header with a generation timestamp is revealed.
+ * ------------------------------------------------------------------------ */
+@media print {
+  html,
+  body {
+    background: #ffffff !important;
+    color: #0b0f14 !important;
+  }
+
+  /* Console chrome and interactive controls are not part of the document. */
+  aside,
+  header,
+  nav,
+  [role="toolbar"],
+  .hbs-no-print,
+  [data-print="hide"] {
+    display: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+    max-width: none !important;
+  }
+
+  .hbs-print-only {
+    display: block !important;
+  }
+
+  .hbs-print-url {
+    display: block;
+    font-size: 10pt;
+    color: #475569;
+    word-break: break-all;
+  }
+
+  /* Flatten the dark theme so the printed page is ink-light and legible. */
+  .hbs-panel,
+  .hbs-inset,
+  .hbs-card {
+    background: #ffffff !important;
+    border-color: #cbd5e1 !important;
+    box-shadow: none !important;
+  }
+
+  .text-ink,
+  .text-ink-muted,
+  .text-ink-subtle {
+    color: #0f172a !important;
+  }
+
+  /* Never split a card, table, or chart across a page boundary. */
+  .hbs-panel,
+  .hbs-inset,
+  .hbs-card,
+  table,
+  figure,
+  .hbs-print-keep {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  h1,
+  h2,
+  h3,
+  tr,
+  img,
+  svg {
+    break-inside: avoid;
+    break-after: avoid;
+  }
+
+  /* Data regions must expand instead of clipping at their scroll viewport. */
+  .hbs-scroll {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
+  a[href]::after {
+    content: "";
+  }
+}
+

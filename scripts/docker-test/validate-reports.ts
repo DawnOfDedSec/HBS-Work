@@ -27,6 +27,7 @@ type Report = {
   results: CheckResult[];
   summary: Record<string, number>;
   selfAudit?: { commands?: string[]; filesRead?: string[] };
+  diagnostics?: Record<string, unknown>;
 };
 
 const HARD_FAILURES: string[] = [];
@@ -88,6 +89,24 @@ for (const file of reports.sort()) {
     (report.selfAudit?.filesRead?.length ?? 0) + (report.selfAudit?.commands?.length ?? 0) > 0,
     `${label}: empty self-audit`,
   );
+
+  // In-report logs + diagnostics (single sealed file carries results AND logs).
+  const audit = report.selfAudit as {
+    attempts?: { kind?: string; status?: string; source?: string }[];
+    warnings?: unknown[];
+  };
+  const diagnostics = report.diagnostics as
+    | { log?: unknown[]; missingData?: unknown[]; environment?: unknown }
+    | undefined;
+  require(Array.isArray(audit.attempts) && audit.attempts.length > 0, `${label}: selfAudit.attempts missing`);
+  require(
+    (audit.attempts ?? []).every((a) => typeof a.kind === "string" && typeof a.status === "string"),
+    `${label}: audit attempt missing kind/status`,
+  );
+  require(diagnostics !== undefined, `${label}: diagnostics block missing`);
+  require((diagnostics?.log?.length ?? 0) > 0, `${label}: diagnostics.log missing`);
+  require(Array.isArray(diagnostics?.missingData), `${label}: diagnostics.missingData missing`);
+  require(diagnostics?.environment !== undefined, `${label}: diagnostics.environment missing`);
 
   rows.push([
     label,

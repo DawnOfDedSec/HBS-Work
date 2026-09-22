@@ -316,8 +316,8 @@ export function CommandPalette({
               {matchedCampaigns.map((campaign) => (
                 <Command.Item
                   key={`campaign:${campaign.id}`}
-                  value={`campaign:${campaign.name}`}
-                  keywords={["campaign", String(campaign.id), campaign.client ?? ""]}
+                  value={`campaign:${campaign.id}`}
+                  keywords={["campaign", campaign.name, campaign.client ?? ""]}
                   onSelect={() =>
                     run(() => {
                       if (onOpenCampaign) onOpenCampaign(campaign.id);
@@ -346,8 +346,8 @@ export function CommandPalette({
               {matchedHosts.map((host) => (
                 <Command.Item
                   key={`host:${host.id}`}
-                  value={`host:${host.displayId}`}
-                  keywords={["host", host.machineId, host.hostname ?? ""]}
+                  value={`host:${host.id}`}
+                  keywords={["host", host.displayId, host.machineId, host.hostname ?? ""]}
                   onSelect={() => run(() => onDrilldown(serializeFilters({ hostId: [String(host.id)] })))}
                   className={ENTITY_ITEM_CLASS}
                 >

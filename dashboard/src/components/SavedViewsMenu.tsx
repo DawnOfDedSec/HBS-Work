@@ -92,7 +92,6 @@ export function SavedViewsMenu({ currentQuery, role, onApply }: SavedViewsMenuPr
       .raw<{ view: SavedView }>("POST", "/api/saved-views", {
         name: trimmed,
         query: currentQuery,
-        scope: "latest",
         visibility,
       })
       .then(() => {

@@ -27,6 +27,7 @@ import {
   Toolbar,
   ToolbarGroup,
   ToolbarSpacer,
+  useToast,
   type TableColumn,
 } from "../components/ui";
 import { SeverityDonut } from "../components/charts/SeverityDonut";
@@ -217,6 +218,7 @@ function MetaItem({ icon: Icon, label, value }: { icon: typeof Building2; label:
 export function Executive({ onDrilldown }: ExecutiveProps) {
   const { query } = useScopeFilters();
   const { lastEventAt } = useLiveEvents();
+  const toast = useToast();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [campaignId, setCampaignId] = useState<number | null>(null);
   const [overview, setOverview] = useState<OverviewMetrics | null>(null);
@@ -375,12 +377,20 @@ export function Executive({ onDrilldown }: ExecutiveProps) {
 
   const copySummary = () => {
     const text = `${metaName} — security posture summary (${formatDate(metaDate)})\n\n${plainSummary}\n\nRisk score: ${riskScore.toFixed(1)}/100 · Coverage: ${coverage.toFixed(1)}%`;
-    void navigator.clipboard?.writeText(text);
+    if (typeof navigator === "undefined" || !navigator.clipboard) {
+      toast.error("Clipboard unavailable");
+      return;
+    }
+    navigator.clipboard
+      .writeText(text)
+      .then(() => toast.success("Board summary copied"))
+      .catch(() => toast.error("Clipboard unavailable"));
   };
 
   const print = () => {
+    // Update the timestamp first, then let React paint before the print dialog.
     setPrintStamp(new Date().toISOString());
-    window.print();
+    window.setTimeout(() => window.print(), 0);
   };
 
   const actions = (
@@ -448,6 +458,9 @@ export function Executive({ onDrilldown }: ExecutiveProps) {
             <p>Generated {new Date(printStamp).toLocaleString()}</p>
           </div>
         </div>
+        {typeof window !== "undefined" ? (
+          <span className="hbs-print-url">{`${window.location.origin}${window.location.pathname}`}</span>
+        ) : null}
       </div>
 
       <SectionHeader

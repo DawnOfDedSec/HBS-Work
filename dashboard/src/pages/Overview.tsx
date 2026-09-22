@@ -25,6 +25,8 @@ import {
 import { api, ApiError } from "../api";
 import { Badge, Button, EmptyState, SectionHeader, Sparkline, Stat } from "../components/ui";
 import { cn } from "../components/ui/cn";
+import { LastUpdated } from "../components/LastUpdated";
+import { useLiveEvents } from "../useLiveEvents";
 import { SeverityDonut } from "../components/charts/SeverityDonut";
 import { TrendLine } from "../components/charts/TrendLine";
 import {
@@ -236,12 +238,14 @@ function SkeletonTile() {
  * data-quality/freshness banner.
  */
 export function Overview({ onDrilldown, onNavigate }: OverviewProps) {
+  const { lastEventAt } = useLiveEvents();
   const [metrics, setMetrics] = useState<OverviewMetrics | null>(null);
   const [severity, setSeverity] = useState<Record<string, number> | null>(null);
   const [findings, setFindings] = useState<FindingRow[] | null>(null);
   const [quality, setQuality] = useState<TelemetryQuality | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
@@ -262,7 +266,10 @@ export function Overview({ onDrilldown, onNavigate }: OverviewProps) {
         if (alive) setError(err instanceof ApiError ? err.message : "Failed to load overview metrics");
       })
       .finally(() => {
-        if (alive) setLoading(false);
+        if (alive) {
+          setLoading(false);
+          setLastUpdated(new Date().toISOString());
+        }
       });
 
     severityRequest
@@ -292,7 +299,7 @@ export function Overview({ onDrilldown, onNavigate }: OverviewProps) {
     return () => {
       alive = false;
     };
-  }, [reloadKey]);
+  }, [reloadKey, lastEventAt]);
 
   const refresh = useCallback(() => setReloadKey((value) => value + 1), []);
 
@@ -318,11 +325,7 @@ export function Overview({ onDrilldown, onNavigate }: OverviewProps) {
       title="Overview"
       description="Global risk posture, coverage, and data quality across every campaign in scope."
       icon={LayoutDashboard}
-      actions={
-        <Button variant="secondary" icon={RefreshCw} loading={loading} onClick={refresh}>
-          Refresh
-        </Button>
-      }
+      actions={<LastUpdated at={lastUpdated} onRefresh={refresh} loading={loading} />}
     />
   );
 

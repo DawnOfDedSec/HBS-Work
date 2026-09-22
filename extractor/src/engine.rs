@@ -11,6 +11,7 @@ pub fn run_all(registry: &[RegisteredCheck], ctx: &mut ScanContext) -> Vec<Check
     let mut out = Vec::with_capacity(registry.len());
     for rc in registry {
         let started = std::time::Instant::now();
+        let audit_start = ctx.audit.attempts.len();
         let (outcome, mut fallback_log) = if !(rc.applies)(&ctx.platform) {
             (
                 CheckOutcome {
@@ -86,6 +87,11 @@ pub fn run_all(registry: &[RegisteredCheck], ctx: &mut ScanContext) -> Vec<Check
                 source: "engine".into(),
                 outcome: "check completed with Error status and no fallback log".into(),
             });
+        }
+        // Link each evidence block back to the attempt(s) that produced
+        // it, so a finding can be traced to its audit log line(s).
+        if !outcome.evidence_blocks.is_empty() {
+            ctx.link_evidence(audit_start, rc.tc.id, &outcome.evidence_blocks);
         }
         out.push(CheckResult {
             id: rc.tc.id.to_string(),

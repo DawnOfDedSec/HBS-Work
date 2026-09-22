@@ -45,6 +45,7 @@ for img in "${IMAGES[@]}"; do
       run_as=""
     fi
     MSYS_NO_PATHCONV=1 docker run --rm \
+      --network none \
       -v "$WIN_BIN":/hbs-extractor:ro \
       -v "$WIN_OUT":/out \
       --user "$([ "$usermode" = root ] && echo 0:0 || echo 1000:1000)" \

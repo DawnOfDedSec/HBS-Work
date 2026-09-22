@@ -88,6 +88,26 @@ fn severity_rank(s: Severity) -> u8 {
     }
 }
 
+/// Stable FNV-1a fingerprint of the (filtered) check catalog, so the
+/// report can be tied to the exact testcase set that produced it.
+fn catalog_fingerprint(reg: &[RegisteredCheck]) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for rc in reg {
+        let line = format!(
+            "{}|{}|{}|{}",
+            rc.tc.id,
+            rc.tc.severity.as_str(),
+            rc.tc.category,
+            rc.tc.title
+        );
+        for b in line.as_bytes() {
+            h ^= *b as u64;
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+    format!("fnv1a64:{h:016x}")
+}
+
 fn main() {
     let args = Args::parse();
     platform::lower_own_priority();
@@ -147,7 +167,9 @@ fn main() {
     let started_at = std::time::SystemTime::now();
     let mut ctx = ScanContext::new(pinfo.clone(), elevated);
     let ui = hbs_extractor::cli::Progress::new(args.quiet, reg.len());
+    let meta_started = std::time::Instant::now();
     let meta = metadata::collect(&mut ctx);
+    let metadata_ms = meta_started.elapsed().as_millis() as u64;
     let host_display = meta
         .get("hostname")
         .and_then(|v| v.as_str())
@@ -173,7 +195,9 @@ fn main() {
         .as_str(),
     );
     ui.metadata_done(meta.as_object().map(|m| m.len()).unwrap_or(0));
+    let checks_started = std::time::Instant::now();
     let mut results = run_all_with_ui(&reg, &mut ctx, &ui);
+    let checks_ms = checks_started.elapsed().as_millis() as u64;
     let audit = std::mem::take(&mut ctx.audit);
 
     // 5. Report + seal.
@@ -194,6 +218,11 @@ fn main() {
         "environmentSignals": pinfo.environment.signals.clone(),
         "arch": pinfo.arch,
         "privileged": elevated,
+        "catalogFingerprint": catalog_fingerprint(&reg),
+        "phaseDurationsMs": {
+            "metadata": metadata_ms,
+            "checks": checks_ms,
+        },
     });
     let rep = report::build(
         scan_extra,

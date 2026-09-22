@@ -39,7 +39,11 @@ fn report_carries_scan_block_and_schema() {
         scan_extra,
         json!({"os_name": "Ubuntu"}),
         vec![sample_result()],
-        SelfAudit { commands: vec!["uname -r".into()], files_read: vec![] },
+        SelfAudit {
+            commands: vec!["uname -r".into()],
+            files_read: vec![],
+            ..Default::default()
+        },
         started,
         5000,
         "0.1.0-test",

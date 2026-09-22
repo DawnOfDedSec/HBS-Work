@@ -370,17 +370,49 @@ fn autoruns(ctx: &mut ScanContext) -> CheckOutcome {
 fn open_shares(ctx: &mut ScanContext) -> CheckOutcome {
     let mut log = Vec::new();
     if linux_only(ctx) {
-        if let Some(exports) = ctx.read("/etc/exports") {
-            log.push(FallbackAttempt { source: "/etc/exports".into(), outcome: "read".into() });
-            let entries = exports.lines().filter(|l| !l.trim_start().starts_with('#')).count();
-            return inv_ok(format!("{entries} NFS exports"), "/etc/exports".into(), "cat /etc/exports".into());
+        // Local-only sources: the static export table and the live kernel
+        // export table. `showmount` is deliberately not used — it speaks
+        // RPC to a (potentially remote) NFS server. Where neither file
+        // exists there is no independent local fallback: NFS exports can
+        // only be configured through these two files, so absence is
+        // reported as a single-source result with the attempts retained.
+        for path in ["/etc/exports", "/var/lib/nfs/etab"] {
+            if let Some(exports) = ctx.read(path) {
+                log.push(FallbackAttempt { source: path.into(), outcome: "read".into() });
+                let entries = exports
+                    .lines()
+                    .filter(|l| {
+                        let t = l.trim();
+                        !t.is_empty() && !t.starts_with('#')
+                    })
+                    .count();
+                if entries > 0 {
+                    return inv_ok_logged(
+                        format!("{entries} NFS exports"),
+                        path.into(),
+                        format!("cat {path}"),
+                        log,
+                    );
+                }
+            } else {
+                log.push(FallbackAttempt { source: path.into(), outcome: "missing or unreadable".into() });
+            }
         }
-        log.push(FallbackAttempt { source: "/etc/exports".into(), outcome: "missing (no NFS exports configured)".into() });
-        return inv_ok("no /etc/exports file — no NFS shares configured".into(), "/etc/exports".into(), "cat /etc/exports".into());
+        return inv_ok_logged(
+            "no NFS exports configured".into(),
+            "/etc/exports".into(),
+            "cat /etc/exports".into(),
+            log,
+        );
     }
     if let Some(out) = ctx.cmd("net", &["share"]) {
         log.push(FallbackAttempt { source: "net share".into(), outcome: "read".into() });
-        return inv_ok(out.lines().skip(4).take(30).collect::<Vec<_>>().join(" "), "net share".into(), "net share".into());
+        return inv_ok_logged(
+            out.lines().skip(4).take(30).collect::<Vec<_>>().join(" "),
+            "net share".into(),
+            "net share".into(),
+            log,
+        );
     }
     log.extend(one_fallback("net share", "unavailable"));
     degraded_from_attempts(log, "net share unavailable")

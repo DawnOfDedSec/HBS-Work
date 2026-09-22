@@ -66,7 +66,11 @@ Windows system locations are resolved from the environment (`SystemRoot`,
 ### Offline by default
 
 Without `--push`, the extractor opens **zero sockets, performs no DNS, and makes
-no network call** — local scanning and sealing work fully air-gapped. When
+no network call** — local scanning and sealing work fully air-gapped. Hostname
+and FQDN are derived from local files only, and the command allowlist rejects
+DNS/remote-target tools and arguments (e.g. `hostname -f`, `getent hosts`,
+`showmount`, `-ComputerName`, `/node:`, UNC paths) **before** anything is
+spawned; the container matrix is run with `--network none` to prove it. When
 `--push` is supplied, the report is sealed and written locally **first**; only
 then is it sent. A push failure never deletes the local report. Network policy:
 connect 5 s, transfer 15 s, at most 2 retries on transient failures.
@@ -114,6 +118,15 @@ data, so tampering with routing fields fails authentication. Keys come from
 `info = "HBS-report-v2" || suite || key_id_le || extractor_id`. Suite 0 is
 ChaCha20-Poly1305; suite 1 is AES-256-GCM. The dashboard retains a bounded
 legacy `HBS1` ingest path for migration only and never issues v1.
+
+The report is the **single** artifact and is self-diagnosing: alongside every
+testcase it embeds a structured, redacted audit trail (`selfAudit.attempts` —
+each file read, command, registry, or API query with status, exit code, bytes,
+duration, cache flag, and the evidence reference it produced), a `diagnostics`
+block (environment/hypervisor, catalog fingerprint, privilege, peak RSS, phase
+durations, and a per-check `missingData` explanation with exhausted sources),
+and a bounded human-readable `log`. Decrypting one `.hbs` shows the findings
+**and** exactly why any value is missing.
 
 ### Honest security statement
 
