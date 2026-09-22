@@ -1,7 +1,7 @@
 //! LIN-FS: filesystem & partition hardening (CIS 1.1.x).
 
 use super::{has_opt, mount_opts};
-use crate::checks::{degraded, err_outcome, nok, ok};
+use crate::checks::{degraded, degraded_from_attempts, nok, ok};
 use crate::context::ScanContext;
 use crate::model::{CheckOutcome, FallbackAttempt, RegisteredCheck};
 
@@ -47,7 +47,7 @@ fn separate_check(ctx: &mut ScanContext, path: &str, cis: &str) -> CheckOutcome 
                     format!("findmnt --kernel {path} # cited by {cis}"),
                 )
             } else {
-                err_outcome(vec![FallbackAttempt { source: "/proc/mounts".into(), outcome: "missing".into() }])
+                degraded_from_attempts(vec![FallbackAttempt { source: "/proc/mounts".into(), outcome: "missing".into() }], "/proc/mounts missing")
             }
         }
     }
@@ -99,7 +99,7 @@ fn fstab_consistency(ctx: &mut ScanContext) -> CheckOutcome {
     let mut log = Vec::new();
     let Some(fstab) = ctx.read("/etc/fstab") else {
         log.push(FallbackAttempt { source: "/etc/fstab".into(), outcome: "missing".into() });
-        return err_outcome(log);
+        return degraded_from_attempts(log, "/etc/fstab missing");
     };
     log.push(FallbackAttempt { source: "/etc/fstab".into(), outcome: format!("{} entries", fstab.lines().filter(|l| !l.starts_with('#')).count()).into() });
     let mut problems = Vec::new();
@@ -167,7 +167,7 @@ fn bootloader_password(ctx: &mut ScanContext) -> CheckOutcome {
     };
     let Some(cfg) = ctx.read(path) else {
         log.push(FallbackAttempt { source: path.into(), outcome: "unreadable".into() });
-        return err_outcome(log);
+        return degraded_from_attempts(log, &format!("{path} unreadable"));
     };
     if cfg.contains("password_pbkdf2") || cfg.contains("password bcrypt") {
         ok("bootloader password present".into(), path.into(), format!("grep password {path}"))

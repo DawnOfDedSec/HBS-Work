@@ -10,6 +10,7 @@ pub mod keyslot;
 pub mod metadata;
 pub mod model;
 pub mod platform;
+pub mod push;
 pub mod redact;
 pub mod registry;
 pub mod report;

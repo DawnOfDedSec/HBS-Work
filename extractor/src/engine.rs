@@ -75,8 +75,9 @@ pub fn run_all(registry: &[RegisteredCheck], ctx: &mut ScanContext) -> Vec<Check
                 }
             }
         };
-        // The check's own fallback log (present on Error outcomes built
-        // by err_outcome) takes precedence over the engine's.
+        // The check's own fallback log (present on outcomes built by
+        // degraded_from_attempts / the check helpers) takes precedence
+        // over the engine's.
         if !outcome.fallback_log.is_empty() {
             fallback_log = outcome.fallback_log.clone();
         }

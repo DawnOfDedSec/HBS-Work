@@ -1,8 +1,9 @@
 [
   {
-    "envelopeHex": "48425331010000070014edb59765ca92dd86ed02512a662e71c39f8278407334eee7366cefefd0a2b0660af595b56b1265b367429924a6c97eeb84dbf3477b5a00bbfbc1c14e00000000000000cb7e2cc1caaac8291329f824003af19dc12ee3ad63379630f37a2ec7e7bd4d91c543ef9c1f2c4c3e56df482e5e1365af46064adaed28fe7f148e2f2822f43beb16be679eeb8c075af3e0ff621828",
-    "envelopeLen": 155,
-    "envelopeSha256": "fc53636a45ea84b86c8fbfc759725c107beaef393602ce31ac2113187e4698f6",
+    "envelopeHex": "484253320200000700a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a559ba9c4ebc089c081c02b87465696d9feb520a47a0cd8e08568af8e45bf0c0571f8b4978b257f78ff7436bf022cd7713d35da875f650a91a821fedde4e00000000000000be888ef1a589ff7be30c80d5b30ff981b0039c5b2a26eb610fc421445adc9286a1944fa2e169fa3a4cda8e7fbb04a95bcf1b42cf60b28dc8e11813f722598eed831b8df46b902c42a6e5f2dde970",
+    "envelopeLen": 171,
+    "envelopeSha256": "5f277c5a99dd2d505ef6918819d741f9409ca19fe7c1024a60f9b88a96ddac25",
+    "extractorIdHex": "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5",
     "keyId": 7,
     "large": false,
     "name": "suite0-basic",
@@ -13,9 +14,10 @@
     "suite": 0
   },
   {
-    "envelopeHex": "484253310100010900b34695b5095b0caf92d111682268faa2a7b215046d3218d946553f1f9e3cd0a8d2ec8af06d67e86447c99842af45d46c532cbe48207ae252e49698ce30000000000000004a22039a5fe2b34c60eabb73f77414d467711ba7683bd25aa391ee50a178345e73c08f4e89186bf659cae3b6a55332c3",
-    "envelopeLen": 125,
-    "envelopeSha256": "2ffa3aa6a855fee3d0e527af960f84e0780da0041be0cb85fa41fbeedd4155cc",
+    "envelopeHex": "484253320200010900a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a564f97b3f7470f3407054524e0ade1863feb2dd45dbcf0c0098748c85bd35d9288fc796bd8d7dd3fd5c84f42ed84e0f14185262c33a96e21bafa0f65d3000000000000000e79a811b1df418c95eb21a25961257d78d3a03fc705f5cfed74f24c4f6268a21ad2c45e5d8f85ec3dfb432ecf61613e7",
+    "envelopeLen": 141,
+    "envelopeSha256": "4d36cddca7415abf5d824ce2d0cc377eebc32e434dd23ff4e803f09b0eb5a632",
+    "extractorIdHex": "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5",
     "keyId": 9,
     "large": false,
     "name": "suite1-basic",
@@ -26,9 +28,10 @@
     "suite": 1
   },
   {
-    "envelopeHex": "48425331010000010016620eccdf6c9df72eebf94ed40a62a366e3ed776931203f5094cc06da08f2992f99eecf7d866ab29d8eecf7b316903f24836d43b4b5e7755a4f50f41900000000000000bedc4835df8cb40e1a3b8607d32befdb24e9aae95bd22ae5ed",
-    "envelopeLen": 102,
-    "envelopeSha256": "7df9c3f11dfba7789c516fd8e111d9e63ac678d902c931938c1b10add09b271d",
+    "envelopeHex": "484253320200000100a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a55a6694cab64bacfb80d0694f08e98ac3fe0fe2e604ea3fb8e132339797ac7cdc78cabcb26b39b71b720d2ff7bdfd15483b424f5c557a3bca2dd93e8d190000000000000049620c0f3c641c5cc2055bda6da565218187a3e1093b70f618",
+    "envelopeLen": 118,
+    "envelopeSha256": "23958bc0e16b77b18a37caa40ef5e4b5e4d5ceaebe99a9ccb5962074d453132e",
+    "extractorIdHex": "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5",
     "keyId": 1,
     "large": false,
     "name": "suite0-empty",
@@ -40,8 +43,9 @@
   },
   {
     "envelopeHex": null,
-    "envelopeLen": 143,
-    "envelopeSha256": "e4efb10ec3ac1f3801e0677c6012221c1edb99112227e3bda49c75764e0a39a6",
+    "envelopeLen": 159,
+    "envelopeSha256": "9e16d10339eee2d65d08cd066f50d745bfe5fba818ecd3c441e540f9878dcd4b",
+    "extractorIdHex": "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5",
     "keyId": 2,
     "large": true,
     "name": "suite0-large-1mb",

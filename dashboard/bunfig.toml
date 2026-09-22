@@ -1,0 +1,5 @@
+[test]
+# Playwright end-to-end specs live in tests/ and are driven by
+# `bunx playwright test`, not by `bun test`. Keep the unit suite fast and
+# free of browser/runner globals.
+pathIgnorePatterns = ["tests/**", "**/*.spec.ts"]

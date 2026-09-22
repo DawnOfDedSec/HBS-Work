@@ -1,7 +1,7 @@
 //! LIN-SSH: sshd hardening (CIS 5.2.x). Effective-value resolution:
 //! /etc/ssh/sshd_config last-wins, `sshd -T` fallback for includes.
 
-use crate::checks::{degraded, err_outcome, nok, ok, with_block};
+use crate::checks::{degraded, degraded_from_attempts, nok, ok, with_block};
 use crate::context::ScanContext;
 use crate::model::{CheckOutcome, FallbackAttempt, RegisteredCheck};
 use crate::platform::Os;
@@ -106,7 +106,7 @@ fn ssh_kv(ctx: &mut ScanContext, key: &str, good: &[&str], bad: &str) -> CheckOu
             if log.iter().any(|f| f.source == "/etc/ssh/sshd_config" && f.outcome == "read") {
                 degraded(&format!("{key} not explicitly set — OpenSSH default applies; verify default is acceptable"))
             } else {
-                err_outcome(log)
+                degraded_from_attempts(log, "sshd config and sshd -T unavailable")
             }
         }
     }
@@ -131,7 +131,7 @@ fn ssh_kv_contains_any(ctx: &mut ScanContext, key: &str, want_any: &[&str]) -> C
             if log.iter().any(|f| f.outcome == "read") {
                 degraded(&format!("{key} not set — OpenSSH defaults apply (modern defaults are strong; verify version)"))
             } else {
-                err_outcome(log)
+                degraded_from_attempts(log, "sshd config and sshd -T unavailable")
             }
         }
     }
@@ -156,7 +156,7 @@ fn ssh_num_max(ctx: &mut ScanContext, key: &str, max: u64) -> CheckOutcome {
             if log.iter().any(|f| f.outcome == "read") {
                 degraded(&format!("{key} not set — OpenSSH default applies"))
             } else {
-                err_outcome(log)
+                degraded_from_attempts(log, "sshd config and sshd -T unavailable")
             }
         }
     }
@@ -200,7 +200,7 @@ fn ssh_banner(ctx: &mut ScanContext) -> CheckOutcome {
             if log.iter().any(|f| f.outcome == "read") {
                 degraded("Banner not set — OpenSSH default (none)")
             } else {
-                err_outcome(log)
+                degraded_from_attempts(log, "sshd config and sshd -T unavailable")
             }
         }
     }

@@ -3,9 +3,9 @@
 //! in a module via the `check!` macro (spec §4.3).
 
 pub mod linux;
-pub mod windows;
 pub mod shared;
 pub mod toy;
+pub mod windows;
 
 use crate::context::ScanContext;
 use crate::model::{CheckOutcome, EvidenceBlock, FallbackAttempt, RegisteredCheck, Status};
@@ -22,6 +22,7 @@ pub fn register_all(reg: &mut Vec<RegisteredCheck>) {
     windows::perms::register(reg);
     windows::network::register(reg);
     windows::threat_creds::register(reg);
+    windows::threat_persist::register(reg);
     linux::containers::register(reg);
     linux::firewall::register(reg);
     linux::fsck::register(reg);
@@ -46,7 +47,11 @@ pub fn evidence_at(ctx: &mut ScanContext, path: &str, needle: &str) -> Option<Ev
     let text = ctx.read(path)?;
     let lines: Vec<&str> = text.lines().collect();
     let idx = lines.iter().position(|l| l.contains(needle))?;
-    let col = lines[idx].find(needle).map(|b| text[..b].chars().count()).unwrap_or(0) as u32 + 1;
+    let col = lines[idx]
+        .find(needle)
+        .map(|b| text[..b].chars().count())
+        .unwrap_or(0) as u32
+        + 1;
     let start = idx.saturating_sub(3);
     let end = (idx + 3).min(lines.len().saturating_sub(1));
     let context: Vec<String> = lines[start..=end]
@@ -133,22 +138,38 @@ pub fn degraded(reason: &str) -> CheckOutcome {
     }
 }
 
-/// Every fallback failed — full Error outcome whose evidence enumerates
-/// each attempt ("source (outcome); …"), exactly what the report shows.
-pub fn err_outcome(log: Vec<FallbackAttempt>) -> CheckOutcome {
-    let joined = log
-        .iter()
-        .map(|f| format!("{} ({})", f.source, f.outcome))
-        .collect::<Vec<_>>()
-        .join("; ");
+/// Every fallback for a check was tried and none produced authoritative
+/// evidence: missing, permission-denied, absent tool, timeout,
+/// empty/unreadable source, or localized/malformed external output.
+///
+/// This is `DegradedPartial`, never `Status::Error`. `Error` is reserved
+/// for internal invariant failures, panics, or corrupt parser/input. The
+/// ordered attempts are preserved in `fallback_log` and rendered into
+/// `evidence` so reports still show exactly what was tried.
+pub fn degraded_from_attempts(log: Vec<FallbackAttempt>, reason: &str) -> CheckOutcome {
+    let joined = join_attempts(&log);
+    let evidence = if joined.is_empty() {
+        format!("degraded: {reason}")
+    } else {
+        format!("degraded: {reason} — {joined}")
+    };
     CheckOutcome {
-        status: Status::Error,
-        evidence: format!("unavailable: {joined}"),
+        status: Status::DegradedPartial,
+        evidence,
         location: String::new(),
         repro: String::new(),
         recommendation_override: None,
-        degraded_reason: None,
+        degraded_reason: Some(reason.to_string()),
         fallback_log: log,
         evidence_blocks: Vec::new(),
     }
+}
+
+/// Render ordered fallback attempts as `"source (outcome); …"` — the same
+/// convenience the former `err_outcome` helper offered.
+pub fn join_attempts(log: &[FallbackAttempt]) -> String {
+    log.iter()
+        .map(|f| format!("{} ({})", f.source, f.outcome))
+        .collect::<Vec<_>>()
+        .join("; ")
 }

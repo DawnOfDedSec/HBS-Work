@@ -3,9 +3,9 @@
 //! hunting (spec §5, threat-informed layer).
 
 use crate::checks::linux::network::{sysctl_eq, sysctl_num_at_least};
-use crate::checks::{degraded, nok, ok, with_block};
+use crate::checks::{degraded, degraded_from_attempts, nok, ok, with_block};
 use crate::context::ScanContext;
-use crate::model::{CheckOutcome, RegisteredCheck};
+use crate::model::{CheckOutcome, FallbackAttempt, RegisteredCheck};
 use crate::platform::Os;
 
 pub fn register(reg: &mut Vec<RegisteredCheck>) {
@@ -45,13 +45,35 @@ fn linux(p: &crate::platform::PlatformInfo) -> bool {
 }
 
 fn userns_restricted(ctx: &mut ScanContext) -> CheckOutcome {
-    let any = [
-        super::sysctl_value(ctx, "kernel.unprivileged_userns_clone").filter(|v| v == "0"),
-        super::sysctl_value(ctx, "user.max_user_namespaces").filter(|v| v == "0"),
-        super::sysctl_value(ctx, "kernel.apparmor_restrict_unprivileged_userns").filter(|v| v == "1"),
+    let keys = [
+        "kernel.unprivileged_userns_clone",
+        "user.max_user_namespaces",
+        "kernel.apparmor_restrict_unprivileged_userns",
     ];
-    if any.iter().any(|v| v.is_some()) {
+    let mut log = Vec::new();
+    let mut restricted = false;
+    let mut any_value = false;
+    for key in keys {
+        match super::sysctl_value(ctx, key) {
+            Some(v) => {
+                any_value = true;
+                log.push(FallbackAttempt { source: format!("sysctl {key}"), outcome: format!("value={v}") });
+                let is_restrict = if key == "kernel.apparmor_restrict_unprivileged_userns" {
+                    v == "1"
+                } else {
+                    v == "0"
+                };
+                if is_restrict {
+                    restricted = true;
+                }
+            }
+            None => log.push(FallbackAttempt { source: format!("sysctl {key}"), outcome: "missing".into() }),
+        }
+    }
+    if restricted {
         ok("unprivileged userns restricted (clone=0 / max=0 / apparmor-restricted)".into(), "/proc/sys".into(), "sysctl kernel.unprivileged_userns_clone user.max_user_namespaces".into())
+    } else if !any_value {
+        degraded_from_attempts(log, "user-namespace sysctls not readable on this kernel")
     } else {
         nok("unprivileged user namespaces are UNRESTRICTED — precondition of recent kernel LPE chains".into(), "/proc/sys".into(), "sysctl kernel.unprivileged_userns_clone".into())
     }

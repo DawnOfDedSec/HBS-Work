@@ -9,6 +9,7 @@ pub mod perms;
 pub mod sec_options;
 pub mod services;
 pub mod threat_creds;
+pub mod threat_persist;
 pub mod user_rights;
 
 use crate::context::ScanContext;

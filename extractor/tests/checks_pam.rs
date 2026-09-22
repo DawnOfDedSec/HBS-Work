@@ -45,8 +45,9 @@ fn system_account_with_shell_fails() {
 }
 
 #[test]
-fn missing_login_defs_is_error() {
+fn missing_login_defs_degrades() {
     let mut ctx = ctx_with("tests/fixtures/empty-root");
     let r = run_one(&mut ctx, "LIN-PAM-005");
-    assert_eq!(r.status, Status::Error, "{}", r.evidence);
+    assert_eq!(r.status, Status::DegradedPartial, "{}", r.evidence);
+    assert!(r.degraded_reason.as_deref().unwrap().contains("login.defs"));
 }

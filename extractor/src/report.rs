@@ -33,6 +33,21 @@ pub fn build(
         json!(started.duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)),
     );
     scan.insert("durationMs".into(), json!(duration_ms));
+
+    // Privilege auditing fields (spec §4.2)
+    let status_str = scan
+        .get("elevationStatus")
+        .and_then(Value::as_str)
+        .unwrap_or("not-needed")
+        .to_string();
+    let requested = status_str == "requested" || status_str == "granted" || status_str == "refused";
+    let granted = status_str == "granted";
+    let refused = status_str == "refused";
+    scan.entry("elevationStatus").or_insert_with(|| json!(status_str));
+    scan.entry("privilegeRequested").or_insert_with(|| json!(requested));
+    scan.entry("privilegeGranted").or_insert_with(|| json!(granted));
+    scan.entry("privilegeRefused").or_insert_with(|| json!(refused));
+
     let summary = crate::engine::summarize(&results);
     Report {
         schema_version: SCHEMA_VERSION,

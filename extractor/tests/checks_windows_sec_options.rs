@@ -227,19 +227,17 @@ fn missing_registry_keys_degrade_gracefully() {
     let mut ctx = windows_ctx(Box::new(|_, _| None));
     for i in 1..=22 {
         let id = format!("WIN-SEC-{i:03}");
-        // WIN-SEC-017/018 (legal notice NonEmpty): an absent value is a
-        // hardening failure (not evidence loss), so expect NonCompliant.
-        let expected = if id == "WIN-SEC-017" || id == "WIN-SEC-018" {
-            Status::NonCompliant
-        } else {
-            Status::DegradedPartial
-        };
+        // With no read-only registry source available at all, every option
+        // is missing evidence -> DegradedPartial, never NonCompliant/Error.
         let res = run_one(&mut ctx, &id);
         assert_eq!(
             res.status,
-            expected,
-            "Check {id} expected {expected:?} on missing keys: {:?}",
-            res.status
+            Status::DegradedPartial,
+            "Check {id} expected DegradedPartial on missing keys: {:?} — {}",
+            res.status,
+            res.evidence
         );
+        assert!(res.degraded_reason.is_some(), "Check {id} degraded_reason missing");
+        assert!(!res.fallback_log.is_empty(), "Check {id} fallback_log missing");
     }
 }

@@ -96,7 +96,7 @@ fn admin_only_check_runs_when_elevated() {
 }
 
 #[test]
-fn missing_paths_reported_as_error_with_fallback_log() {
+fn missing_paths_degrade_with_fallback_log() {
     let check = |ctx: &mut ScanContext| {
         let mut log: Vec<FallbackAttempt> = Vec::new();
         for (src, path) in [("file:/etc/nope/x", "/etc/nope/x"), ("file:/etc/nope/y", "/etc/nope/y")] {
@@ -105,23 +105,16 @@ fn missing_paths_reported_as_error_with_fallback_log() {
                 None => log.push(FallbackAttempt { source: src.into(), outcome: "missing or unreadable".into() }),
             }
         }
-        CheckOutcome {
-            status: Status::Error,
-            evidence: format!("unavailable: {}", log.iter().map(|f| format!("{} ({})", f.source, f.outcome)).collect::<Vec<_>>().join("; ")),
-            location: "/etc/nope".into(),
-            repro: "cat /etc/nope/x".into(),
-            recommendation_override: None,
-            degraded_reason: None,
-            fallback_log: log,
-            evidence_blocks: Vec::new(),
-        }
+        hbs_extractor::checks::degraded_from_attempts(log, "all candidate paths missing or unreadable")
     };
     let mut reg: Vec<RegisteredCheck> = Vec::new();
     reg.push(RegisteredCheck { tc: toy_tc("T-3"), applies: |_| true, admin: false, run: check });
     let mut ctx = test_ctx();
     let out = run_all(&reg, &mut ctx);
-    assert_eq!(out[0].status, Status::Error);
+    assert_eq!(out[0].status, Status::DegradedPartial);
     assert!(out[0].evidence.contains("missing or unreadable"));
+    assert!(out[0].degraded_reason.is_some());
+    assert_eq!(out[0].fallback_log.len(), 2);
 }
 
 fn ok_check(_: &mut ScanContext) -> CheckOutcome {

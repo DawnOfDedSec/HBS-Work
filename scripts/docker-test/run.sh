@@ -2,7 +2,7 @@
 # REAL-WORLD validation: run the actual linux-x64 extractor binary
 # inside real distro containers, root and non-root, and verify:
 #   - exit code 0
-#   - sealed report (.hbs) written with HBS1 magic
+#   - sealed report (.hbs) written with HBS2 magic (v2, 93-byte header)
 #   - no crash across the full catalog
 # Usage: bash scripts/docker-test/run.sh
 set -uo pipefail
@@ -51,9 +51,12 @@ for img in "${IMAGES[@]}"; do
       "$img" \
       sh -c "cp /hbs-extractor /tmp/h 2>/dev/null; chmod +x /tmp/h; /tmp/h --no-pause --quiet --no-elevate --dev-insecure-key $DEVKEY --out /out/report-$tag.hbs; echo EXIT=\$? > /out/exit-$tag.txt; ls -la /out" 2>&1 | tail -5
     code=$(grep -o '[0-9]*' "$OUT/exit-$tag.txt" 2>/dev/null | head -1)
-    if [ "$code" = "0" ] && [ -f "$OUT/report-$tag.hbs" ] && head -c 4 "$OUT/report-$tag.hbs" | grep -q "HBS1"; then
+    magic="$(head -c 4 "$OUT/report-$tag.hbs" 2>/dev/null || true)"
+    # v2 header: magic HBS2, u16 LE format version = 2 at offset 4.
+    version="$(od -An -tu2 -j4 -N2 "$OUT/report-$tag.hbs" 2>/dev/null | tr -d ' ')"
+    if [ "$code" = "0" ] && [ -f "$OUT/report-$tag.hbs" ] && [ "$magic" = "HBS2" ] && [ "$version" = "2" ]; then
       size=$(stat -c %s "$OUT/report-$tag.hbs" 2>/dev/null)
-      echo "PASS: $tag (report ${size}B)"
+      echo "PASS: $tag (report ${size}B, HBS2 v$version)"
       PASS=$((PASS+1))
     else
       echo "FAIL: $tag (exit=$code)"

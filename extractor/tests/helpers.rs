@@ -1,4 +1,4 @@
-use hbs_extractor::checks::{degraded, err_outcome, nok, ok};
+use hbs_extractor::checks::{degraded, degraded_from_attempts, nok, ok};
 use hbs_extractor::model::{FallbackAttempt, Status};
 
 #[test]
@@ -25,14 +25,16 @@ fn degraded_maps_with_reason() {
 }
 
 #[test]
-fn err_outcome_lists_every_fallback() {
+fn degraded_from_attempts_lists_every_fallback() {
     let log = vec![
         FallbackAttempt { source: "file:/etc/audit/audit.rules".into(), outcome: "missing".into() },
         FallbackAttempt { source: "cmd:auditctl -l".into(), outcome: "unavailable (needs root)".into() },
     ];
-    let o = err_outcome(log);
-    assert_eq!(o.status, Status::Error);
+    let o = degraded_from_attempts(log, "audit.rules missing and auditctl unavailable");
+    assert_eq!(o.status, Status::DegradedPartial);
+    assert!(o.evidence.contains("degraded: audit.rules missing and auditctl unavailable"));
     assert!(o.evidence.contains("file:/etc/audit/audit.rules (missing)"));
     assert!(o.evidence.contains("cmd:auditctl -l (unavailable"));
+    assert_eq!(o.degraded_reason.as_deref(), Some("audit.rules missing and auditctl unavailable"));
     assert_eq!(o.fallback_log.len(), 2);
 }

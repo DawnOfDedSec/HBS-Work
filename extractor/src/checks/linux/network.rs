@@ -2,7 +2,7 @@
 //! additions). Every value: /proc/sys first, `sysctl -n` fallback.
 
 use super::sysctl_value;
-use crate::checks::{degraded, err_outcome, nok, ok};
+use crate::checks::{degraded, degraded_from_attempts, nok, ok};
 use crate::context::ScanContext;
 use crate::model::{CheckOutcome, FallbackAttempt, RegisteredCheck};
 use crate::platform::Os;
@@ -56,7 +56,7 @@ pub(crate) fn sysctl_eq(ctx: &mut ScanContext, key: &str, want: &str, default_on
             if default_one {
                 degraded(&format!("{key} not readable; modern-kernel default is the secure value — verify manually"))
             } else {
-                err_outcome(log)
+                degraded_from_attempts(log, &format!("{key} not readable and `sysctl -n {key}` unavailable"))
             }
         }
     }
@@ -98,7 +98,7 @@ fn sysctl_pair(ctx: &mut ScanContext, keys: &[&str], want: &str) -> CheckOutcome
         }
     }
     if !missing.is_empty() && values.is_empty() {
-        return err_outcome(log);
+        return degraded_from_attempts(log, &format!("none of the sysctl keys readable ({})", keys.join(", ")));
     }
     let bad: Vec<String> = values
         .iter()

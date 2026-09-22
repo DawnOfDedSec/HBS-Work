@@ -1,6 +1,6 @@
 //! LIN-USER: users, permissions and system maintenance (CIS 6.1/6.2).
 
-use crate::checks::{degraded, err_outcome, nok, ok, with_block};
+use crate::checks::{degraded, degraded_from_attempts, nok, ok, with_block};
 use crate::context::ScanContext;
 use crate::model::{CheckOutcome, FallbackAttempt, RegisteredCheck};
 use crate::platform::Os;
@@ -148,7 +148,7 @@ fn uid0_accounts(ctx: &mut ScanContext) -> CheckOutcome {
                 nok(format!("uid-0 accounts: {}", uid0.join(", ")), "/etc/passwd".into(), "awk -F: '($3==0)' /etc/passwd".into())
             }
         }
-        None => err_outcome(vec![FallbackAttempt { source: "/etc/passwd".into(), outcome: "missing".into() }]),
+        None => degraded_from_attempts(vec![FallbackAttempt { source: "/etc/passwd".into(), outcome: "missing".into() }], "/etc/passwd missing"),
     }
 }
 
@@ -173,7 +173,7 @@ fn no_dup_field(ctx: &mut ScanContext, field: usize, label: &str) -> CheckOutcom
                 nok(format!("duplicate {label}s: {}", dups.join(", ")), "/etc/passwd".into(), "see evidence".into())
             }
         }
-        None => err_outcome(vec![FallbackAttempt { source: "/etc/passwd".into(), outcome: "missing".into() }]),
+        None => degraded_from_attempts(vec![FallbackAttempt { source: "/etc/passwd".into(), outcome: "missing".into() }], "/etc/passwd missing"),
     }
 }
 

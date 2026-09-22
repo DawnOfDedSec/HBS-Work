@@ -626,16 +626,23 @@ fn evaluate(ctx: &mut ScanContext, d: &'static SecOptionDef) -> CheckOutcome {
 
     let attempts = query.attempts;
     let Some(raw) = query.value else {
-        // A NonEmpty option read as absent means the value does not exist:
-        // that is a hardening failure, not missing evidence.
+        // A NonEmpty option read as absent can mean the value does not
+        // exist: that is a hardening failure, not missing evidence. But
+        // when every read-only source was unavailable, no evidence was
+        // gathered at all — that is DegradedPartial, never Error.
         if matches!(d.kind, ValueKind::NonEmpty) {
-            let mut outcome = nok(
-                format!("{} not configured (expected organizational text)", d.value_name),
-                format!(r"{}\{}", d.path, d.value_name),
-                format!("reg query {} /v {}", d.path, d.value_name),
-            );
-            outcome.fallback_log = attempts;
-            return outcome;
+            let observed_absent = attempts.iter().any(|a| {
+                a.outcome.contains("missing") && !a.outcome.contains("unavailable")
+            });
+            if observed_absent {
+                let mut outcome = nok(
+                    format!("{} not configured (expected organizational text)", d.value_name),
+                    format!(r"{}\{}", d.path, d.value_name),
+                    format!("reg query {} /v {}", d.path, d.value_name),
+                );
+                outcome.fallback_log = attempts;
+                return outcome;
+            }
         }
         let mut outcome = degraded(&format!(
             "{} unavailable through read-only registry queries",

@@ -41,6 +41,10 @@ struct Args {
     /// Also push the sealed report to this dashboard URL
     #[arg(long)]
     push: Option<String>,
+    /// Read-only file containing the push token (mutually exclusive with
+    /// the HBS_PUSH_TOKEN environment variable)
+    #[arg(long)]
+    push_token_file: Option<String>,
     /// Do not attempt privilege elevation
     #[arg(long)]
     no_elevate: bool,
@@ -198,7 +202,13 @@ fn main() {
         VERSION,
     );
     let doc = serde_json::to_vec(&rep).expect("report serializes");
-    let envelope = crypto::seal(&doc, &slot.recipient_pub, slot.key_id, crypto::SUITE_CHACHA20POLY1305)
+    let envelope = crypto::seal(
+        &doc,
+        &slot.recipient_pub,
+        slot.key_id,
+        &slot.extractor_id,
+        crypto::SUITE_CHACHA20POLY1305,
+    )
         .unwrap_or_else(|e| {
             eprintln!("hbs-extractor: sealing failed: {e}");
             std::process::exit(3);
@@ -213,16 +223,30 @@ fn main() {
         std::process::exit(3);
     });
 
-    // 6. Optional push, then closing summary.
-    let push_status = args.push.as_ref().and_then(|url| {
-        match push(url, &envelope, &slot) {
-            Ok(status) => Some(format!("{url} → HTTP {status}")),
-            Err(e) => {
-                eprintln!("hbs-extractor: push failed: {e}");
+    // 6. Optional push, then closing summary. The local report is already
+    // written; a network push failure never discards it or fails the scan.
+    let push_status = match args.push.as_ref() {
+        None => None,
+        Some(url) => {
+            let token = hbs_extractor::push::resolve_token(
+                std::env::var("HBS_PUSH_TOKEN").ok(),
+                args.push_token_file.as_deref(),
+            )
+            .unwrap_or_else(|e| {
+                eprintln!("hbs-extractor: {e}");
                 std::process::exit(3);
+            });
+            let policy = hbs_extractor::push::PushPolicy::default();
+            let extractor_id = keyslot::hex_id(&slot.extractor_id);
+            match hbs_extractor::push::push_report(url, &envelope, &token, &extractor_id, &policy) {
+                Ok(status) => Some(format!("{url} → HTTP {status}")),
+                Err(e) => {
+                    eprintln!("hbs-extractor: push failed (local report kept at {path}): {e}");
+                    Some(format!("{url} → failed ({e})"))
+                }
             }
         }
-    });
+    };
     ui.finish(&rep.summary, &path, push_status.as_deref());
 
     hbs_extractor::cli::pause_if_interactive(args.no_pause, args.quiet);
@@ -302,14 +326,6 @@ fn peak_rss_kb() -> u64 {
             }
         }
     }
-}
-
-fn push(url: &str, envelope: &[u8], slot: &SlotData) -> Result<u16, String> {
-    let resp = ureq::post(url)
-        .set("X-HBS-Extractor", &keyslot::hex_id(&slot.extractor_id))
-        .send_bytes(envelope)
-        .map_err(|e| e.to_string())?;
-    Ok(resp.status())
 }
 
 fn chrono_like_stamp() -> String {

@@ -1,8 +1,8 @@
 //! LIN-AU: auditd daemon and rule coverage (CIS 4.1.x).
 
-use crate::checks::{degraded, nok, ok};
+use crate::checks::{degraded, degraded_from_attempts, nok, ok};
 use crate::context::ScanContext;
-use crate::model::{CheckOutcome, RegisteredCheck};
+use crate::model::{CheckOutcome, FallbackAttempt, RegisteredCheck};
 use crate::platform::Os;
 
 pub fn register(reg: &mut Vec<RegisteredCheck>) {
@@ -58,7 +58,13 @@ fn auditd_enabled(ctx: &mut ScanContext) -> CheckOutcome {
     if ctx.exists("/etc/audit/auditd.conf") {
         return degraded("auditd config present but service state not queryable");
     }
-    nok("auditd not installed (no /etc/audit/auditd.conf)".into(), "/etc/audit".into(), "ls /etc/audit".into())
+    degraded_from_attempts(
+        vec![
+            FallbackAttempt { source: "systemctl is-enabled auditd".into(), outcome: "unavailable".into() },
+            FallbackAttempt { source: "/etc/audit/auditd.conf".into(), outcome: "missing".into() },
+        ],
+        "auditd service state not queryable and /etc/audit/auditd.conf absent",
+    )
 }
 
 fn svc_active(ctx: &mut ScanContext, svc: &str) -> CheckOutcome {

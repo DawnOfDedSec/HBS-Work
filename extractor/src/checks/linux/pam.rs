@@ -1,6 +1,6 @@
 //! LIN-PAM: passwords, PAM and sudo (CIS 5.3/5.4).
 
-use crate::checks::{degraded, err_outcome, nok, ok};
+use crate::checks::{degraded, degraded_from_attempts, nok, ok};
 use crate::context::ScanContext;
 use crate::model::{CheckOutcome, FallbackAttempt, RegisteredCheck};
 use crate::platform::Os;
@@ -52,6 +52,12 @@ fn pwquality_num(ctx: &mut ScanContext, key: &str, want: i64, at_least: bool) ->
 }
 
 fn pwquality_classes(ctx: &mut ScanContext) -> CheckOutcome {
+    if ctx.read("/etc/security/pwquality.conf").is_none() {
+        return degraded_from_attempts(
+            vec![FallbackAttempt { source: "/etc/security/pwquality.conf".into(), outcome: "missing or unreadable".into() }],
+            "/etc/security/pwquality.conf missing — password class policy not readable",
+        );
+    }
     let minclass = pwquality_kv(ctx, "minclass");
     let credits = ["dcredit", "ucredit", "ocredit", "lcredit"]
         .iter()
@@ -88,7 +94,7 @@ fn login_defs_num(ctx: &mut ScanContext, key: &str, want: i64, at_most: bool) ->
             None => nok(format!("{key} not set in /etc/login.defs (default applies)"), loc, format!("grep {key} /etc/login.defs")),
         }
     } else {
-        err_outcome(vec![FallbackAttempt { source: "/etc/login.defs".into(), outcome: "missing".into() }])
+        degraded_from_attempts(vec![FallbackAttempt { source: "/etc/login.defs".into(), outcome: "missing".into() }], "/etc/login.defs missing")
     }
 }
 

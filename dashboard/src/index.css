@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  background-color: #0b0f14;
+  color: #e5e7eb;
+}
+
+/* Light theme is applied via [data-theme="light"] for the accessible toggle. */
+[data-theme="light"] body {
+  background-color: #f8fafc;
+  color: #0f172a;
+}

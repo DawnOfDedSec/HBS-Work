@@ -2,7 +2,7 @@
 //! config depth second; missing managers are N/A with evidence of all
 //! probes.
 
-use crate::checks::{degraded, nok, ok};
+use crate::checks::{degraded, degraded_from_attempts, nok, ok};
 use crate::context::ScanContext;
 use crate::model::{CheckOutcome, FallbackAttempt, RegisteredCheck};
 use crate::platform::Os;
@@ -57,12 +57,22 @@ fn fw_running(ctx: &mut ScanContext) -> CheckOutcome {
 }
 
 fn fw_enabled(ctx: &mut ScanContext) -> CheckOutcome {
+    let mut log = Vec::new();
+    let mut queried = false;
     for svc in ["firewalld", "nftables", "ufw"] {
-        if let Some(out) = ctx.cmd("systemctl", &["is-enabled", svc]) {
-            if out.trim() == "enabled" {
-                return ok(format!("{svc} enabled at boot"), "systemd".into(), format!("systemctl is-enabled {svc}"));
+        match ctx.cmd("systemctl", &["is-enabled", svc]) {
+            Some(out) => {
+                queried = true;
+                log.push(FallbackAttempt { source: format!("systemctl is-enabled {svc}"), outcome: out.trim().to_string() });
+                if out.trim() == "enabled" {
+                    return ok(format!("{svc} enabled at boot"), "systemd".into(), format!("systemctl is-enabled {svc}"));
+                }
             }
+            None => log.push(FallbackAttempt { source: format!("systemctl is-enabled {svc}"), outcome: "unavailable".into() }),
         }
+    }
+    if !queried {
+        return degraded_from_attempts(log, "firewall boot state not queryable (systemctl unavailable)");
     }
     nok("no firewall service is enabled at boot".into(), "systemd".into(), "systemctl is-enabled firewalld nftables ufw".into())
 }

@@ -46,11 +46,11 @@ fn missing_mounts_degrade_not_error() {
 }
 
 #[test]
-fn missing_proc_mounts_is_error() {
+fn missing_proc_mounts_degrades() {
     let mut ctx = linux_ctx("tests/fixtures/empty-root");
     let r = run_one(&mut ctx, "LIN-FS-001");
-    assert_eq!(r.status, Status::Error);
-    assert!(r.evidence.contains("unavailable"));
+    assert_eq!(r.status, Status::DegradedPartial, "{}", r.evidence);
+    assert!(r.degraded_reason.as_deref().unwrap().contains("/proc/mounts"));
 }
 
 #[test]

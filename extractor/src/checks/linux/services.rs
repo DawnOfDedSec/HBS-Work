@@ -1,7 +1,7 @@
 //! LIN-SV: legacy/inetd services and dangerous service packages
 //! (CIS 2.x).
 
-use crate::checks::{degraded, err_outcome, nok, ok};
+use crate::checks::{degraded, degraded_from_attempts, nok, ok};
 use crate::context::ScanContext;
 use crate::model::{CheckOutcome, FallbackAttempt, RegisteredCheck};
 use crate::platform::{DistroFamily, Os};
@@ -37,7 +37,7 @@ fn svc_disabled(ctx: &mut ScanContext, svc: &str) -> CheckOutcome {
     if ctx.exists("/etc/systemd/system") {
         return degraded(&format!("{svc} state not queryable; verify manually"));
     }
-    err_outcome(log)
+    degraded_from_attempts(log, "systemctl unavailable and no /etc/systemd/system to inspect")
 }
 
 fn inetd_conf_absent(ctx: &mut ScanContext) -> CheckOutcome {
@@ -54,12 +54,21 @@ fn inetd_conf_absent(ctx: &mut ScanContext) -> CheckOutcome {
 }
 
 fn time_sync_active(ctx: &mut ScanContext) -> CheckOutcome {
+    let mut log = Vec::new();
+    let mut queried = false;
     for svc in ["chronyd", "systemd-timesyncd", "ntpd"] {
         if let Some(out) = ctx.cmd("systemctl", &["is-active", svc]) {
+            queried = true;
+            log.push(FallbackAttempt { source: format!("systemctl is-active {svc}"), outcome: out.trim().to_string() });
             if out.trim() == "active" {
                 return ok(format!("{svc} active"), "systemd".into(), format!("systemctl is-active {svc}"));
             }
+        } else {
+            log.push(FallbackAttempt { source: format!("systemctl is-active {svc}"), outcome: "unavailable".into() });
         }
+    }
+    if !queried {
+        return degraded_from_attempts(log, "time-sync service state not queryable (systemctl unavailable)");
     }
     nok("no time synchronization service is active".into(), "systemd".into(), "systemctl is-active chronyd systemd-timesyncd".into())
 }

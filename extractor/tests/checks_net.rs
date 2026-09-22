@@ -44,11 +44,12 @@ fn missing_key_degrades_for_default_one() {
 }
 
 #[test]
-fn missing_required_key_is_error() {
+fn missing_required_key_degrades() {
     let mut ctx = ctx_with("tests/fixtures/empty-root");
     let r = run_one(&mut ctx, "LIN-NET-001");
-    assert_eq!(r.status, Status::Error, "{}", r.evidence);
-    assert!(r.evidence.contains("unavailable"));
+    assert_eq!(r.status, Status::DegradedPartial, "{}", r.evidence);
+    assert!(r.evidence.contains("degraded"));
+    assert!(r.degraded_reason.is_some());
 }
 
 #[test]

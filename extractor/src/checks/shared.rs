@@ -1,7 +1,7 @@
 //! GEN-INV: shared informational inventory — context evidence, never
 //! pass/fail (spec §5). Collected on every OS where the sources exist.
 
-use crate::checks::{degraded, err_outcome, ok};
+use crate::checks::{degraded, degraded_from_attempts, ok};
 use crate::context::ScanContext;
 use crate::model::{CheckOutcome, FallbackAttempt, RegisteredCheck};
 use crate::platform::Os;
@@ -75,7 +75,7 @@ fn listening_ports(ctx: &mut ScanContext) -> CheckOutcome {
             return degraded("port enumeration without admin rights is limited; firewall profiles captured");
         }
     }
-    err_outcome(log)
+    degraded_from_attempts(log, "port enumeration unavailable (ss, /proc/net/tcp, and netsh produced no evidence)")
 }
 
 fn installed_packages(ctx: &mut ScanContext) -> CheckOutcome {
@@ -96,7 +96,7 @@ fn installed_packages(ctx: &mut ScanContext) -> CheckOutcome {
         }
         log.push(FallbackAttempt { source: label.into(), outcome: "unavailable".into() });
     }
-    err_outcome(log)
+    degraded_from_attempts(log, "no package manager available (dpkg/rpm/apk/pacman/powershell all failed)")
 }
 
 fn users_groups(ctx: &mut ScanContext) -> CheckOutcome {
@@ -120,7 +120,7 @@ fn users_groups(ctx: &mut ScanContext) -> CheckOutcome {
     } else {
         log.extend(one_fallback("net user", "unavailable"));
     }
-    err_outcome(log)
+    degraded_from_attempts(log, "local user/group enumeration unavailable (/etc/passwd, getent, net user failed)")
 }
 
 fn scheduled_tasks(ctx: &mut ScanContext) -> CheckOutcome {
@@ -177,7 +177,7 @@ fn autoruns(ctx: &mut ScanContext) -> CheckOutcome {
         return inv_ok(found.join("; "), "autorun locations".into(), "see evidence locations".into());
     }
     log.push(FallbackAttempt { source: "autorun locations".into(), outcome: "none readable".into() });
-    err_outcome(log)
+    degraded_from_attempts(log, "autorun locations unreadable (rc.local, systemd units, Windows Run keys)")
 }
 
 fn open_shares(ctx: &mut ScanContext) -> CheckOutcome {
@@ -196,7 +196,7 @@ fn open_shares(ctx: &mut ScanContext) -> CheckOutcome {
         return inv_ok(out.lines().skip(4).take(30).collect::<Vec<_>>().join(" "), "net share".into(), "net share".into());
     }
     log.extend(one_fallback("net share", "unavailable"));
-    err_outcome(log)
+    degraded_from_attempts(log, "net share unavailable")
 }
 
 fn patch_currency(ctx: &mut ScanContext) -> CheckOutcome {
@@ -223,7 +223,7 @@ fn patch_currency(ctx: &mut ScanContext) -> CheckOutcome {
     } else {
         log.extend(one_fallback("Get-HotFix", "unavailable"));
     }
-    err_outcome(log)
+    degraded_from_attempts(log, "patch-currency sources unavailable (/var/log/dpkg.log, rpm -qa --last, Get-HotFix)")
 }
 
 fn virt_platform(ctx: &mut ScanContext) -> CheckOutcome {
@@ -266,12 +266,12 @@ fn dns_config(ctx: &mut ScanContext) -> CheckOutcome {
             let servers: Vec<&str> = resolv.lines().filter_map(|l| l.strip_prefix("nameserver ")).map(str::trim).collect();
             return inv_ok(format!("resolvers: {}", servers.join(", ")), "/etc/resolv.conf".into(), "cat /etc/resolv.conf".into());
         }
-        return err_outcome(one_fallback("/etc/resolv.conf", "missing"));
+        return degraded_from_attempts(one_fallback("/etc/resolv.conf", "missing"), "/etc/resolv.conf missing");
     }
     if let Some(out) = ctx.cmd("netsh", &["interface", "ip", "show", "dns"]) {
         return inv_ok(out.lines().take(12).collect::<Vec<_>>().join("; "), "netsh".into(), "netsh interface ip show dns".into());
     }
-    err_outcome(one_fallback("netsh interface ip show dns", "unavailable"))
+    degraded_from_attempts(one_fallback("netsh interface ip show dns", "unavailable"), "netsh interface ip show dns unavailable")
 }
 
 fn log_forwarding(ctx: &mut ScanContext) -> CheckOutcome {
@@ -367,7 +367,7 @@ fn priv_groups(ctx: &mut ScanContext) -> CheckOutcome {
                 .collect();
             return inv_ok(format!("privileged group members: {}", admins.join(", ")), "/etc/group".into(), "grep -E '^(sudo|wheel|admin):' /etc/group".into());
         }
-        return err_outcome(one_fallback("/etc/group", "missing"));
+        return degraded_from_attempts(one_fallback("/etc/group", "missing"), "/etc/group missing");
     }
     if let Some(out) = ctx.cmd("powershell", &["-NoProfile", "-NonInteractive", "-Command", "Get-LocalGroupMember Administrators | Select-Object -ExpandProperty Name"]) {
         return inv_ok(format!("Administrators: {}", out.lines().collect::<Vec<_>>().join(", ")), "Get-LocalGroupMember".into(), "Get-LocalGroupMember Administrators".into());
@@ -435,7 +435,7 @@ fn edr_presence(ctx: &mut ScanContext) -> CheckOutcome {
         log.push(FallbackAttempt { source: "known EDR services".into(), outcome: "none active".into() });
         return inv_ok("no known EDR/AV service detected".into(), "systemctl".into(), "systemctl is-active <edr>".into());
     }
-    err_outcome(log)
+    degraded_from_attempts(log, "Get-MpComputerStatus unavailable")
 }
 
 fn backup_agent(ctx: &mut ScanContext) -> CheckOutcome {
@@ -527,12 +527,12 @@ fn disks(ctx: &mut ScanContext) -> CheckOutcome {
                 .collect();
             return inv_ok(real.join(", "), "/proc/mounts".into(), "cat /proc/mounts".into());
         }
-        return err_outcome(one_fallback("/proc/mounts", "missing"));
+        return degraded_from_attempts(one_fallback("/proc/mounts", "missing"), "/proc/mounts missing");
     }
     if let Some(out) = ctx.cmd("powershell", &["-NoProfile", "-NonInteractive", "-Command", "Get-PSDrive -PSProvider FileSystem | Select-Object Name,Used,Free | ConvertTo-Json -Compress"]) {
         return inv_ok(out, "Get-PSDrive".into(), "Get-PSDrive".into());
     }
-    err_outcome(one_fallback("Get-PSDrive", "unavailable"))
+    degraded_from_attempts(one_fallback("Get-PSDrive", "unavailable"), "Get-PSDrive unavailable")
 }
 
 fn host_identity(ctx: &mut ScanContext) -> CheckOutcome {

@@ -54,10 +54,11 @@ fn gen_inv_007_reads_dpkg_log() {
 }
 
 #[test]
-fn missing_everything_yields_error_with_full_log() {
+fn missing_everything_degrades_with_full_log() {
     let mut ctx = linux_ctx("tests/fixtures/empty-root", Some(Box::new(|_, _| None)));
     let r = run_one(&mut ctx, "GEN-INV-007");
-    assert_eq!(r.status, Status::Error);
-    assert!(r.evidence.contains("unavailable"), "evidence: {}", r.evidence);
+    assert_eq!(r.status, Status::DegradedPartial);
+    assert!(r.evidence.contains("degraded"), "evidence: {}", r.evidence);
+    assert!(r.degraded_reason.is_some());
     assert!(!r.fallback_log.is_empty());
 }

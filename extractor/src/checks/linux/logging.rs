@@ -1,6 +1,6 @@
 //! LIN-LOG: rsyslog/journald/logrotate posture (CIS 4.2.x).
 
-use crate::checks::{degraded, err_outcome, nok, ok};
+use crate::checks::{degraded, degraded_from_attempts, nok, ok};
 use crate::context::ScanContext;
 use crate::model::{CheckOutcome, FallbackAttempt, RegisteredCheck};
 use crate::platform::Os;
@@ -174,12 +174,17 @@ fn journald_rate_limit(ctx: &mut ScanContext) -> CheckOutcome {
 }
 
 fn logrotate_present(ctx: &mut ScanContext) -> CheckOutcome {
-    for p in ["/etc/logrotate.conf", "/etc/logrotate.d"] {
+    let candidates = ["/etc/logrotate.conf", "/etc/logrotate.d"];
+    for p in candidates {
         if ctx.exists(p) {
             return ok(format!("logrotate present ({p})"), p.into(), "cat /etc/logrotate.conf".into());
         }
     }
-    nok("no logrotate configuration found".into(), "/etc/logrotate.conf".into(), "ls /etc/logrotate*".into())
+    let log = candidates
+        .iter()
+        .map(|p| FallbackAttempt { source: (*p).into(), outcome: "missing".into() })
+        .collect();
+    degraded_from_attempts(log, "no logrotate configuration found — install/verify logrotate")
 }
 
 fn logrotate_retention(ctx: &mut ScanContext) -> CheckOutcome {
