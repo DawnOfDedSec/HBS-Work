@@ -10,6 +10,7 @@ use crate::model::{CheckOutcome, FallbackAttempt, RegisteredCheck, Status};
 
 pub fn register_all(reg: &mut Vec<RegisteredCheck>) {
     linux::fsck::register(reg);
+    linux::services::register(reg);
     shared::register(reg);
     toy::register(reg);
     // Further Phase 2/3 modules register here as they land.

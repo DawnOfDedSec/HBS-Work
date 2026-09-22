@@ -18,6 +18,7 @@ pub fn register(reg: &mut Vec<RegisteredCheck>) {
             references: &[],
         },
         applies: |_| false,
+        admin: false,
         run: |_| unreachable!("toy check must never run"),
     });
 }

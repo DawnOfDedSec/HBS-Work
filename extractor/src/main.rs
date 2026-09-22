@@ -44,6 +44,10 @@ struct Args {
     /// Do not attempt privilege elevation
     #[arg(long)]
     no_elevate: bool,
+    /// Request elevation (UAC prompt) for admin-only checks; the scan
+    /// otherwise always runs unprivileged
+    #[arg(long)]
+    elevate: bool,
     /// Do not pause at the end (scripted runs)
     #[arg(long)]
     no_pause: bool,
@@ -103,9 +107,12 @@ fn main() {
         std::process::exit(2);
     }
 
-    // 1b. Offer UAC elevation (never required; declined = degraded).
-    if !args.elevated_child && hbs_extractor::elevate::request_relaunch(args.no_elevate) {
-        return; // elevated child took over; parent exits quietly
+    // 1b. Elevation is OPT-IN (--elevate): unprivileged runs are the
+    // default; admin-only checks are skipped with an explicit reason.
+    if !args.elevated_child && args.elevate && !args.no_elevate {
+        if hbs_extractor::elevate::request_relaunch(false) {
+            return; // elevated child took over; parent exits quietly
+        }
     }
 
     // 2. Platform + privileges.
@@ -147,11 +154,19 @@ fn main() {
         meta.get("os_name").and_then(|v| v.as_str()).unwrap_or("unknown OS"),
         meta.get("os_version").and_then(|v| v.as_str()).unwrap_or("")
     );
+    let admin_only_count = reg.iter().filter(|rc| rc.admin && (rc.applies)(&pinfo)).count();
     ui.banner(
         VERSION,
         &host_display,
         &os_line,
-        if elevated { "elevated (full depth)" } else { "degraded (no admin)" },
+        if elevated {
+            format!("elevated (full depth, {} admin-only checks included)", admin_only_count)
+        } else {
+            format!(
+                "unprivileged (default) — {admin_only_count} admin-only checks will be skipped; rerun with --elevate for full depth"
+            )
+        }
+        .as_str(),
     );
     ui.metadata_done(meta.as_object().map(|m| m.len()).unwrap_or(0));
     let mut results = run_all_with_ui(&reg, &mut ctx, &ui);

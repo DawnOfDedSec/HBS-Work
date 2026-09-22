@@ -29,6 +29,7 @@ fn panicking_check_yields_error_not_abort() {
     reg.push(RegisteredCheck {
         tc: toy_tc("T-1"),
         applies: |_| true,
+        admin: false,
         run: |_ctx| panic!("boom"),
     });
     let mut ctx = test_ctx();
@@ -45,11 +46,52 @@ fn non_applicable_check_reports_not_applicable() {
     reg.push(RegisteredCheck {
         tc: toy_tc("T-2"),
         applies: |_| false,
+        admin: false,
         run: |_| panic!("must not run"),
     });
     let mut ctx = test_ctx();
     let out = run_all(&reg, &mut ctx);
     assert_eq!(out[0].status, Status::NotApplicable);
+}
+
+#[test]
+fn admin_only_check_skipped_with_reason_when_unprivileged() {
+    // The check fn panics if it ever runs: only the privilege gate can
+    // make this test pass (unprivileged ctx + admin-only check).
+    let mut reg: Vec<RegisteredCheck> = Vec::new();
+    reg.push(RegisteredCheck {
+        tc: toy_tc("T-ADMIN"),
+        applies: |_| true,
+        admin: true,
+        run: |_| panic!("admin check must be gated, not run"),
+    });
+    let mut ctx = test_ctx(); // elevated = false
+    let out = run_all(&reg, &mut ctx);
+    assert_eq!(out[0].status, Status::DegradedPartial);
+    assert!(out[0].degraded_reason.as_deref().unwrap().contains("requires elevation"));
+    assert!(out[0].evidence.contains("--elevate"));
+}
+
+#[test]
+fn admin_only_check_runs_when_elevated() {
+    fn always_ok(_: &mut ScanContext) -> CheckOutcome {
+        CheckOutcome {
+            status: Status::Compliant,
+            evidence: "ran with depth".into(),
+            location: String::new(),
+            repro: String::new(),
+            recommendation_override: None,
+            degraded_reason: None,
+            fallback_log: Vec::new(),
+        }
+    }
+    let mut reg: Vec<RegisteredCheck> = Vec::new();
+    reg.push(RegisteredCheck { tc: toy_tc("T-ADMIN2"), applies: |_| true, admin: true, run: always_ok });
+    let mut p = detect();
+    p.os = Os::Linux;
+    let mut ctx = ScanContext::new(p, true); // elevated
+    let out = run_all(&reg, &mut ctx);
+    assert_eq!(out[0].status, Status::Compliant);
 }
 
 #[test]
@@ -73,7 +115,7 @@ fn missing_paths_reported_as_error_with_fallback_log() {
         }
     };
     let mut reg: Vec<RegisteredCheck> = Vec::new();
-    reg.push(RegisteredCheck { tc: toy_tc("T-3"), applies: |_| true, run: check });
+    reg.push(RegisteredCheck { tc: toy_tc("T-3"), applies: |_| true, admin: false, run: check });
     let mut ctx = test_ctx();
     let out = run_all(&reg, &mut ctx);
     assert_eq!(out[0].status, Status::Error);
@@ -95,8 +137,8 @@ fn ok_check(_: &mut ScanContext) -> CheckOutcome {
 #[test]
 fn result_carries_testcase_texts_and_summarize_counts() {
     let mut reg: Vec<RegisteredCheck> = Vec::new();
-    reg.push(RegisteredCheck { tc: toy_tc("T-4"), applies: |_| true, run: ok_check });
-    reg.push(RegisteredCheck { tc: toy_tc("T-5"), applies: |_| false, run: ok_check });
+    reg.push(RegisteredCheck { tc: toy_tc("T-4"), applies: |_| true, admin: false, run: ok_check });
+    reg.push(RegisteredCheck { tc: toy_tc("T-5"), applies: |_| false, admin: false, run: ok_check });
     let mut ctx = test_ctx();
     let out = run_all(&reg, &mut ctx);
     assert_eq!(out[0].impact, "toy impact");

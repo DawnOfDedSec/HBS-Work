@@ -81,11 +81,15 @@ pub struct CheckOutcome {
 pub type CheckFn = fn(&mut crate::context::ScanContext) -> CheckOutcome;
 
 /// One catalog entry: static testcase definition + applicability
-/// predicate + the check itself.
+/// predicate + the check itself + whether it requires admin rights.
+/// Admin-only checks run ONLY when elevated; otherwise they are
+/// skipped with an explicit "requires elevation" reason (never fail,
+/// never silently downgrade).
 #[derive(Clone)]
 pub struct RegisteredCheck {
     pub tc: Testcase,
     pub applies: fn(&crate::platform::PlatformInfo) -> bool,
+    pub admin: bool,
     pub run: CheckFn,
 }
 

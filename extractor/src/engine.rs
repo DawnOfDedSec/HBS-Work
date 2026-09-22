@@ -10,7 +10,37 @@ pub fn run_all(registry: &[RegisteredCheck], ctx: &mut ScanContext) -> Vec<Check
     let mut out = Vec::with_capacity(registry.len());
     for rc in registry {
         let started = std::time::Instant::now();
-        let (outcome, mut fallback_log) = if (rc.applies)(&ctx.platform) {
+        let (outcome, mut fallback_log) = if !(rc.applies)(&ctx.platform) {
+            (
+                CheckOutcome {
+                    status: Status::NotApplicable,
+                    evidence: "not applicable on this platform".into(),
+                    location: String::new(),
+                    repro: String::new(),
+                    recommendation_override: None,
+                    degraded_reason: None,
+                    fallback_log: Vec::new(),
+                },
+                Vec::new(),
+            )
+        } else if rc.admin && !ctx.elevated {
+            // Privilege-gated check: the scan runs unprivileged by
+            // default; admin-only checks are skipped with an explicit
+            // reason rather than run degraded (user request: ask for
+            // elevation only when needed, never silently downgrade).
+            (
+                CheckOutcome {
+                    status: Status::DegradedPartial,
+                    evidence: "requires elevation — rerun with --elevate for this check's full depth".into(),
+                    location: String::new(),
+                    repro: String::new(),
+                    recommendation_override: None,
+                    degraded_reason: Some("requires elevation (skipped: unprivileged run)".into()),
+                    fallback_log: Vec::new(),
+                },
+                Vec::new(),
+            )
+        } else {
             // AssertUnwindSafe: the context is not shared with other
             // threads; on panic we still own it and any partial state is
             // discarded by the next check overwriting what it uses.
@@ -40,19 +70,6 @@ pub fn run_all(registry: &[RegisteredCheck], ctx: &mut ScanContext) -> Vec<Check
                     )
                 }
             }
-        } else {
-            (
-                CheckOutcome {
-                    status: Status::NotApplicable,
-                    evidence: "not applicable on this platform".into(),
-                    location: String::new(),
-                    repro: String::new(),
-                    recommendation_override: None,
-                    degraded_reason: None,
-                    fallback_log: Vec::new(),
-                },
-                Vec::new(),
-            )
         };
         // The check's own fallback log (present on Error outcomes built
         // by err_outcome) takes precedence over the engine's.
