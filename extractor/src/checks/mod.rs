@@ -2,15 +2,17 @@
 //! and is wired into `register_all` below. Adding a testcase = one entry
 //! in a module via the `check!` macro (spec §4.3).
 
+pub mod linux;
 pub mod shared;
 pub mod toy;
 
 use crate::model::{CheckOutcome, FallbackAttempt, RegisteredCheck, Status};
 
 pub fn register_all(reg: &mut Vec<RegisteredCheck>) {
+    linux::fsck::register(reg);
     shared::register(reg);
     toy::register(reg);
-    // Phase 2/3 modules register here as they land.
+    // Further Phase 2/3 modules register here as they land.
 }
 
 // ---- shared outcome helpers (the recipe every check uses) ----

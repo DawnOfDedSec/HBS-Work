@@ -1,0 +1,5 @@
+proc /proc proc rw,relatime 0 0
+udev /dev devtmpfs rw,relatime 0 0
+tmpfs /dev/shm tmpfs rw,relatime 0 0
+tmpfs /tmp tmpfs rw,relatime 0 0
+/dev/sda1 / ext4 rw,relatime 0 0
