@@ -14,6 +14,7 @@ pub fn register_all(reg: &mut Vec<RegisteredCheck>) {
     linux::fsck::register(reg);
     linux::logging::register(reg);
     linux::network::register(reg);
+    linux::pam::register(reg);
     linux::services::register(reg);
     linux::ssh::register(reg);
     shared::register(reg);

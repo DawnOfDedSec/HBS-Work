@@ -2,7 +2,7 @@
 //! config depth second; missing managers are N/A with evidence of all
 //! probes.
 
-use crate::checks::{degraded, err_outcome, nok, ok};
+use crate::checks::{degraded, nok, ok};
 use crate::context::ScanContext;
 use crate::model::{CheckOutcome, FallbackAttempt, RegisteredCheck};
 use crate::platform::Os;
