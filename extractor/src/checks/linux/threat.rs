@@ -326,7 +326,7 @@ fn pam_module_dirs(arch: &str) -> Vec<&'static str> {
 
 fn pam_owned(ctx: &mut ScanContext) -> CheckOutcome {
     let dirs = pam_module_dirs(&ctx.platform.arch);
-    let target = match dirs.into_iter().find(|d| ctx.exists(d)) {
+    let target = match dirs.into_iter().find(|d| ctx.exists(*d)) {
         Some(d) => d,
         None => return degraded("PAM module directory not found"),
     };

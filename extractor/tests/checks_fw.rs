@@ -2,12 +2,13 @@ use hbs_extractor::checks::register_all;
 use hbs_extractor::context::ScanContext;
 use hbs_extractor::engine::run_all;
 use hbs_extractor::model::{RegisteredCheck, Status};
-use hbs_extractor::platform::{detect, DistroFamily, Os};
+use hbs_extractor::platform::{detect, DistroFamily, EnvironmentInfo, Os};
 
 fn ctx_with(injector: hbs_extractor::evidence::CmdInjector, root: &str) -> ScanContext {
     let mut p = detect();
     p.os = Os::Linux;
     p.family = DistroFamily::Debian;
+    p.environment = EnvironmentInfo::default();
     ScanContext::new(p, false).with_root_prefix(root).with_injector(injector)
 }
 

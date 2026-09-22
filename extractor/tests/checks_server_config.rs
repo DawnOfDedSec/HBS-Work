@@ -13,7 +13,7 @@ use hbs_extractor::context::ScanContext;
 use hbs_extractor::engine::run_all;
 use hbs_extractor::evidence::CmdInjector;
 use hbs_extractor::model::{CheckResult, RegisteredCheck, Status};
-use hbs_extractor::platform::{detect, DistroFamily, Os, PlatformInfo};
+use hbs_extractor::platform::{detect, DistroFamily, EnvironmentInfo, Os, PlatformInfo};
 
 const ALL_IDS: &[&str] = &[
     "GEN-SRV-001", "GEN-SRV-002", "GEN-SRV-003", "GEN-SRV-004", "GEN-SRV-005",
@@ -28,6 +28,9 @@ fn platform(os: Os) -> PlatformInfo {
     p.os = os;
     p.arch = "x86_64".into();
     p.family = if os == Os::Linux { DistroFamily::Debian } else { DistroFamily::Unknown };
+    // Pin the environment so these tests never inherit the build host's
+    // bare-metal/VM classification.
+    p.environment = EnvironmentInfo::default();
     p
 }
 

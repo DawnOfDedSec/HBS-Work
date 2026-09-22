@@ -189,6 +189,9 @@ fn main() {
         "platform": format!("{:?}", pinfo.os),
         "osName": meta.get("os_name").cloned().unwrap_or(json!(null)),
         "osVersion": meta.get("os_version").cloned().unwrap_or(json!(null)),
+        "environment": format!("{:?}", pinfo.environment.kind),
+        "hypervisor": pinfo.environment.hypervisor.clone(),
+        "environmentSignals": pinfo.environment.signals.clone(),
         "arch": pinfo.arch,
         "privileged": elevated,
     });

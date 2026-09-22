@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Navigation } from "./Navigation";
 import { CommandPalette } from "./CommandPalette";
+import { LiveActivity } from "./LiveActivity";
 import { Breadcrumbs, IconButton, Kbd, type BreadcrumbItem } from "./ui";
 import { cn, focusRing } from "./ui/cn";
 import { navItem, routeLabel, type RouteKey } from "../routes";
@@ -28,6 +29,12 @@ export type LayoutProps = {
   onNavigate: (route: RouteKey) => void;
   onDrilldown: (query: string) => void;
   onLogout: () => void;
+  /** Open a report by id from the live-activity feed. */
+  onOpenReport?: (reportId: number) => void;
+  /** Open a host by id from the live-activity feed. */
+  onOpenHost?: (hostId: number) => void;
+  /** Open a campaign by id from the command palette. */
+  onOpenCampaign?: (campaignId: number) => void;
   breadcrumbs?: BreadcrumbItem[];
   children: ReactNode;
 };
@@ -47,7 +54,18 @@ function roleLabel(role: AuthUser["role"]): string {
  * global search, theme toggle, and a keyboard-accessible user menu. Owns the
  * command palette and its Ctrl/Cmd-K shortcut.
  */
-export function Layout({ user, route, onNavigate, onDrilldown, onLogout, breadcrumbs, children }: LayoutProps) {
+export function Layout({
+  user,
+  route,
+  onNavigate,
+  onDrilldown,
+  onLogout,
+  onOpenReport,
+  onOpenHost,
+  onOpenCampaign,
+  breadcrumbs,
+  children,
+}: LayoutProps) {
   const { theme, toggle } = useTheme();
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
@@ -199,6 +217,10 @@ export function Layout({ user, route, onNavigate, onDrilldown, onLogout, breadcr
               onClick={toggle}
             />
 
+            <div className="hbs-presentation-hide">
+              <LiveActivity onOpenReport={onOpenReport} onOpenHost={onOpenHost} />
+            </div>
+
             <div className="relative" ref={menuRef}>
               <button
                 type="button"
@@ -258,6 +280,7 @@ export function Layout({ user, route, onNavigate, onDrilldown, onLogout, breadcr
         currentRoute={route}
         onNavigate={onNavigate}
         onDrilldown={onDrilldown}
+        onOpenCampaign={onOpenCampaign}
         theme={theme}
         onToggleTheme={toggle}
       />

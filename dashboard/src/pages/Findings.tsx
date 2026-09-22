@@ -3,7 +3,6 @@ import {
   AlertTriangle,
   FileSearch,
   ListChecks,
-  RefreshCw,
   Search,
   Server,
   ShieldAlert,
@@ -47,9 +46,14 @@ import {
   type EvidenceFinding,
 } from "../components/EvidenceDrawer";
 import { ScopeControls, clearScopeKeys } from "../components/ScopeSelector";
+import { DensityToggle } from "../components/DensityToggle";
+import { LastUpdated } from "../components/LastUpdated";
+import { SavedViewsMenu } from "../components/SavedViewsMenu";
 import { resolveScope, type FilterKey, type ScopeFilters } from "../filters";
 import { useScopeFilters } from "../useScopeFilters";
-import type { CheckResult } from "../types";
+import { useDensity } from "../useDensity";
+import { useLiveEvents } from "../useLiveEvents";
+import type { AuthUser, CheckResult } from "../types";
 import { CheckDetail } from "./CheckDetail";
 import { ReportDetail } from "./ReportDetail";
 
@@ -195,8 +199,10 @@ function InlineAlert({ children }: { children: React.ReactNode }) {
  * so the URL query string stays the single source of truth; All findings / By
  * Host / By Check pivots share the same scope.
  */
-export function Findings() {
+export function Findings({ role }: { role?: AuthUser["role"] }) {
   const { filters, query, chips, toggle, clearKey, clear } = useScopeFilters();
+  const { dense, density, setDensity } = useDensity();
+  const { lastEventAt } = useLiveEvents();
   const toast = useToast();
   const [pivot, setPivot] = useState<Pivot>("findings");
   const [search, setSearch] = useState(filters.q?.[0] ?? "");
@@ -206,6 +212,8 @@ export function Findings() {
   const [hosts, setHosts] = useState<HostGroup[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [pendingRow, setPendingRow] = useState<string | null>(null);
   const [activeReportId, setActiveReportId] = useState<number | null>(null);
@@ -224,7 +232,18 @@ export function Findings() {
     setPage(1);
   }, [query]);
 
-  const refresh = useCallback(() => setPage(1), []);
+  const refresh = useCallback(() => {
+    setPage(1);
+    setReloadKey((value) => value + 1);
+  }, []);
+
+  /** Apply a saved view's canonical query, keeping the URL as source of truth. */
+  const applyView = useCallback((nextQuery: string) => {
+    const url = nextQuery ? `${window.location.pathname}?${nextQuery}` : window.location.pathname;
+    window.history.pushState({}, "", url);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    setPivot("findings");
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -258,12 +277,15 @@ export function Findings() {
         toast.error("Could not load findings", { description: message });
       })
       .finally(() => {
-        if (alive) setLoading(false);
+        if (alive) {
+          setLoading(false);
+          setLastUpdated(new Date().toISOString());
+        }
       });
     return () => {
       alive = false;
     };
-  }, [query, page, pageSize, pivot, toast]);
+  }, [query, page, pageSize, pivot, toast, lastEventAt, reloadKey]);
 
   const checks = useMemo<CheckAggregate[]>(() => {
     const grouped = new Map<string, CheckAggregate>();
@@ -523,9 +545,11 @@ export function Findings() {
         description="Search, filter, and triage checks across the current scope. Every row opens pinned evidence."
         icon={ListChecks}
         actions={
-          <Button variant="secondary" icon={RefreshCw} loading={loading} onClick={refresh}>
-            Refresh
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <LastUpdated at={lastUpdated} onRefresh={refresh} loading={loading} />
+            <SavedViewsMenu currentQuery={query} role={role} onApply={applyView} />
+            <DensityToggle density={density} onChange={setDensity} />
+          </div>
         }
       />
 
@@ -663,6 +687,7 @@ export function Findings() {
               rows={findings}
               rowKey={(row) => `${row.reportId}:${row.checkId}`}
               stickyHeader
+              dense={dense}
               onRowClick={(row) => void openEvidence(row)}
             />
           )}
@@ -704,6 +729,7 @@ export function Findings() {
               rows={hosts}
               rowKey={(row) => String(row.id)}
               stickyHeader
+              dense={dense}
               onRowClick={(row) => {
                 toggle("hostId", String(row.id));
                 setPivot("findings");
@@ -748,6 +774,7 @@ export function Findings() {
               rows={checks}
               rowKey={(row) => row.checkId}
               stickyHeader
+              dense={dense}
               onRowClick={(row) => setActiveCheckId(row.checkId)}
             />
           )}

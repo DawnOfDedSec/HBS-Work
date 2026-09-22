@@ -1,22 +1,25 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Command } from "cmdk";
 import {
   ArrowRight,
   BookOpen,
+  Building2,
   Check,
   Command as CommandIcon,
   ListChecks,
   Moon,
   Search,
+  Server,
   ShieldAlert,
   Sun,
   Wrench,
   XCircle,
 } from "lucide-react";
 import { Kbd } from "./ui";
+import { api } from "../api";
 import { visibleNav, type RouteKey } from "../routes";
 import { serializeFilters } from "../filters";
-import type { AuthUser } from "../types";
+import type { AuthUser, Campaign } from "../types";
 import type { Theme } from "../useTheme";
 
 export type CommandPaletteProps = {
@@ -27,9 +30,29 @@ export type CommandPaletteProps = {
   onNavigate: (route: RouteKey) => void;
   /** Publish a canonical findings query and route to Findings. */
   onDrilldown: (query: string) => void;
+  /** Open a campaign by id (App-owned navigation). */
+  onOpenCampaign?: (campaignId: number) => void;
   theme: Theme;
   onToggleTheme: () => void;
 };
+
+type HostEntity = {
+  id: number;
+  machineId: string;
+  hostname: string | null;
+  displayId: string;
+  platform: string | null;
+};
+
+type CheckEntity = { checkId: string; title: string; severity: string };
+
+type FindingsResponse = {
+  results: Array<{ checkId: string; title: string; severity: string }>;
+};
+
+type HostsResponse = { hosts: HostEntity[] };
+
+const ENTITY_LIMIT = 6;
 
 type QuickAction = {
   id: string;
@@ -77,8 +100,7 @@ const QUICK_FILTERS: QuickAction[] = [
   },
 ];
 
-const SCOPES: QuickAction[] = [
-  {
+const SCOPES: QuickAction[] = [  {
     id: "scope-latest",
     label: "Latest scans only",
     hint: "scope=latest",
@@ -94,9 +116,15 @@ const SCOPES: QuickAction[] = [
   },
 ];
 
+const ENTITY_GROUP_CLASS =
+  "[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-2xs [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wide [&_[cmdk-group-heading]]:text-ink-subtle";
+
+const ENTITY_ITEM_CLASS =
+  "flex cursor-pointer items-center gap-3 rounded-control px-2 py-2 text-sm text-ink-muted data-[selected=true]:bg-surface-raised data-[selected=true]:text-ink";
+
 /**
- * Ctrl/Cmd-K command palette. Navigation, quick scope switches, and a
- * search-as-you-type action that routes straight to the Findings explorer.
+ * Ctrl/Cmd-K command palette. Navigation, quick scope switches, live entity
+ * search (campaigns, hosts, checks), and a findings search action.
  */
 export function CommandPalette({
   open,
@@ -105,11 +133,87 @@ export function CommandPalette({
   currentRoute,
   onNavigate,
   onDrilldown,
+  onOpenCampaign,
   theme,
   onToggleTheme,
 }: CommandPaletteProps) {
   const [search, setSearch] = useState("");
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [hosts, setHosts] = useState<HostEntity[]>([]);
+  const [checks, setChecks] = useState<CheckEntity[]>([]);
   const items = visibleNav(role);
+
+  // Load campaign + host entities when the palette opens.
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    Promise.allSettled([
+      api.raw<Campaign[]>("GET", "/api/campaigns"),
+      api.raw<HostsResponse>("GET", "/api/hosts?pageSize=200"),
+    ]).then(([campaignResult, hostResult]) => {
+      if (!alive) return;
+      if (campaignResult.status === "fulfilled") {
+        setCampaigns(Array.isArray(campaignResult.value) ? campaignResult.value : []);
+      }
+      if (hostResult.status === "fulfilled") {
+        setHosts(Array.isArray(hostResult.value.hosts) ? hostResult.value.hosts : []);
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, [open]);
+
+  // Check entities follow the search term (server-side q) with a short debounce.
+  useEffect(() => {
+    if (!open) return;
+    const term = search.trim();
+    let alive = true;
+    const timer = window.setTimeout(() => {
+      const path = `/api/findings?pageSize=100${term ? `&q=${encodeURIComponent(term)}` : ""}`;
+      api
+        .raw<FindingsResponse>("GET", path)
+        .then((response) => {
+          if (!alive) return;
+          const seen = new Map<string, CheckEntity>();
+          for (const result of response.results ?? []) {
+            if (!seen.has(result.checkId)) {
+              seen.set(result.checkId, { checkId: result.checkId, title: result.title, severity: result.severity });
+            }
+          }
+          setChecks([...seen.values()].slice(0, ENTITY_LIMIT));
+        })
+        .catch(() => {
+          if (alive) setChecks([]);
+        });
+    }, term ? 180 : 0);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+  }, [open, search]);
+
+  const term = search.trim().toLowerCase();
+  const matchedCampaigns = campaigns
+    .filter(
+      (campaign) =>
+        !term ||
+        campaign.name.toLowerCase().includes(term) ||
+        (campaign.client ?? "").toLowerCase().includes(term),
+    )
+    .slice(0, ENTITY_LIMIT);
+  const matchedHosts = hosts
+    .filter(
+      (host) =>
+        !term ||
+        (host.hostname ?? "").toLowerCase().includes(term) ||
+        host.machineId.toLowerCase().includes(term) ||
+        host.displayId.toLowerCase().includes(term),
+    )
+    .slice(0, ENTITY_LIMIT);
+  const matchedChecks = checks.filter(
+    (check) => !term || check.checkId.toLowerCase().includes(term) || check.title.toLowerCase().includes(term),
+  );
 
   function run(action: () => void) {
     action();
@@ -204,6 +308,83 @@ export function CommandPalette({
             );
           })}
         </Command.Group>
+
+        {matchedCampaigns.length > 0 ? (
+          <>
+            <Command.Separator className="my-1 h-px bg-hairline-soft" />
+            <Command.Group heading="Campaigns" className={ENTITY_GROUP_CLASS}>
+              {matchedCampaigns.map((campaign) => (
+                <Command.Item
+                  key={`campaign:${campaign.id}`}
+                  value={`campaign:${campaign.name}`}
+                  keywords={["campaign", String(campaign.id), campaign.client ?? ""]}
+                  onSelect={() =>
+                    run(() => {
+                      if (onOpenCampaign) onOpenCampaign(campaign.id);
+                      else onNavigate("campaigns");
+                    })
+                  }
+                  className={ENTITY_ITEM_CLASS}
+                >
+                  <Building2 size={16} className="shrink-0 text-ink-subtle" aria-hidden />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium text-ink">{campaign.name}</span>
+                    <span className="block truncate text-2xs text-ink-subtle">
+                      {campaign.client ? `${campaign.client} · ` : ""}Open campaign
+                    </span>
+                  </span>
+                </Command.Item>
+              ))}
+            </Command.Group>
+          </>
+        ) : null}
+
+        {matchedHosts.length > 0 ? (
+          <>
+            <Command.Separator className="my-1 h-px bg-hairline-soft" />
+            <Command.Group heading="Hosts" className={ENTITY_GROUP_CLASS}>
+              {matchedHosts.map((host) => (
+                <Command.Item
+                  key={`host:${host.id}`}
+                  value={`host:${host.displayId}`}
+                  keywords={["host", host.machineId, host.hostname ?? ""]}
+                  onSelect={() => run(() => onDrilldown(serializeFilters({ hostId: [String(host.id)] })))}
+                  className={ENTITY_ITEM_CLASS}
+                >
+                  <Server size={16} className="shrink-0 text-ink-subtle" aria-hidden />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium text-ink">{host.displayId}</span>
+                    <span className="block truncate font-mono text-2xs text-ink-subtle">{host.machineId}</span>
+                  </span>
+                </Command.Item>
+              ))}
+            </Command.Group>
+          </>
+        ) : null}
+
+        {matchedChecks.length > 0 ? (
+          <>
+            <Command.Separator className="my-1 h-px bg-hairline-soft" />
+            <Command.Group heading="Checks" className={ENTITY_GROUP_CLASS}>
+              {matchedChecks.map((check) => (
+                <Command.Item
+                  key={`check:${check.checkId}`}
+                  value={`check:${check.checkId}`}
+                  keywords={["check", check.checkId, check.title, check.severity]}
+                  onSelect={() => run(() => onDrilldown(serializeFilters({ checkId: [check.checkId] })))}
+                  className={ENTITY_ITEM_CLASS}
+                >
+                  <ListChecks size={16} className="shrink-0 text-ink-subtle" aria-hidden />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium text-ink">{check.title}</span>
+                    <span className="block truncate font-mono text-2xs text-ink-subtle">{check.checkId}</span>
+                  </span>
+                  <ShieldAlert size={13} className="shrink-0 text-ink-subtle" aria-hidden />
+                </Command.Item>
+              ))}
+            </Command.Group>
+          </>
+        ) : null}
 
         {search.trim() ? (
           <>

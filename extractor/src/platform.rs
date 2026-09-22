@@ -494,13 +494,14 @@ fn detect_environment_linux(probe: &mut impl EnvProbe) -> EnvironmentInfo {
     }
 }
 
-fn json_field(value: &serde_json::Value, key: &str) -> Option<&str> {
+fn json_field<'a>(value: &'a serde_json::Value, key: &str) -> Option<&'a str> {
     value.get(key).and_then(|v| v.as_str())
 }
 
 fn detect_environment_windows(probe: &mut impl EnvProbe) -> EnvironmentInfo {
     let mut signals: Vec<String> = Vec::new();
     let mut container: Option<String> = None;
+    let mut vm: Option<String> = None;
     let mut observed = false;
 
     // Container markers exposed through the process environment.
@@ -564,26 +565,31 @@ fn detect_environment_windows(probe: &mut impl EnvProbe) -> EnvironmentInfo {
         // running Hyper-V/VBS, so only the vendor/model pair may classify
         // the host as a virtual machine.
         if let Some(h) = dmi_hypervisor(manufacturer, model) {
-            return EnvironmentInfo {
-                kind: Environment::VirtualMachine,
-                signals,
-                hypervisor: Some(h),
-            };
+            vm = Some(h);
         }
     }
 
+    // A Hyper-V-isolated container reports a "Virtual Machine" model but
+    // is still a container; container detection wins.
     let kind = if container.is_some() {
         Environment::Container
+    } else if vm.is_some() {
+        Environment::VirtualMachine
     } else if observed {
         Environment::BareMetal
     } else {
         signals.push("no environment signals observable".into());
         Environment::Unknown
     };
+    let hypervisor = if kind == Environment::VirtualMachine {
+        vm
+    } else {
+        None
+    };
     EnvironmentInfo {
         kind,
         signals,
-        hypervisor: None,
+        hypervisor,
     }
 }
 

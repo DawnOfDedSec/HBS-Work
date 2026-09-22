@@ -15,7 +15,7 @@ use hbs_extractor::checks::register_all;
 use hbs_extractor::context::ScanContext;
 use hbs_extractor::engine::run_all;
 use hbs_extractor::model::{CheckResult, RegisteredCheck, Status};
-use hbs_extractor::platform::{DistroFamily, Os, PlatformInfo};
+use hbs_extractor::platform::{DistroFamily, Environment, EnvironmentInfo, Os, PlatformInfo};
 
 /// The toy seed check (`GEN-TOY-001`, plus any future `T-*` scratch ids)
 /// is not part of the shipped catalog.
@@ -39,6 +39,10 @@ fn id_is_well_formed(id: &str) -> bool {
 }
 
 fn platform(os: Os) -> PlatformInfo {
+    platform_env(os, EnvironmentInfo::default())
+}
+
+fn platform_env(os: Os, environment: EnvironmentInfo) -> PlatformInfo {
     PlatformInfo {
         os,
         arch: "x86_64".into(),
@@ -51,6 +55,15 @@ fn platform(os: Os) -> PlatformInfo {
             DistroFamily::Unknown
         },
         virtualized: None,
+        environment,
+    }
+}
+
+fn container_environment() -> EnvironmentInfo {
+    EnvironmentInfo {
+        kind: Environment::Container,
+        signals: vec!["/.dockerenv present".into(), "/proc/1/cgroup: docker".into()],
+        hypervisor: None,
     }
 }
 
@@ -71,13 +84,55 @@ fn catalog() -> Vec<RegisteredCheck> {
 }
 
 fn run_catalog(os: Os, root: &Path) -> Vec<CheckResult> {
+    run_catalog_env(platform(os), root)
+}
+
+fn run_catalog_env(platform: PlatformInfo, root: &Path) -> Vec<CheckResult> {
     let reg = catalog();
-    let mut ctx = ScanContext::new(platform(os), false)
+    let mut ctx = ScanContext::new(platform, false)
         .with_root_prefix(&root.to_string_lossy())
         // No source can succeed: nothing is spawned and no host file is read.
         .with_injector(Box::new(|_, _| None));
     run_all(&reg, &mut ctx)
 }
+
+/// Controls that genuinely cannot exist inside a container: they must be
+/// `NotApplicable`, never `NonCompliant` and never `Error`.
+const CONTAINER_IMPOSSIBLE_IDS: &[&str] = &[
+    // firmware / hardware
+    "GEN-INV-012", // Secure Boot
+    "GEN-INV-013", // TPM
+    "GEN-INV-021", // kernel modules
+    "GEN-SRV-019", // secure boot + TPM summary
+    // host firewall
+    "GEN-INV-017",
+    "GEN-SRV-014",
+    "LIN-FW-001",
+    "LIN-FW-002",
+    "LIN-FW-003",
+    "LIN-FW-004",
+    "LIN-FW-005",
+    // bootloader / kernel
+    "LIN-FS-012",
+    "LIN-FS-013",
+    "LIN-TH-010", // kernel lockdown
+    "LIN-TH-011", // module signature enforcement
+    "LIN-TH-037", // kernel cmdline
+    // host partition layout / swap
+    "LIN-FS-001",
+    "LIN-FS-002",
+    "LIN-FS-003",
+    "LIN-FS-004",
+    "LIN-FS-005",
+    "LIN-FS-006",
+    "LIN-FS-007",
+    "LIN-FS-008",
+    "LIN-FS-009",
+    "LIN-FS-010",
+    "LIN-FS-011",
+    "LIN-FS-015",
+    "GEN-SRV-022",
+];
 
 #[test]
 fn whole_catalog_ids_are_unique_and_well_formed() {
@@ -142,6 +197,49 @@ fn whole_catalog_never_errors_and_evidence_invariants_hold() {
     assert!(
         problems.is_empty(),
         "whole-catalog audit failures:\n{}",
+        problems.join("\n")
+    );
+}
+
+/// Whole catalog under a simulated container: host-only controls must be
+/// `NotApplicable` (not a fabricated failure), and nothing may `Error`.
+#[test]
+fn whole_catalog_container_environment_not_applicable_for_host_only_controls() {
+    let root = empty_root();
+    let results = run_catalog_env(platform_env(Os::Linux, container_environment()), &root);
+    assert!(!results.is_empty());
+
+    let mut by_id: std::collections::HashMap<&str, &CheckResult> = std::collections::HashMap::new();
+    let mut problems: Vec<String> = Vec::new();
+
+    for r in &results {
+        if r.status == Status::Error {
+            problems.push(format!("container run: {} returned Error: {}", r.id, r.evidence));
+        }
+        if r.status == Status::NonCompliant && CONTAINER_IMPOSSIBLE_IDS.contains(&r.id.as_str()) {
+            problems.push(format!(
+                "container run: host-only control {} was NonCompliant: {}",
+                r.id, r.evidence
+            ));
+        }
+        by_id.insert(r.id.as_str(), r);
+    }
+
+    for id in CONTAINER_IMPOSSIBLE_IDS {
+        match by_id.get(id) {
+            Some(r) if r.status == Status::NotApplicable => {}
+            Some(r) => problems.push(format!(
+                "container run: {} expected NotApplicable, got {:?}: {}",
+                id, r.status, r.evidence
+            )),
+            None => problems.push(format!("container run: {id} produced no result")),
+        }
+    }
+
+    let _ = std::fs::remove_dir_all(&root);
+    assert!(
+        problems.is_empty(),
+        "container whole-catalog audit failures:\n{}",
         problems.join("\n")
     );
 }

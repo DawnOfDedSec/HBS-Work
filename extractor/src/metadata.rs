@@ -50,9 +50,10 @@ fn collect_linux(ctx: &mut ScanContext, m: &mut Map<String, Value>) {
     // virtualization-aware stable value (a container's hostname is its
     // container id; a VM/bare-metal host can use its DMI product UUID).
     let virt = ctx.platform.virtualized.clone().unwrap_or_default();
-    let container = ["docker", "podman", "containerd", "lxc", "openvz", "rkt"]
-        .iter()
-        .any(|c| virt.eq_ignore_ascii_case(c));
+    let container = ctx.platform.environment.is_container()
+        || ["docker", "podman", "containerd", "lxc", "openvz", "rkt"]
+            .iter()
+            .any(|c| virt.eq_ignore_ascii_case(c));
     let mut machine_id =
         trimmed(ctx, "/etc/machine-id").or_else(|| trimmed(ctx, "/var/lib/dbus/machine-id"));
     if machine_id.is_none() {

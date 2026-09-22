@@ -278,7 +278,7 @@ function errorResponse(c: any, parsed: QueryParseError): Response {
   return c.json({ error: parsed.message, code: parsed.code }, 400);
 }
 
-function describeScope(query: NormalizedQuery): Record<string, unknown> {
+export function describeScope(query: NormalizedQuery): Record<string, unknown> {
   return {
     kind: query.scope,
     campaignId: query.campaignId,

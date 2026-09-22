@@ -12,6 +12,7 @@ import { registerDownloadRoutes } from "./downloads";
 import { createUserRoutes } from "./users";
 import { MAX_BATCH_FILES, configureIngest, ingestBatch, validateAndIngestEnvelope } from "./ingest";
 import { registerReportRoutes } from "./reports";
+import { registerRemediationRoutes } from "./remediation";
 import { registerAdminRoutes } from "./admin";
 import { registerExportRoutes } from "./exports/xlsx";
 import { reportEvents } from "./sse";
@@ -141,6 +142,7 @@ app.route("/", campaignApp);
 // Scoped report/findings/summary/diff/telemetry/standards/treatment, saved
 // views, and the super-admin diagnostic bundle.
 registerReportRoutes(app, db, campaignAuth);
+registerRemediationRoutes(app, db, campaignAuth);
 registerAdminRoutes(app, db, campaignAuth, {
   databasePath: dbPath === ":memory:" ? undefined : dbPath,
   dataRoot: process.env.HBS_DATA_ROOT,

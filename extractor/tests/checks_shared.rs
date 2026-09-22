@@ -2,12 +2,13 @@ use hbs_extractor::checks::register_all;
 use hbs_extractor::context::ScanContext;
 use hbs_extractor::engine::run_all;
 use hbs_extractor::model::{RegisteredCheck, Status};
-use hbs_extractor::platform::{detect, DistroFamily, Os};
+use hbs_extractor::platform::{detect, DistroFamily, EnvironmentInfo, Os};
 
 fn linux_ctx(root: &str, injector: Option<hbs_extractor::evidence::CmdInjector>) -> ScanContext {
     let mut p = detect();
     p.os = Os::Linux;
     p.family = DistroFamily::Debian;
+    p.environment = EnvironmentInfo::default();
     let mut ctx = ScanContext::new(p, false).with_root_prefix(root);
     if let Some(f) = injector {
         ctx = ctx.with_injector(f);
@@ -57,6 +58,7 @@ fn gen_inv_003_reads_passwd() {
 fn gen_inv_003_windows_chain_records_every_attempt() {
     let mut p = detect();
     p.os = Os::Windows;
+    p.environment = EnvironmentInfo::default();
     let mut ctx = ScanContext::new(p, false).with_injector(Box::new(|_, _| None));
     let r = run_one(&mut ctx, "GEN-INV-003");
     assert_eq!(r.status, Status::DegradedPartial, "{}", r.evidence);
@@ -81,6 +83,7 @@ fn gen_inv_003_windows_chain_records_every_attempt() {
 fn gen_inv_002_windows_chain_records_every_attempt() {
     let mut p = detect();
     p.os = Os::Windows;
+    p.environment = EnvironmentInfo::default();
     let mut ctx = ScanContext::new(p, false).with_injector(Box::new(|_, _| None));
     let r = run_one(&mut ctx, "GEN-INV-002");
     assert_eq!(r.status, Status::DegradedPartial, "{}", r.evidence);

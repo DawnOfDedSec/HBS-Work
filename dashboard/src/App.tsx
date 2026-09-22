@@ -9,17 +9,20 @@ import { CampaignDetail } from "./pages/CampaignDetail";
 import { Campaigns } from "./pages/Campaigns";
 import { CheckDetail } from "./pages/CheckDetail";
 import { Downloads } from "./pages/Downloads";
+import { Executive } from "./pages/Executive";
 import { Findings } from "./pages/Findings";
 import { HostDetail } from "./pages/HostDetail";
 import { Locations } from "./pages/Locations";
 import { Login } from "./pages/Login";
 import { Overview } from "./pages/Overview";
+import { Remediation } from "./pages/Remediation";
 import { ReportDetail } from "./pages/ReportDetail";
 import { Setup } from "./pages/Setup";
 import { Standards } from "./pages/Standards";
 import { Telemetry } from "./pages/Telemetry";
 import { Treatment } from "./pages/Treatment";
 import { navItem, routeLabel, type RouteKey } from "./routes";
+import { LiveEventsProvider } from "./useLiveEvents";
 import type { AuthUser } from "./types";
 
 type Phase = "loading" | "setup" | "login" | "ready";
@@ -82,6 +85,36 @@ export function App() {
     [resetSelection],
   );
 
+  /** Open a report from the live-activity feed. */
+  const openReport = useCallback(
+    (reportId: number) => {
+      setRoute("campaigns");
+      resetSelection();
+      setReportId(reportId);
+    },
+    [resetSelection],
+  );
+
+  /** Open a host from the live-activity feed. */
+  const openHost = useCallback(
+    (hostId: number) => {
+      setRoute("locations");
+      resetSelection();
+      setHostId(hostId);
+    },
+    [resetSelection],
+  );
+
+  /** Open a campaign from the command palette. */
+  const openCampaign = useCallback(
+    (campaignId: number) => {
+      setRoute("campaigns");
+      resetSelection();
+      setCampaignId(campaignId);
+    },
+    [resetSelection],
+  );
+
   const authed = useCallback((next: AuthUser) => {
     setUser(next);
     setPhase("ready");
@@ -135,7 +168,9 @@ export function App() {
   function workspace(): ReactNode {
     if (!user) return null;
     if (route === "overview") return <Overview onDrilldown={drilldown} onNavigate={navigate} />;
-    if (route === "findings") return <Findings />;
+    if (route === "executive") return <Executive onDrilldown={drilldown} />;
+    if (route === "remediation") return <Remediation onDrilldown={drilldown} />;
+    if (route === "findings") return <Findings role={user.role} />;
     if (route === "treatment") return <Treatment />;
     if (route === "telemetry") return <Telemetry />;
     if (route === "standards") return <Standards onDrilldown={drilldown} onNavigate={navigate} />;
@@ -196,16 +231,21 @@ export function App() {
     content = <Login onAuthed={authed} />;
   } else {
     content = (
-      <Layout
-        user={user}
-        route={route}
-        onNavigate={navigate}
-        onDrilldown={drilldown}
-        onLogout={logout}
-        breadcrumbs={breadcrumbs}
-      >
-        {workspace()}
-      </Layout>
+      <LiveEventsProvider>
+        <Layout
+          user={user}
+          route={route}
+          onNavigate={navigate}
+          onDrilldown={drilldown}
+          onLogout={logout}
+          onOpenReport={openReport}
+          onOpenHost={openHost}
+          onOpenCampaign={openCampaign}
+          breadcrumbs={breadcrumbs}
+        >
+          {workspace()}
+        </Layout>
+      </LiveEventsProvider>
     );
   }
 

@@ -3,8 +3,10 @@ import {
   Activity,
   BookOpen,
   FolderKanban,
+  Hammer,
   LayoutDashboard,
   ListChecks,
+  Presentation,
   Server,
   Settings,
   Wrench,
@@ -16,9 +18,11 @@ export type RouteKey =
   | "campaigns"
   | "locations"
   | "findings"
+  | "remediation"
   | "treatment"
   | "telemetry"
   | "standards"
+  | "executive"
   | "admin";
 
 /** Sidebar groupings for the console shell. */
@@ -86,6 +90,14 @@ export const NAV_ITEMS: NavItem[] = [
     keywords: ["remediation", "accepted risk", "false positive", "assignee"],
   },
   {
+    key: "remediation",
+    label: "Remediation",
+    icon: Hammer,
+    group: "operate",
+    description: "Grouped fixes, owners, and copy-ready commands",
+    keywords: ["fix", "remediation", "commands", "repro", "sysadmin", "runbook"],
+  },
+  {
     key: "telemetry",
     label: "Telemetry",
     icon: Activity,
@@ -100,6 +112,14 @@ export const NAV_ITEMS: NavItem[] = [
     group: "analyze",
     description: "CIS, NIST 800-53, ISO 27001, PCI-DSS coverage",
     keywords: ["cis", "nist", "iso", "pci", "compliance", "references"],
+  },
+  {
+    key: "executive",
+    label: "Executive Summary",
+    icon: Presentation,
+    group: "govern",
+    description: "Board-ready posture one-pager with presentation and print modes",
+    keywords: ["board", "management", "executive", "summary", "presentation", "print", "pdf", "report"],
   },
   {
     key: "admin",
