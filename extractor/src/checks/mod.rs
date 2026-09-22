@@ -11,6 +11,7 @@ use crate::model::{CheckOutcome, FallbackAttempt, RegisteredCheck, Status};
 pub fn register_all(reg: &mut Vec<RegisteredCheck>) {
     linux::firewall::register(reg);
     linux::fsck::register(reg);
+    linux::logging::register(reg);
     linux::network::register(reg);
     linux::services::register(reg);
     shared::register(reg);
