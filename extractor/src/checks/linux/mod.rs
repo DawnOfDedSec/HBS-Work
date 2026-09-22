@@ -1,6 +1,7 @@
 //! Linux check modules. Shared helpers live here; one file per CIS
 //! section below.
 
+pub mod firewall;
 pub mod fsck;
 pub mod network;
 pub mod services;
