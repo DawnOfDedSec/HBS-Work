@@ -226,6 +226,19 @@ Windows variants run in **GitHub Actions** on real Windows Server runners
 **Docker Windows engine** (`DockerCli.exe -SwitchWindowsEngine`) with
 `servercore` LTSC images.
 
+### Releases
+
+`.github/workflows/release.yml` runs **only after `validate` succeeds on main**.
+It builds every target (`x86_64`/`aarch64` Linux musl, `x86_64`/`aarch64`
+Windows MSVC, `armv7` Linux best-effort) plus the dashboard bundle, generates
+`SHA256SUMS` and a `manifest.json`, and publishes a GitHub Release tagged
+`v<version>` from `extractor/Cargo.toml`.
+
+- **Version bumped** → a new release is created with the changelog (commit
+  subjects since the previous tag).
+- **Same version** → the existing release's assets are overwritten and the new
+  changelog is **appended** to the existing release notes.
+
 ## Status and limitations
 
 The platform is functionally complete end to end: a dashboard-issued extractor

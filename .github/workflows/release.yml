@@ -1,0 +1,193 @@
+name: release
+
+# Runs only after `validate` succeeds on main. Builds every target, then creates
+# the GitHub Release for the version in extractor/Cargo.toml — or, if that
+# release already exists, overwrites the assets and APPENDS the new changelog.
+
+on:
+  workflow_run:
+    workflows: [validate]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build (${{ matrix.target }})
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-musl,   os: ubuntu-22.04, experimental: false }
+          - { target: aarch64-unknown-linux-musl,  os: ubuntu-22.04, experimental: false }
+          - { target: armv7-unknown-linux-musleabihf, os: ubuntu-22.04, experimental: true }
+          - { target: x86_64-pc-windows-msvc,      os: windows-2022,  experimental: false }
+          - { target: aarch64-pc-windows-msvc,     os: windows-11-arm, experimental: true }
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
+    defaults:
+      run:
+        working-directory: extractor
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install zig + cargo-zigbuild (Linux musl targets)
+        if: runner.os == 'Linux'
+        run: |
+          pip3 install ziglang
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          cargo install cargo-zigbuild --locked
+
+      - name: Read version
+        id: ver
+        shell: bash
+        run: echo "version=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*\"([^\"]+)\".*/\1/')" >> "$GITHUB_OUTPUT"
+
+      - name: Build release (Linux musl)
+        if: runner.os == 'Linux'
+        run: cargo zigbuild --release --target ${{ matrix.target }}
+
+      - name: Build release (Windows, static CRT)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:RUSTFLAGS = "-C target-feature=+crt-static"
+          cargo build --release --target ${{ matrix.target }}
+
+      - name: Package binary
+        shell: bash
+        run: |
+          set -e
+          EXT=""
+          case "${{ matrix.target }}" in *windows*) EXT=".exe";; esac
+          SRC="target/${{ matrix.target }}/release/hbs-extractor${EXT}"
+          NAME="hbs-extractor-${{ steps.ver.outputs.version }}-${{ matrix.target }}${EXT}"
+          mkdir -p "$GITHUB_WORKSPACE/release-assets"
+          cp "$SRC" "$GITHUB_WORKSPACE/release-assets/$NAME"
+          if command -v sha256sum >/dev/null 2>&1; then
+            (cd "$GITHUB_WORKSPACE/release-assets" && sha256sum "$NAME" > "$NAME.sha256")
+          fi
+          ls -l "$GITHUB_WORKSPACE/release-assets"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: asset-${{ matrix.target }}
+          path: release-assets/*
+          if-no-files-found: error
+
+  dashboard-bundle:
+    name: build (dashboard bundle)
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: Package dist
+        run: tar -czf "$GITHUB_WORKSPACE/hbs-dashboard-dist.tar.gz" -C dist .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: asset-dashboard
+          path: hbs-dashboard-dist.tar.gz
+          if-no-files-found: error
+
+  release:
+    name: publish release
+    needs: [build, dashboard-bundle]
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: asset-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Checksums and manifest
+        run: |
+          set -e
+          cd release-assets
+          rm -f SHA256SUMS manifest.json
+          sha256sum * > SHA256SUMS
+          VERSION="$(grep -m1 '^version' ../extractor/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          {
+            echo "{"
+            echo "  \"version\": \"$VERSION\","
+            echo "  \"commit\": \"${{ github.sha }}\","
+            echo "  \"files\": ["
+            files="$(ls | grep -vE '^(SHA256SUMS|manifest\.json)$')"
+            first=1
+            while IFS= read -r f; do
+              [ -z "$f" ] && continue
+              [ $first -eq 0 ] && echo ","
+              first=0
+              echo "    { \"name\": \"$f\", \"sha256\": \"$(sha256sum "$f" | cut -d' ' -f1)\", \"bytes\": $(stat -c %s "$f") }"
+            done <<< "$files"
+            echo "  ]"
+            echo "}"
+          } > manifest.json
+          cat manifest.json
+
+      - name: Determine version and changelog
+        id: changelog
+        run: |
+          set -e
+          VERSION="$(grep -m1 '^version' extractor/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          TAG="v$VERSION"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          # Previous tag = the tag of the existing release, or latest tag.
+          PREV="$(git tag --sort=-creatordate | grep -m1 -E '^v[0-9]' || true)"
+          if [ -n "$PREV" ]; then RANGE="$PREV..HEAD"; else RANGE="HEAD"; fi
+          {
+            echo "## Changes"
+            echo
+            git log --no-merges --pretty=format:'- %s (%h)' "$RANGE" | head -n 200
+            echo
+            echo
+            echo "_Commit: \`${{ github.sha }}\`_"
+          } > notes.md
+          echo "----- notes.md -----"; cat notes.md
+
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          TAG="${{ steps.changelog.outputs.tag }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG exists -> overwrite assets and append changelog"
+            gh release view "$TAG" --json body -q .body > existing.md || true
+            { cat existing.md; echo; echo "---"; echo; cat notes.md; } > combined.md
+            gh release edit "$TAG" --notes-file combined.md
+            gh release upload "$TAG" release-assets/* --clobber
+          else
+            echo "creating release $TAG"
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --notes-file notes.md \
+              release-assets/*
+          fi
