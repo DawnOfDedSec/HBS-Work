@@ -6,18 +6,22 @@ on:
   pull_request:
   workflow_dispatch:
 
-# Cross-OS validation matrix: real Linux and Windows runners, no local Docker.
-# Builds the extractor, runs the suite, performs a smoke scan that seals a
-# report, and uploads it as an artifact. Also validates the dashboard.
+# Multi-variant validation.
+#
+#   Linux:  GitHub Actions matrix (real runners, no local Docker).
+#   Windows: run locally through the Docker WINDOWS engine —
+#            scripts/docker-e2e-hosts-windows.ts  (Server Core 2019/2022/2025).
+#            GitHub-hosted Windows runners cannot run Windows containers, so the
+#            Windows matrix is not duplicated here.
 
 jobs:
-  extractor:
+  extractor-linux:
     name: extractor (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, ubuntu-24.04, windows-2019, windows-2022]
+        os: [ubuntu-22.04, ubuntu-24.04]
     defaults:
       run:
         working-directory: extractor
@@ -28,7 +32,7 @@ jobs:
         run: cargo build
       - name: Test
         run: cargo test -- --skip generate_and_verify_vectors
-      - name: Smoke scan (debug dev key, no elevation)
+      - name: Smoke scan (read-only, sealed report)
         shell: bash
         run: |
           set -e
@@ -36,8 +40,7 @@ jobs:
           OUT="smoke-${{ matrix.os }}.hbs"
           ./target/debug/hbs-extractor --no-elevate --no-pause --quiet \
             --dev-insecure-key "$DEVKEY" --out "$OUT"
-          head -c 4 "$OUT"
-          echo
+          test "$(head -c 4 "$OUT")" = "HBS2"
           ls -l "$OUT"
       - uses: actions/upload-artifact@v4
         with:

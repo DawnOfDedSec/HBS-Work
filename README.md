@@ -203,26 +203,28 @@ cd dashboard && bunx tsc --noEmit # strict TypeScript check
 ### Real-world validation
 
 ```bash
-# Linux: static musl extractor inside real distros, root and non-root
+# Linux — GitHub Actions matrix (real runners, no local Docker): build, tests,
+# and a sealed-report smoke scan on Ubuntu 22.04/24.04 + the dashboard job.
+#   .github/workflows/validate.yml   (runs on push / PR / manual)
+
+# Linux — local Docker sweep (13 distro versions, root + non-root, --network none)
 bash scripts/docker-test/run.sh
 bun run scripts/docker-test/validate-reports.ts   # decrypt + assert every sealed report
+cd dashboard && bun run ../scripts/e2e-linux.ts   # issued musl extractor -> push
 
-# Host sweep: host the dashboard and have 13 distro versions download the
-# extractor from it, run it, and push/upload results (with extractor logs)
-cd dashboard && bun run ../scripts/docker-e2e-hosts.ts
+# Windows — via the Docker WINDOWS engine (Server Core 2019/2022/2025):
+cd dashboard && bun run ../scripts/docker-e2e-hosts-windows.ts
 
-# Linux end-to-end: issue a musl extractor, run it in debian:12, push to the dashboard
-cd dashboard && bun run ../scripts/e2e-linux.ts
-
-# Windows: native scans (full, filtered, category, list) + issued-extractor loop
+# Windows — native scans + issued-extractor loop (optional, no containers):
 bun run scripts/windows-validate.ts
 cd dashboard && bun run ../scripts/e2e-loop.ts
 ```
 
-Docker Desktop here runs Linux containers, so Windows is validated natively on
-a real Windows host. Windows-container mode (servercore/nanoserver LTSC sweep,
-`scripts/docker-e2e-hosts-windows.ts`) requires the enabled `Containers`
-Windows feature and a Docker Desktop install that permits Windows containers.
+Linux variants run in **GitHub Actions** and via the local Docker Linux sweep.
+Windows variants run through the **Docker Windows engine**
+(`DockerCli.exe -SwitchWindowsEngine`) with `servercore` LTSC images; GitHub's
+hosted Windows runners cannot run Windows containers, so they are not used for
+the Windows matrix.
 
 ## Status and limitations
 
