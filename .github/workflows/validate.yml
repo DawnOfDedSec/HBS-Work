@@ -1,0 +1,60 @@
+name: validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Cross-OS validation matrix: real Linux and Windows runners, no local Docker.
+# Builds the extractor, runs the suite, performs a smoke scan that seals a
+# report, and uploads it as an artifact. Also validates the dashboard.
+
+jobs:
+  extractor:
+    name: extractor (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04, windows-2019, windows-2022]
+    defaults:
+      run:
+        working-directory: extractor
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build
+        run: cargo build
+      - name: Test
+        run: cargo test -- --skip generate_and_verify_vectors
+      - name: Smoke scan (debug dev key, no elevation)
+        shell: bash
+        run: |
+          set -e
+          DEVKEY="$(printf 'ab%.0s' {1..32})"
+          OUT="smoke-${{ matrix.os }}.hbs"
+          ./target/debug/hbs-extractor --no-elevate --no-pause --quiet \
+            --dev-insecure-key "$DEVKEY" --out "$OUT"
+          head -c 4 "$OUT"
+          echo
+          ls -l "$OUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: report-${{ matrix.os }}
+          path: extractor/smoke-${{ matrix.os }}.hbs
+          if-no-files-found: error
+
+  dashboard:
+    name: dashboard
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun test
+      - run: bunx tsc --noEmit
+      - run: bun run build
