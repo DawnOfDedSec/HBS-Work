@@ -221,10 +221,10 @@ cd dashboard && bun run ../scripts/e2e-loop.ts
 ```
 
 Linux variants run in **GitHub Actions** and via the local Docker Linux sweep.
-Windows variants run through the **Docker Windows engine**
-(`DockerCli.exe -SwitchWindowsEngine`) with `servercore` LTSC images; GitHub's
-hosted Windows runners cannot run Windows containers, so they are not used for
-the Windows matrix.
+Windows variants run in **GitHub Actions** on real Windows Server runners
+(`windows-2019/2022/2025`, plus an arm64 preview job) and locally through the
+**Docker Windows engine** (`DockerCli.exe -SwitchWindowsEngine`) with
+`servercore` LTSC images.
 
 ## Status and limitations
 

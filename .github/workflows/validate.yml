@@ -8,11 +8,11 @@ on:
 
 # Multi-variant validation.
 #
-#   Linux:  GitHub Actions matrix (real runners, no local Docker).
-#   Windows: run locally through the Docker WINDOWS engine —
-#            scripts/docker-e2e-hosts-windows.ts  (Server Core 2019/2022/2025).
-#            GitHub-hosted Windows runners cannot run Windows containers, so the
-#            Windows matrix is not duplicated here.
+#   Linux:   GitHub Actions (ubuntu-22.04 / 24.04) — build, tests, sealed scan.
+#   Windows: GitHub Actions (windows-2019 / 2022 / 2025, plus arm64 preview) —
+#            the extractor runs NATIVELY on real Windows Server variants.
+#   Windows containers (Server Core LTSC) additionally run locally through the
+#   Docker Windows engine: scripts/docker-e2e-hosts-windows.ts.
 
 jobs:
   extractor-linux:
@@ -28,10 +28,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Build
-        run: cargo build
-      - name: Test
-        run: cargo test -- --skip generate_and_verify_vectors
+      - run: cargo build
+      - run: cargo test -- --skip generate_and_verify_vectors
       - name: Smoke scan (read-only, sealed report)
         shell: bash
         run: |
@@ -42,6 +40,41 @@ jobs:
             --dev-insecure-key "$DEVKEY" --out "$OUT"
           test "$(head -c 4 "$OUT")" = "HBS2"
           ls -l "$OUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: report-${{ matrix.os }}
+          path: extractor/smoke-${{ matrix.os }}.hbs
+          if-no-files-found: error
+
+  extractor-windows:
+    name: extractor (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-2022, experimental: false }
+          - { os: windows-2025, experimental: false }
+          - { os: windows-2019, experimental: true }  # older runner; tolerate retirement
+          - { os: windows-11-arm, experimental: true } # arm64 preview
+    defaults:
+      run:
+        working-directory: extractor
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build
+      - run: cargo test -- --skip generate_and_verify_vectors
+      - name: Smoke scan (read-only, sealed report)
+        shell: pwsh
+        run: |
+          $devkey = "ab" * 32
+          $out = "smoke-${{ matrix.os }}.hbs"
+          ./target/debug/hbs-extractor --no-elevate --no-pause --quiet `
+            --dev-insecure-key $devkey --out $out
+          if ((Get-Content -AsByteStream -TotalCount 4 $out) -ne [byte[]](0x48,0x42,0x53,0x32)) { throw "not HBS2" }
+          Get-Item $out | Select-Object Name, Length
       - uses: actions/upload-artifact@v4
         with:
           name: report-${{ matrix.os }}
