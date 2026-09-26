@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import type { Hono, MiddlewareHandler } from "hono";
 import { createEncryptedBackup, restoreEncryptedBackup } from "./keys";
+import { getNotificationSettings, saveNotificationSettings, type MinSeverity } from "./notifications";
 import { redactDiagnosticText } from "./reports";
 
 // Admin-only endpoints backing the Admin workspace (plan Task 56): the
@@ -123,6 +124,48 @@ export function registerAdminRoutes(
         dueDate: row.due_date,
       })),
     });
+  });
+
+  app.get("/api/admin/notifications/settings", superAdmin, (c) => {
+    return c.json(getNotificationSettings(db));
+  });
+
+  app.put("/api/admin/notifications/settings", superAdmin, async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "expected JSON body" }, 400);
+    }
+    if (typeof body !== "object" || body === null || Array.isArray(body)) {
+      return c.json({ error: "expected a JSON object" }, 400);
+    }
+    const input = body as Record<string, unknown>;
+    const minSeverity: MinSeverity = input.minSeverity === "High" ? "High" : "Critical";
+    let saved: ReturnType<typeof saveNotificationSettings>;
+    try {
+      saved = saveNotificationSettings(
+        db,
+        {
+          enabled: input.enabled === true,
+          url: typeof input.url === "string" ? input.url : "",
+          minSeverity,
+        },
+        actorOf(c),
+      );
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 400);
+    }
+    db.query(
+      `INSERT INTO audit_log (actor, actor_ip, action, resource, details, created_at)
+       VALUES (?, ?, 'notification.settings.update', 'settings:notifications.webhook', ?, ?)`,
+    ).run(
+      actorOf(c),
+      c.req.header("x-forwarded-for") ?? null,
+      JSON.stringify({ enabled: saved.enabled, url: saved.url, minSeverity: saved.minSeverity }),
+      new Date().toISOString(),
+    );
+    return c.json(saved);
   });
 
   app.post("/api/admin/backup", superAdmin, async (c) => {

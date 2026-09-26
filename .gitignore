@@ -9,3 +9,7 @@ dashboard/binaries/
 .claude/
 .rtk/
 CLAUDE.md
+
+# Playwright run artifacts
+dashboard/test-results/
+dashboard/playwright-report/

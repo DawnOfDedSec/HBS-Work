@@ -44,6 +44,7 @@ import {
   upsertHostLocation,
 } from "./hosts";
 import { EventBus, emitReportArrived, reportEvents, type ReportArrivedLinks } from "./sse";
+import { notifyFindings } from "./notifications";
 
 export type Via = "push" | "upload";
 export type PushAuth = { kind: "push"; token: string };
@@ -775,6 +776,21 @@ export async function validateAndIngestEnvelope(
       },
       options.bus ?? reportEvents,
     );
+
+    // 12. Post-commit webhook. Deliberately not awaited so ingest latency is
+    // unaffected; notifyFindings is best effort and never throws.
+    void notifyFindings(db, {
+      source: "host",
+      reportId,
+      campaignId: issuance.campaign_id,
+      locationId: issuance.location_id,
+      label: hostname,
+      findings: report.results.map((entry) => ({
+        checkId: String(entry.id ?? ""),
+        severity: String(entry.severity ?? ""),
+        title: String(entry.title ?? ""),
+      })),
+    });
 
     return {
       ok: true,

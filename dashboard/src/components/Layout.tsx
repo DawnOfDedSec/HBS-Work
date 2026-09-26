@@ -33,6 +33,8 @@ export type LayoutProps = {
   onOpenReport?: (reportId: number) => void;
   /** Open a host by id from the live-activity feed. */
   onOpenHost?: (hostId: number) => void;
+  /** Open a reviewed network device by id from the live-activity feed. */
+  onOpenNetworkDevice?: (deviceId: number) => void;
   /** Open a campaign by id from the command palette. */
   onOpenCampaign?: (campaignId: number) => void;
   breadcrumbs?: BreadcrumbItem[];
@@ -62,6 +64,7 @@ export function Layout({
   onLogout,
   onOpenReport,
   onOpenHost,
+  onOpenNetworkDevice,
   onOpenCampaign,
   breadcrumbs,
   children,
@@ -218,7 +221,7 @@ export function Layout({
             />
 
             <div className="hbs-presentation-hide">
-              <LiveActivity onOpenReport={onOpenReport} onOpenHost={onOpenHost} />
+              <LiveActivity onOpenReport={onOpenReport} onOpenHost={onOpenHost} onOpenNetworkDevice={onOpenNetworkDevice} />
             </div>
 
             <div className="relative" ref={menuRef}>

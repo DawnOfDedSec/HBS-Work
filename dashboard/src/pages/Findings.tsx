@@ -56,6 +56,7 @@ import { useLiveEvents } from "../useLiveEvents";
 import type { AuthUser, CheckResult } from "../types";
 import { CheckDetail } from "./CheckDetail";
 import { ReportDetail } from "./ReportDetail";
+import { NetworkReportDetail } from "./NetworkReportDetail";
 
 /** A serialized finding from `GET /api/findings` (`serializeFinding`). */
 type Finding = {
@@ -65,6 +66,7 @@ type Finding = {
   hostId: number;
   hostname: string;
   displayId: string;
+  source?: "host" | "network";
   checkId: string;
   title: string;
   severity: string;
@@ -121,6 +123,7 @@ const SEVERITY_OPTIONS = ["Critical", "High", "Medium", "Low", "Informational"];
 const STATUS_OPTIONS = ["NonCompliant", "DegradedPartial", "Error", "Compliant", "NotApplicable"];
 const TREATMENT_OPTIONS = ["open", "accepted_risk", "false_positive", "remediated"];
 const DEPTH_OPTIONS = ["AuthoritativePrimary", "AuthoritativeFallback", "DegradedPartial"];
+const SOURCE_OPTIONS = ["host", "network"];
 const PAGE_SIZES = [25, 50, 100, 200];
 
 type CheckAggregate = {
@@ -217,7 +220,14 @@ export function Findings({ role }: { role?: AuthUser["role"] }) {
   const [error, setError] = useState<string | null>(null);
   const [pendingRow, setPendingRow] = useState<string | null>(null);
   const [activeReportId, setActiveReportId] = useState<number | null>(null);
+  const [activeNetworkReportId, setActiveNetworkReportId] = useState<number | null>(null);
   const [activeCheckId, setActiveCheckId] = useState<string | null>(null);
+
+  const isNetworkRow = (row: Finding): boolean => row.source === "network";
+  const openRow = (row: Finding): void => {
+    if (isNetworkRow(row)) setActiveNetworkReportId(row.reportId);
+    else setActiveReportId(row.reportId);
+  };
   const [evidence, setEvidence] = useState<{
     finding: EvidenceFinding;
     reportId: number;
@@ -336,6 +346,16 @@ export function Findings({ role }: { role?: AuthUser["role"] }) {
     [toast],
   );
 
+  if (activeNetworkReportId !== null) {
+    return (
+      <NetworkReportDetail
+        reportId={activeNetworkReportId}
+        canEdit={false}
+        onBack={() => setActiveNetworkReportId(null)}
+      />
+    );
+  }
+
   if (activeReportId !== null) {
     return (
       <ReportDetail
@@ -387,18 +407,24 @@ export function Findings({ role }: { role?: AuthUser["role"] }) {
     {
       key: "displayId",
       header: "Host",
-      render: (row) => (
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            toggle("hostId", String(row.hostId));
-          }}
-          className="rounded text-left text-ink-muted underline decoration-dotted underline-offset-2 hover:text-ink"
-        >
-          {sanitizeText(row.displayId)}
-        </button>
-      ),
+      render: (row) =>
+        isNetworkRow(row) ? (
+          <span className="inline-flex items-center gap-1.5">
+            <Badge tone="info">net</Badge>
+            <span className="text-left text-ink-muted">{sanitizeText(row.displayId)}</span>
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              toggle("hostId", String(row.hostId));
+            }}
+            className="rounded text-left text-ink-muted underline decoration-dotted underline-offset-2 hover:text-ink"
+          >
+            {sanitizeText(row.displayId)}
+          </button>
+        ),
     },
     { key: "severity", header: "Severity", render: (row) => <SeverityBadge severity={row.severity} /> },
     { key: "status", header: "Status", render: (row) => <StatusBadge status={row.status} /> },
@@ -429,27 +455,54 @@ export function Findings({ role }: { role?: AuthUser["role"] }) {
       align: "right",
       render: (row) => (
         <div className="flex items-center justify-end gap-1.5">
-          <Button
-            size="sm"
-            variant="secondary"
-            loading={pendingRow === `${row.reportId}:${row.checkId}`}
-            onClick={(event) => {
-              event.stopPropagation();
-              void openEvidence(row);
-            }}
-          >
-            View
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={(event) => {
-              event.stopPropagation();
-              setActiveReportId(row.reportId);
-            }}
-          >
-            Report
-          </Button>
+          {isNetworkRow(row) ? (
+            <>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setActiveNetworkReportId(row.reportId);
+                }}
+              >
+                View
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setActiveNetworkReportId(row.reportId);
+                }}
+              >
+                Report
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                size="sm"
+                variant="secondary"
+                loading={pendingRow === `${row.reportId}:${row.checkId}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void openEvidence(row);
+                }}
+              >
+                View
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setActiveReportId(row.reportId);
+                }}
+              >
+                Report
+              </Button>
+            </>
+          )}
         </div>
       ),
     },
@@ -632,6 +685,14 @@ export function Findings({ role }: { role?: AuthUser["role"] }) {
               filters={filters}
               onToggle={toggle}
             />
+            <ToolbarDivider />
+            <FilterToggle
+              label="Source"
+              filterKey="source"
+              options={SOURCE_OPTIONS}
+              filters={filters}
+              onToggle={toggle}
+            />
             <ToolbarSpacer />
           </Toolbar>
 
@@ -688,7 +749,7 @@ export function Findings({ role }: { role?: AuthUser["role"] }) {
               rowKey={(row) => `${row.reportId}:${row.checkId}`}
               stickyHeader
               dense={dense}
-              onRowClick={(row) => void openEvidence(row)}
+              onRowClick={(row) => openRow(row)}
             />
           )}
         </Card>

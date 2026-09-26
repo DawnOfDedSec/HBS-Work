@@ -37,9 +37,12 @@ import type { Location } from "../types";
 
 type Props = {
   campaignId: number;
+  /** Session role; controls upload affordances. */
+  role?: string;
   onBack: () => void;
   onOpenHost: (hostId: number) => void;
   onOpenDownloads: (locationId: number) => void;
+  onOpenNetworkDevice?: (deviceId: number) => void;
   onDrilldown: (query: string) => void;
 };
 
@@ -204,7 +207,7 @@ function ReportsPanel({ campaignId, onDrilldown }: { campaignId: number; onDrill
 }
 
 /** Campaign workspace shell. Tabs map to the real findings/locations/telemetry workspaces. */
-export function CampaignDetail({ campaignId, onBack, onOpenHost, onOpenDownloads, onDrilldown }: Props) {
+export function CampaignDetail({ campaignId, role, onBack, onOpenHost, onOpenDownloads, onOpenNetworkDevice, onDrilldown }: Props) {
   const [tab, setTab] = useState<Tab>("summary");
 
   return (
@@ -241,7 +244,13 @@ export function CampaignDetail({ campaignId, onBack, onOpenHost, onOpenDownloads
         <ReportsPanel campaignId={campaignId} onDrilldown={onDrilldown} />
       </TabPanel>
       <TabPanel id="locations" active={tab === "locations"} idBase="campaign-tabs">
-        <Locations campaignId={campaignId} onOpenHost={onOpenHost} onOpenDownloads={onOpenDownloads} />
+        <Locations
+          campaignId={campaignId}
+          role={role}
+          onOpenHost={onOpenHost}
+          onOpenDownloads={onOpenDownloads}
+          onOpenNetworkDevice={onOpenNetworkDevice}
+        />
       </TabPanel>
       <TabPanel id="treatment" active={tab === "treatment"} idBase="campaign-tabs">
         <Treatment />

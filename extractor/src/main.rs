@@ -58,6 +58,13 @@ struct Args {
     /// Suppress progress output
     #[arg(long)]
     quiet: bool,
+    /// Service mode: sleep this many seconds between scans (requires --runs
+    /// greater than 1 to be useful). A scan failure never stops the loop.
+    #[arg(long)]
+    interval: Option<u64>,
+    /// Stop after this many scans (0 = run forever); default 1
+    #[arg(long)]
+    runs: Option<u32>,
     /// Internal: this process was relaunched elevated
     #[arg(long, hide = true)]
     elevated_child: bool,
@@ -65,6 +72,13 @@ struct Args {
     /// dashboard-issued binary. Never compiled into release builds.
     #[arg(long, hide = true)]
     dev_insecure_key: Option<String>,
+}
+
+/// One scan attempt failed; the process exits with `code` in single-run mode
+/// and keeps looping (unless it was the first scan) in service mode.
+struct ScanFailure {
+    code: i32,
+    message: String,
 }
 
 fn severity_from_str(s: &str) -> Option<Severity> {
@@ -121,21 +135,52 @@ fn main() {
         return;
     }
 
+    let runs = args.runs.unwrap_or(1);
+    let interval = args.interval.unwrap_or(3600).max(1);
+    // An elevated child performs exactly one scan; scheduling belongs to the
+    // operator (Task Scheduler / systemd), not to a privileged daemon.
+    let runs = if args.elevated_child { 1 } else { runs };
+
+    for iteration in 0.. {
+        if runs > 0 && iteration >= runs {
+            break;
+        }
+        if iteration > 0 {
+            if !args.quiet {
+                eprintln!("hbs-extractor: next scan in {interval}s");
+            }
+            std::thread::sleep(std::time::Duration::from_secs(interval));
+        }
+        if let Err(failure) = run_once(&args, iteration == 0) {
+            eprintln!("hbs-extractor: {}", failure.message);
+            if iteration == 0 {
+                std::process::exit(failure.code);
+            }
+            eprintln!("hbs-extractor: scan {} failed; the loop continues", iteration + 1);
+        }
+    }
+
+    hbs_extractor::cli::pause_if_interactive(args.no_pause, args.quiet);
+}
+
+/// One complete scan → seal → write → (optional) push cycle.
+fn run_once(args: &Args, allow_elevation: bool) -> Result<(), ScanFailure> {
+    let fail = |code: i32, message: String| ScanFailure { code, message };
+
     // 1. Keyslot: refuse to run when unissued or expired.
-    let slot = resolve_slot(&args).unwrap_or_else(|msg| {
-        eprintln!("hbs-extractor: {msg}");
-        std::process::exit(2);
-    });
+    let slot = resolve_slot(args).map_err(|msg| fail(2, msg))?;
     if let Err(e) = keyslot::check_expiry(&slot) {
-        eprintln!("hbs-extractor: {e}");
-        std::process::exit(2);
+        return Err(fail(2, e.to_string()));
     }
 
     // 1b. Elevation is OPT-IN (--elevate): unprivileged runs are the
     // default; admin-only checks are skipped with an explicit reason.
-    if !args.elevated_child && args.elevate && !args.no_elevate {
+    // Only the first scan of a service loop may trigger the relaunch.
+    if !args.elevated_child && args.elevate && !args.no_elevate && allow_elevation {
         if hbs_extractor::elevate::request_relaunch(false) {
-            return; // elevated child took over; parent exits quietly
+            // The elevated child takes over this scan; the parent loop ends
+            // here and the scheduler (or the child) owns subsequent runs.
+            std::process::exit(0);
         }
     }
 
@@ -158,8 +203,7 @@ fn main() {
         .filter(|rc| min_rank.map(|r| severity_rank(rc.tc.severity) >= r).unwrap_or(true))
         .collect();
     if reg.is_empty() {
-        eprintln!("hbs-extractor: no testcases match the given filters");
-        std::process::exit(3);
+        return Err(fail(3, "no testcases match the given filters".into()));
     }
 
     // 4. Scan.
@@ -241,10 +285,7 @@ fn main() {
         &slot.extractor_id,
         crypto::SUITE_CHACHA20POLY1305,
     )
-        .unwrap_or_else(|e| {
-            eprintln!("hbs-extractor: sealing failed: {e}");
-            std::process::exit(3);
-        });
+        .map_err(|e| fail(3, format!("sealing failed: {e}")))?;
 
     // Default output: alongside the extractor binary itself (its own
     // directory), never the current working directory — operators run it from
@@ -259,10 +300,7 @@ fn main() {
             .to_string_lossy()
             .into_owned()
     });
-    std::fs::write(&path, &envelope).unwrap_or_else(|e| {
-        eprintln!("hbs-extractor: cannot write {path}: {e}");
-        std::process::exit(3);
-    });
+    std::fs::write(&path, &envelope).map_err(|e| fail(3, format!("cannot write {path}: {e}")))?;
 
     // 6. Optional push, then closing summary. The local report is already
     // written; a network push failure never discards it or fails the scan.
@@ -273,10 +311,7 @@ fn main() {
                 std::env::var("HBS_PUSH_TOKEN").ok(),
                 args.push_token_file.as_deref(),
             )
-            .unwrap_or_else(|e| {
-                eprintln!("hbs-extractor: {e}");
-                std::process::exit(3);
-            });
+            .map_err(|e| fail(3, format!("{e}")))?;
             let policy = hbs_extractor::push::PushPolicy::default();
             let extractor_id = keyslot::hex_id(&slot.extractor_id);
             match hbs_extractor::push::push_report(url, &envelope, &token, &extractor_id, &policy) {
@@ -290,7 +325,7 @@ fn main() {
     };
     ui.finish(&rep.summary, &path, push_status.as_deref());
 
-    hbs_extractor::cli::pause_if_interactive(args.no_pause, args.quiet);
+    Ok(())
 }
 
 /// Run checks, streaming each result to the progress display as it

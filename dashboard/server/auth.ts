@@ -3,7 +3,13 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 
 export type UserRole = "super_admin" | "auditor" | "viewer";
-export type AuthUser = { id: number; username: string; role: UserRole };
+export type AuthUser = {
+  id: number;
+  username: string;
+  role: UserRole;
+  /** Campaign ids this user may see; null/undefined = unrestricted. */
+  allowedCampaigns?: number[] | null;
+};
 export type AuthEnv = { Variables: { user: AuthUser } };
 
 const SESSION_COOKIE = "hbs_session";
@@ -69,6 +75,21 @@ function sessionUser(db: Database, token: string | undefined, now: number): Auth
   return resolveSessionUser(db, token, now);
 }
 
+/** Parse the stored campaign restriction; anything malformed = unrestricted. */
+export function parseAllowedCampaigns(raw: string | null | undefined): number[] | null {
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    const ids = parsed
+      .map((value) => (typeof value === "number" ? value : Number(value)))
+      .filter((value) => Number.isSafeInteger(value) && value > 0);
+    return ids.length > 0 ? [...new Set(ids)] : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Resolve a raw session token to its active user, or null. Additive export
  * (Task 47): the issuance download route authenticates session cookie holders
@@ -82,12 +103,17 @@ export function resolveSessionUser(
 ): AuthUser | null {
   if (!token) return null;
   const row = db.query(`
-    SELECT users.id, users.username, users.role, users.active
+    SELECT users.id, users.username, users.role, users.active, users.allowed_campaigns
     FROM sessions JOIN users ON users.id = sessions.user_id
     WHERE sessions.token_hash = ? AND sessions.expires_at > ?
   `).get(hashToken(token), iso(now)) as UserRow | null;
   if (!row || !row.active) return null;
-  return { id: row.id, username: row.username, role: row.role };
+  return {
+    id: row.id,
+    username: row.username,
+    role: row.role,
+    allowedCampaigns: parseAllowedCampaigns((row as { allowed_campaigns?: string | null }).allowed_campaigns),
+  };
 }
 
 /** Reads the session cookie out of a raw `Cookie:` header value. */

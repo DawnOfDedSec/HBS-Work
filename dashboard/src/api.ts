@@ -8,6 +8,14 @@ import type {
   Report,
   TreatmentState,
 } from "./types";
+import type {
+  NetworkDeviceDetail,
+  NetworkDeviceSummary,
+  NetworkDiffResponse,
+  NetworkReportDetail,
+  NetworkTreatmentHistoryEntry,
+  NetworkUploadResult,
+} from "./network-types";
 import { serializeFilters, type ScopeFilters } from "./filters";
 
 export type ApiErrorBody = { error?: string; code?: string };
@@ -188,6 +196,89 @@ export class ApiClient {
       throw new ApiError(response.status, parsed.code ?? `HTTP_${response.status}`, parsed.error ?? response.statusText);
     }
     return parsed;
+  }
+
+  // --- network device / firewall config review ---
+  async uploadNetworkConfigs(
+    campaignId: number,
+    locationId: number,
+    files: File[],
+  ): Promise<{ results: { name: string; result: NetworkUploadResult }[] }> {
+    const form = new FormData();
+    form.append("campaignId", String(campaignId));
+    form.append("locationId", String(locationId));
+    for (const file of files) form.append("files", file, file.name);
+    const response = await this.doFetch(`${this.baseUrl}/api/network/upload`, {
+      method: "POST",
+      body: form,
+      credentials: "include",
+    });
+    const text = await response.text();
+    const parsed = text ? JSON.parse(text) : {};
+    if (!response.ok) {
+      throw new ApiError(response.status, parsed.code ?? `HTTP_${response.status}`, parsed.error ?? response.statusText);
+    }
+    return parsed;
+  }
+
+  listNetworkDevices(filter: { campaignId?: number; locationId?: number }) {
+    const key = filter.locationId !== undefined ? `locationId=${filter.locationId}` : `campaignId=${filter.campaignId}`;
+    return this.request<{ devices: NetworkDeviceSummary[] }>("GET", `/api/network/devices?${key}`);
+  }
+
+  getNetworkDevice(deviceId: number) {
+    return this.request<NetworkDeviceDetail>("GET", `/api/network/devices/${deviceId}`);
+  }
+
+  getNetworkReport(reportId: number) {
+    return this.request<NetworkReportDetail>("GET", `/api/network/reports/${reportId}`);
+  }
+
+  updateNetworkTreatment(
+    reportId: number,
+    checkId: string,
+    input: { state: TreatmentState; justification?: string; assignee?: string; dueDate?: string },
+  ) {
+    return this.request<{ reportId: number; checkId: string; state: TreatmentState; updatedAt: string }>(
+      "POST",
+      `/api/network/reports/${reportId}/findings/${encodeURIComponent(checkId)}/treatment`,
+      input,
+    );
+  }
+
+  getNetworkTreatmentHistory(reportId: number, checkId: string) {
+    return this.request<{ reportId: number; checkId: string; history: NetworkTreatmentHistoryEntry[] }>(
+      "GET",
+      `/api/network/reports/${reportId}/findings/${encodeURIComponent(checkId)}/history`,
+    );
+  }
+
+  bulkUpdateNetworkTreatment(
+    reportId: number,
+    input: { checkIds: string[]; state: TreatmentState; justification?: string; assignee?: string; dueDate?: string },
+  ) {
+    return this.request<{
+      reportId: number;
+      state: TreatmentState;
+      applied: Array<{ checkId: string; state: TreatmentState; historyId: number }>;
+      skipped: Array<{ checkId: string; reason: string }>;
+    }>("POST", `/api/network/reports/${reportId}/findings/treatment-bulk`, input);
+  }
+
+  getNetworkDiff(deviceId: number, params: { from?: number; to?: number } = {}) {
+    const query = new URLSearchParams();
+    if (params.from !== undefined) query.set("from", String(params.from));
+    if (params.to !== undefined) query.set("to", String(params.to));
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return this.request<NetworkDiffResponse>("GET", `/api/network/devices/${deviceId}/diff${suffix}`);
+  }
+
+  networkExportUrl(kind: "report" | "device", id: number, format: "xlsx" | "csv") {
+    return `${this.baseUrl}/api/network/${kind === "report" ? "reports" : "devices"}/${id}/export?format=${format}`;
+  }
+
+  deleteNetworkDevice(deviceId: number) {
+    return this.request<{ deleted: boolean; deviceId: number }>("DELETE", `/api/network/devices/${deviceId}`);
   }
 
   exportUrl(scope: "report" | "campaign", id: number, format: "xlsx" | "csv" | "pdf" | "docx") {

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  BellRing,
   DatabaseBackup,
   KeyRound,
   ScrollText,
@@ -14,14 +15,16 @@ import type { AuthUser } from "../types";
 import { Audit } from "./admin/Audit";
 import { Backup } from "./admin/Backup";
 import { Keys } from "./admin/Keys";
+import { Notifications } from "./admin/Notifications";
 import { Retention } from "./admin/Retention";
 import { Users } from "./admin/Users";
 
-type Tab = "users" | "keys" | "retention" | "audit" | "backup";
+type Tab = "users" | "keys" | "notifications" | "retention" | "audit" | "backup";
 
 const TAB_META: Array<{ value: Tab; label: string; icon: LucideIcon }> = [
   { value: "users", label: "Users", icon: UsersRound },
   { value: "keys", label: "Keys", icon: KeyRound },
+  { value: "notifications", label: "Notifications", icon: BellRing },
   { value: "retention", label: "Retention", icon: Trash2 },
   { value: "audit", label: "Audit", icon: ScrollText },
   { value: "backup", label: "Backup", icon: DatabaseBackup },
@@ -71,6 +74,9 @@ export function AdminHub({ role }: { role: AuthUser["role"] }) {
       </TabPanel>
       <TabPanel id="keys" active={tab === "keys"} idBase="admin-tabs">
         <Keys role={role} />
+      </TabPanel>
+      <TabPanel id="notifications" active={tab === "notifications"} idBase="admin-tabs">
+        <Notifications role={role} />
       </TabPanel>
       <TabPanel id="retention" active={tab === "retention"} idBase="admin-tabs">
         <Retention role={role} />

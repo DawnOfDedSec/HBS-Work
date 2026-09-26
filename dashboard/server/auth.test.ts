@@ -75,7 +75,7 @@ describe("auth routes", () => {
     const status = await app.request("/api/auth/status", { headers: { cookie } });
     expect(await status.json()).toEqual({
       initialized: true,
-      user: { id: 1, username: "admin", role: "super_admin" },
+      user: { id: 1, username: "admin", role: "super_admin", allowedCampaigns: null },
       role: "super_admin",
     });
 

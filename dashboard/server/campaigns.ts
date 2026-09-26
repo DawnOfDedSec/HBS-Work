@@ -168,10 +168,37 @@ export function createCampaignRoutes(db: Database, auth: CampaignAuth): Hono<any
   prepareTables(db);
   const app = new Hono<any>();
 
+  // Per-campaign access fence: restricted users may only touch listed
+  // campaigns. super_admin is always unrestricted. Applied before the
+  // parameterised routes so every `/api/campaigns/:id…` path is covered.
+  const campaignGate: MiddlewareHandler = async (c, next) => {
+    const user = c.get("user") as { role: string; allowedCampaigns?: number[] | null } | undefined;
+    if (user && user.role !== "super_admin" && Array.isArray(user.allowedCampaigns) && user.allowedCampaigns.length > 0) {
+      const requested = Number(c.req.param("id"));
+      if (!Number.isSafeInteger(requested) || !user.allowedCampaigns.includes(requested)) {
+        return c.json({ error: "forbidden" }, 403);
+      }
+    }
+    await next();
+  };
+  app.use("/api/campaigns/:id", campaignGate);
+  app.use("/api/campaigns/:id/*", campaignGate);
+
+  const visibleCampaigns = (c: any): CampaignRow[] => {
+    const user = c.get("user") as { role: string; allowedCampaigns?: number[] | null } | undefined;
+    const rows = db.query("SELECT * FROM campaigns ORDER BY id").all() as CampaignRow[];
+    if (!user || user.role === "super_admin" || !Array.isArray(user.allowedCampaigns) || user.allowedCampaigns.length === 0) {
+      return rows;
+    }
+    const allowed = new Set(user.allowedCampaigns);
+    return rows.filter((row) => allowed.has(row.id));
+  };
+
   app.get("/api/campaigns", auth.requireRole("super_admin", "auditor", "viewer"), (c) => {
     const tag = c.req.query("tag");
-    const rows = db.query("SELECT * FROM campaigns ORDER BY id").all() as CampaignRow[];
-    return c.json(rows.filter((row) => !tag || (JSON.parse(row.tags) as string[]).includes(tag)).map((row) => serializeCampaign(row)));
+    return c.json(visibleCampaigns(c)
+      .filter((row) => !tag || (JSON.parse(row.tags) as string[]).includes(tag))
+      .map((row) => serializeCampaign(row)));
   });
 
   app.post("/api/campaigns", auth.requireRole("super_admin", "auditor"), async (c) => {

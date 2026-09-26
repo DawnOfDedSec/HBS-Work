@@ -22,6 +22,7 @@ export const FILTER_KEYS = [
   "extractorVersion",
   "platform",
   "evidenceDepth",
+  "source",
   "q",
 ] as const;
 

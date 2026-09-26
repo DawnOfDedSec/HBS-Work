@@ -286,6 +286,115 @@ export const MIGRATIONS: Migration[] = [
          VALUES ('freshness_sla_hours', '24', strftime('%Y-%m-%dT%H:%M:%fZ','now'))`,
     ],
   },
+  {
+    // Network device / firewall configuration review (uploads).
+    // Mirrors the host model: stable device identity, per-location presence,
+    // one row per uploaded config version, and a treatment projection for
+    // configuration-review findings with append-only history.
+    version: 3,
+    up: [
+      `CREATE TABLE IF NOT EXISTS network_devices (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        device_key TEXT NOT NULL UNIQUE,
+        hostname TEXT,
+        vendor TEXT NOT NULL,
+        device_type TEXT,
+        model TEXT,
+        os_version TEXT,
+        serial TEXT,
+        first_seen_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL
+      )`,
+      `CREATE TABLE IF NOT EXISTS network_device_locations (
+        device_id INTEGER NOT NULL REFERENCES network_devices(id),
+        location_id INTEGER NOT NULL REFERENCES locations(id),
+        first_seen_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL,
+        PRIMARY KEY (device_id, location_id)
+      )`,
+      `CREATE TABLE IF NOT EXISTS network_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        device_id INTEGER NOT NULL REFERENCES network_devices(id),
+        location_id INTEGER NOT NULL REFERENCES locations(id),
+        campaign_id INTEGER NOT NULL REFERENCES campaigns(id),
+        config_name TEXT NOT NULL,
+        config_sha256 TEXT NOT NULL,
+        config_size INTEGER NOT NULL,
+        config_text TEXT NOT NULL,
+        parsed_json TEXT NOT NULL,
+        findings_json TEXT NOT NULL,
+        summary_json TEXT,
+        score REAL,
+        received_at TEXT NOT NULL,
+        uploaded_by TEXT,
+        UNIQUE (device_id, location_id, config_sha256)
+      )`,
+      `CREATE TABLE IF NOT EXISTS network_finding_states (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        report_id INTEGER NOT NULL REFERENCES network_reports(id),
+        check_id TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'open'
+          CHECK (state IN ('open','accepted_risk','false_positive','remediated')),
+        assignee TEXT,
+        due_date TEXT,
+        updated_at TEXT NOT NULL,
+        UNIQUE (report_id, check_id)
+      )`,
+      `CREATE TABLE IF NOT EXISTS network_finding_state_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        finding_state_id INTEGER NOT NULL REFERENCES network_finding_states(id),
+        actor TEXT,
+        changed_at TEXT NOT NULL,
+        from_state TEXT,
+        to_state TEXT NOT NULL,
+        justification TEXT,
+        assignee TEXT,
+        due_date TEXT
+      )`,
+      // append-only enforcement for the network treatment history: updates are
+      // rejected outright. Row deletion stays possible only for the device
+      // cascade delete, which removes the whole treatment lineage.
+      `CREATE TRIGGER IF NOT EXISTS trg_network_finding_state_history_no_update
+        BEFORE UPDATE ON network_finding_state_history
+        BEGIN SELECT RAISE(ABORT, 'network_finding_state_history is append-only'); END`,
+      // projection updates append history automatically
+      `CREATE TRIGGER IF NOT EXISTS trg_network_finding_states_history_insert
+        AFTER UPDATE OF state ON network_finding_states
+        BEGIN
+          INSERT INTO network_finding_state_history
+            (finding_state_id, actor, changed_at, from_state, to_state, justification, assignee, due_date)
+          VALUES
+            (NEW.id, NEW.assignee, strftime('%Y-%m-%dT%H:%M:%fZ','now'), OLD.state, NEW.state, NULL, NEW.assignee, NEW.due_date);
+        END`,
+      `CREATE INDEX IF NOT EXISTS idx_network_device_locations_location ON network_device_locations(location_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_network_reports_device ON network_reports(device_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_network_reports_location ON network_reports(location_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_network_reports_campaign ON network_reports(campaign_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_network_reports_device_time ON network_reports(device_id, received_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_network_finding_states_report ON network_finding_states(report_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_network_finding_states_state ON network_finding_states(state)`,
+      `CREATE INDEX IF NOT EXISTS idx_network_finding_state_history_state ON network_finding_state_history(finding_state_id)`,
+    ],
+  },
+  {
+    // Webhook notification settings. v1 already created a scalar
+    // `settings(key, value, updated_at)` table that reports.ts still reads
+    // (`value` for retention/freshness), so v4 extends it in place with a JSON
+    // payload + actor column instead of recreating it. Notification config
+    // lives under the `notifications.webhook` key; legacy scalar rows are
+    // untouched (their `value_json` defaults to `{}`).
+    version: 4,
+    up: [
+      `ALTER TABLE settings ADD COLUMN value_json TEXT NOT NULL DEFAULT '{}'`,
+      `ALTER TABLE settings ADD COLUMN updated_by TEXT`,
+    ],
+  },
+  {
+    // Per-campaign access restriction. NULL or an empty array means
+    // "unrestricted"; otherwise the user only sees the listed campaigns.
+    version: 5,
+    up: [`ALTER TABLE users ADD COLUMN allowed_campaigns TEXT`],
+  },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

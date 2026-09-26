@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDb, runMigrations } from "./db";
 import { registerAdminRoutes } from "./admin";
+import { DEFAULT_SETTINGS } from "./notifications";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -23,6 +24,7 @@ function superAdminAuth(): { requireRole: (...roles: string[]) => MiddlewareHand
     requireRole: () =>
       (async (c: any, next: any) => {
         c.set("user", { id: 1, username: "root", role: "super_admin" });
+        
         await next();
       }) as MiddlewareHandler,
   };
@@ -50,6 +52,55 @@ describe("admin audit trail", () => {
     expect(body.total).toBe(1);
     expect(body.events[0]?.action).toBe("campaign.create");
     expect(typeof body.events[0]?.details).toBe("string");
+    db.close();
+  });
+});
+
+describe("notification settings routes", () => {
+  it("returns defaults for a fresh install", async () => {
+    const { db, app } = harness(root());
+    const response = await app.request("/api/admin/notifications/settings");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(DEFAULT_SETTINGS);
+    db.close();
+  });
+
+  it("persists valid settings and records the audit action", async () => {
+    const { db, app } = harness(root());
+    const response = await app.request("/api/admin/notifications/settings", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ enabled: true, url: "https://example.test/hook", minSeverity: "High" }),
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body).toEqual({
+      enabled: true,
+      url: "https://example.test/hook",
+      minSeverity: "High",
+      lastFiredAt: null,
+    });
+
+    const fetched = await app.request("/api/admin/notifications/settings");
+    expect(await fetched.json()).toEqual(body);
+
+    const audit = db
+      .query("SELECT actor, action, resource FROM audit_log WHERE action = 'notification.settings.update'")
+      .get() as { actor: string; action: string; resource: string } | null;
+    expect(audit?.actor).toBe("root");
+    expect(audit?.resource).toBe("settings:notifications.webhook");
+    db.close();
+  });
+
+  it("rejects an invalid webhook url", async () => {
+    const { db, app } = harness(root());
+    const response = await app.request("/api/admin/notifications/settings", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ enabled: true, url: "not-a-url", minSeverity: "Critical" }),
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "invalid webhook url" });
     db.close();
   });
 });

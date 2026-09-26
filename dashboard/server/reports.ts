@@ -26,6 +26,7 @@ import {
 import { registerSavedViewRoutes } from "./saved_views";
 import { registerDiagnosticRoutes } from "./diagnostic";
 import { percentile } from "./telemetry";
+import type { NetworkFinding } from "./network/review";
 
 export type ReportAuth = {
   requireRole: (...roles: string[]) => MiddlewareHandler;
@@ -98,6 +99,8 @@ type Finding = {
   hostId: number;
   hostname: string;
   displayId: string;
+  /** Finding origin: sealed host report or uploaded network config. */
+  source: "host" | "network";
   checkId: string;
   title: string;
   severity: string;
@@ -269,7 +272,22 @@ export function parseRequestQuery(
   c: any,
   options: { campaignId?: number | null } = {},
 ): ParsedOrError {
-  const parsed = parseQuery(new URL(c.req.url).search, options);
+  // Per-campaign access fence: intersect nothing client-supplied — the
+  // restriction comes solely from the session user record.
+  const user = c.get("user") as { allowedCampaigns?: number[] | null } | undefined;
+  const fence = user?.allowedCampaigns ?? null;
+  const campaignId = options.campaignId ?? null;
+  if (campaignId !== null && fence !== null && !fence.includes(campaignId)) {
+    // Handled as an empty result fence; callers with a path-scoped campaign
+    // should gate earlier via requireCampaignAccess.
+    const parsed = parseQuery(new URL(c.req.url).search, { campaignIds: [] });
+    if (!parsed.ok) return { ok: false, response: errorResponse(c, parsed) };
+    return { ok: true, query: parsed.query };
+  }
+  const parsed = parseQuery(new URL(c.req.url).search, {
+    campaignId,
+    campaignIds: fence,
+  });
   if (!parsed.ok) return { ok: false, response: errorResponse(c, parsed) };
   return { ok: true, query: parsed.query };
 }
@@ -372,8 +390,10 @@ function collectScopeWithExtra(db: Database, query: NormalizedQuery, extra?: Sql
   const selectedReports = query.scope === "latest" ? latestPerHost(allReports) : allReports;
   const treatments = treatmentMap(db, selectedReports.map((report) => report.id));
   const findings: Finding[] = [];
+  const includeHost = query.filters.source.length === 0 || query.filters.source.includes("host");
 
   for (const report of selectedReports) {
+    if (!includeHost) continue;
     const doc = parseReportDoc(report.report_json);
     const scan = isRecord(doc.scan) ? doc.scan : {};
     const extractorVersion = asString(scan.extractorVersion);
@@ -392,6 +412,7 @@ function collectScopeWithExtra(db: Database, query: NormalizedQuery, extra?: Sql
         hostId: report.host_id,
         hostname,
         displayId: displayId(hostname, report.host_machine_id),
+        source: "host",
         checkId,
         title: String(result.title ?? ""),
         severity: String(result.severity ?? ""),
@@ -418,8 +439,157 @@ function collectScopeWithExtra(db: Database, query: NormalizedQuery, extra?: Sql
     }
   }
 
+  if (sourceIncludesNetwork(query)) {
+    findings.push(...collectNetworkFindings(db, query));
+  }
+
   findings.sort(compareFindings);
   return { query, selectedReports, allReports, findings };
+}
+
+// ---------------------------------------------------------------------------
+// Network configuration findings (same Finding shape, source = "network")
+// ---------------------------------------------------------------------------
+
+type NetworkReportSourceRow = {
+  id: number;
+  device_id: number;
+  campaign_id: number;
+  location_id: number;
+  received_at: string;
+  score: number | null;
+  findings_json: string;
+  hostname: string | null;
+  vendor: string;
+  os_version: string | null;
+};
+
+function networkReportsForScope(db: Database, query: NormalizedQuery): NetworkReportSourceRow[] {
+  const clauses: string[] = [];
+  const params: SqlValue[] = [];
+  if (query.campaignIds.length > 0) {
+    clauses.push(`nr.campaign_id IN (${query.campaignIds.map(() => "?").join(", ")})`);
+    params.push(...query.campaignIds);
+  } else if (query.campaignId !== null) {
+    clauses.push("nr.campaign_id = ?");
+    params.push(query.campaignId);
+  }
+  if (query.filters.locationId.length > 0) {
+    clauses.push(`nr.location_id IN (${query.filters.locationId.map(() => "?").join(", ")})`);
+    params.push(...query.filters.locationId);
+  }
+  if (query.filters.reportId.length > 0) {
+    clauses.push(`nr.id IN (${query.filters.reportId.map(() => "?").join(", ")})`);
+    params.push(...query.filters.reportId);
+  }
+  if (query.filters.from !== null) {
+    clauses.push("nr.received_at >= ?");
+    params.push(query.filters.from);
+  }
+  if (query.filters.to !== null) {
+    clauses.push("nr.received_at <= ?");
+    params.push(query.filters.to);
+  }
+  const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+  return db
+    .query(
+      `SELECT nr.id, nr.device_id, nr.campaign_id, nr.location_id, nr.received_at, nr.score, nr.findings_json,
+              d.hostname, d.vendor, d.os_version
+         FROM network_reports nr
+         JOIN network_devices d ON d.id = nr.device_id
+         ${where}
+        ORDER BY nr.received_at DESC, nr.id DESC`,
+    )
+    .all(...params) as NetworkReportSourceRow[];
+}
+
+function sourceIncludesNetwork(query: NormalizedQuery): boolean {
+  return query.filters.source.length === 0 || query.filters.source.includes("network");
+}
+
+function collectNetworkFindings(db: Database, query: NormalizedQuery): Finding[] {
+  const rows = networkReportsForScope(db, query);
+  const selected = query.scope === "latest" ? latestPerDevice(rows) : rows;
+  const findings: Finding[] = [];
+  for (const row of selected) {
+    let parsed: NetworkFinding[] = [];
+    try {
+      parsed = JSON.parse(row.findings_json) as NetworkFinding[];
+    } catch {
+      parsed = [];
+    }
+    const treatments = networkTreatmentMapFor(db, row.id);
+    const label = row.hostname ?? `device #${row.device_id}`;
+    for (const finding of parsed) {
+      const result: Record<string, unknown> = {
+        id: finding.checkId,
+        title: finding.title,
+        description: finding.description,
+        category: finding.category,
+        severity: finding.severity,
+        status: finding.status,
+        recommendation: finding.recommendation,
+        references: finding.references,
+      };
+      if (!matchesResult(result, query, null)) continue;
+      const state = treatments.get(finding.checkId) ?? "open";
+      if (query.filters.treatment.length > 0 && !query.filters.treatment.includes(state)) continue;
+      findings.push({
+        reportId: row.id,
+        campaignId: row.campaign_id,
+        locationId: row.location_id,
+        hostId: 0,
+        hostname: label,
+        displayId: label,
+        source: "network",
+        checkId: finding.checkId,
+        title: finding.title,
+        severity: finding.severity,
+        status: finding.status,
+        category: finding.category,
+        references: finding.references,
+        treatment: state,
+        treatmentAssignee: null,
+        treatmentDueDate: null,
+        treatmentUpdatedAt: null,
+        extractorVersion: null,
+        platform: "Network",
+        os: row.os_version ? `${row.vendor} ${row.os_version}` : row.vendor,
+        arch: null,
+        via: "upload",
+        evidenceDepth: null,
+        receivedAt: row.received_at,
+        scanTimestamp: null,
+        reportScore: row.score,
+        reportCoverage: null,
+        links: {
+          campaign: `/api/campaigns/${row.campaign_id}`,
+          location: `/api/campaigns/${row.campaign_id}/locations/${row.location_id}`,
+          device: `/api/network/devices/${row.device_id}`,
+          report: `/api/network/reports/${row.id}`,
+        },
+        result,
+      });
+    }
+  }
+  return findings;
+}
+
+function latestPerDevice(rows: NetworkReportSourceRow[]): NetworkReportSourceRow[] {  const seen = new Set<number>();
+  const out: NetworkReportSourceRow[] = [];
+  for (const row of rows) {
+    if (seen.has(row.device_id)) continue;
+    seen.add(row.device_id);
+    out.push(row);
+  }
+  return out;
+}
+
+function networkTreatmentMapFor(db: Database, reportId: number): Map<string, string> {
+  const rows = db
+    .query("SELECT check_id, state FROM network_finding_states WHERE report_id = ?")
+    .all(reportId) as Array<{ check_id: string; state: string }>;
+  return new Map(rows.map((row) => [row.check_id, row.state]));
 }
 
 export function collectScope(db: Database, query: NormalizedQuery): ScopeData {
@@ -966,6 +1136,7 @@ function serializeFinding(finding: Finding): Record<string, unknown> {
     hostId: finding.hostId,
     hostname: finding.hostname,
     displayId: finding.displayId,
+    source: finding.source,
     checkId: finding.checkId,
     title: finding.title,
     severity: finding.severity,

@@ -33,6 +33,7 @@ export const FILTER_KEYS = [
   "extractorVersion",
   "platform",
   "evidenceDepth",
+  "source",
   "q",
 ] as const;
 
@@ -89,6 +90,8 @@ export const ALLOWED_EVIDENCE_DEPTH: readonly string[] = [
   "AuthoritativeFallback",
   "DegradedPartial",
 ];
+/** Finding origin: sealed host reports or uploaded network configs. */
+export const ALLOWED_SOURCE: readonly string[] = ["host", "network"];
 
 const CASE_INSENSITIVE: Record<string, readonly string[]> = {
   platform: ALLOWED_PLATFORM,
@@ -148,6 +151,7 @@ export type QueryFilters = {
   extractorVersion: readonly string[];
   platform: readonly string[];
   evidenceDepth: readonly string[];
+  source: readonly string[];
   from: string | null;
   to: string | null;
   q: string | null;
@@ -163,6 +167,8 @@ export type NormalizedQuery = {
   scope: Scope;
   filters: QueryFilters;
   campaignId: number | null;
+  /** Server-derived campaign fence (path scope + user restriction); empty = all. */
+  campaignIds: readonly number[];
   pagination: Pagination;
   /** Keys present in the query string that are not canonical (safe to ignore). */
   ignored: readonly string[];
@@ -175,6 +181,8 @@ export type QueryParseOk = { ok: true; query: NormalizedQuery };
 export type ParseQueryOptions = {
   /** Campaign scope supplied by a route path (e.g. `/api/campaigns/:id/summary`). */
   campaignId?: number | null;
+  /** Server-side access restriction from the session user (per-campaign scoping). */
+  campaignIds?: readonly number[] | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -324,6 +332,8 @@ export function parseQuery(search: string, options: ParseQueryOptions = {}): Que
     ALLOWED_EVIDENCE_DEPTH,
   );
   if (!evidenceDepth.ok) return evidenceDepth;
+  const source = parseEnum("source", valuesFor("source"), ALLOWED_SOURCE);
+  if (!source.ok) return source;
 
   // --- free strings ---
   const category = parseBoundedStrings(valuesFor("category"), MAX_CATEGORY_LENGTH);
@@ -432,6 +442,15 @@ export function parseQuery(search: string, options: ParseQueryOptions = {}): Que
       ? options.campaignId
       : null;
 
+  // The campaign fence is server-derived (route path + session user
+  // restriction); the client can never widen it through the query string.
+  let campaignIds: number[] = [];
+  if (campaignId !== null) {
+    campaignIds = [campaignId];
+  } else if (options.campaignIds && options.campaignIds.length > 0) {
+    campaignIds = [...options.campaignIds];
+  }
+
   const filters: QueryFilters = Object.freeze({
     severity: Object.freeze(severity.values),
     category: Object.freeze(category),
@@ -447,6 +466,7 @@ export function parseQuery(search: string, options: ParseQueryOptions = {}): Que
     extractorVersion: Object.freeze(extractorVersion),
     platform: Object.freeze(platform.values),
     evidenceDepth: Object.freeze(evidenceDepth.values),
+    source: Object.freeze(source.values),
     from,
     to,
     q,
@@ -462,6 +482,7 @@ export function parseQuery(search: string, options: ParseQueryOptions = {}): Que
     scope,
     filters,
     campaignId,
+    campaignIds: Object.freeze(campaignIds),
     pagination,
     ignored: Object.freeze([...ignored]),
     raw,
@@ -509,6 +530,7 @@ export function buildReportWhere(query: NormalizedQuery, options: BuildWhereOpti
   inClause("location_id", query.filters.locationId);
   inClause("host_id", query.filters.hostId);
   inClause("id", query.filters.reportId);
+  inClause("campaign_id", query.campaignIds);
   inClause("via", query.filters.via);
   inClause("privilege_level", query.filters.privilege);
   inClause("evidence_depth", query.filters.evidenceDepth);
@@ -562,6 +584,7 @@ export function serializeQuery(query: NormalizedQuery): string {
   add("extractorVersion", query.filters.extractorVersion);
   add("platform", query.filters.platform);
   add("evidenceDepth", query.filters.evidenceDepth);
+  add("source", query.filters.source);
   if (query.filters.from !== null) params.set("from", query.filters.from);
   if (query.filters.to !== null) params.set("to", query.filters.to);
   if (query.filters.q !== null) params.set("q", query.filters.q);

@@ -46,6 +46,7 @@ type TreatmentFinding = {
   hostId: number;
   hostname: string;
   displayId: string;
+  source?: "host" | "network";
   checkId: string;
   title: string;
   severity: string;
@@ -191,9 +192,12 @@ export function Treatment() {
       finding: TreatmentFinding,
       input: { state: TreatmentState; justification: string; assignee: string; dueDate: string },
     ) => {
+      const isNetwork = finding.source === "network";
       const response = await api.raw<TreatmentMutation>(
         "POST",
-        `/api/reports/${finding.reportId}/findings/${encodeURIComponent(finding.checkId)}/treatment`,
+        isNetwork
+          ? `/api/network/reports/${finding.reportId}/findings/${encodeURIComponent(finding.checkId)}/treatment`
+          : `/api/reports/${finding.reportId}/findings/${encodeURIComponent(finding.checkId)}/treatment`,
         {
           state: input.state,
           ...(input.justification ? { justification: input.justification } : {}),
@@ -423,7 +427,9 @@ function TreatmentModal({
     api
       .raw<{ history: HistoryEntry[] }>(
         "GET",
-        `/api/reports/${finding.reportId}/findings/${encodeURIComponent(finding.checkId)}/history`,
+        finding.source === "network"
+          ? `/api/network/reports/${finding.reportId}/findings/${encodeURIComponent(finding.checkId)}/history`
+          : `/api/reports/${finding.reportId}/findings/${encodeURIComponent(finding.checkId)}/history`,
       )
       .then((response) => {
         if (alive) setHistory(Array.isArray(response.history) ? response.history : []);

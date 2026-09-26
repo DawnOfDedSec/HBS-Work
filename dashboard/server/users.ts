@@ -1,9 +1,9 @@
 import type { Database } from "bun:sqlite";
 import { Hono } from "hono";
-import { normalizeUsername, requireAuth, requireRole, type AuthEnv, type UserRole } from "./auth";
+import { normalizeUsername, parseAllowedCampaigns, requireAuth, requireRole, type AuthEnv, type UserRole } from "./auth";
 
 const roles = new Set<UserRole>(["super_admin", "auditor", "viewer"]);
-type MutableUser = { username?: unknown; password?: unknown; role?: unknown; active?: unknown };
+type MutableUser = { username?: unknown; password?: unknown; role?: unknown; active?: unknown; allowedCampaigns?: unknown };
 
 function isoNow(): string {
   return new Date().toISOString();
@@ -27,14 +27,45 @@ function activeSuperAdmins(db: Database): number {
   return (db.query("SELECT COUNT(*) AS count FROM users WHERE role = 'super_admin' AND active = 1").get() as { count: number }).count;
 }
 
+/** Validate an allowedCampaigns payload: null = unrestricted, else positive ints. */
+function parseCampaignRestriction(value: unknown): number[] | null | Error {
+  if (value === null || value === undefined) return null;
+  if (!Array.isArray(value)) return new Error("allowedCampaigns must be null or an array of campaign ids");
+  const ids: number[] = [];
+  for (const entry of value) {
+    const id = typeof entry === "number" ? entry : Number(entry);
+    if (!Number.isSafeInteger(id) || id <= 0) return new Error("allowedCampaigns must contain positive integers");
+    if (!ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
+function currentAllowedRaw(db: Database, id: number): string | null {
+  const row = db.query("SELECT allowed_campaigns FROM users WHERE id = ?").get(id) as { allowed_campaigns: string | null } | null;
+  return row?.allowed_campaigns ?? null;
+}
+
 export function createUserRoutes(db: Database): Hono<AuthEnv> {
   const app = new Hono<AuthEnv>();
   app.use("/api/users", requireAuth(db), requireRole("super_admin"));
   app.use("/api/users/*", requireAuth(db), requireRole("super_admin"));
 
-  app.get("/api/users", (c) => c.json({ users: db.query(`
-    SELECT id, username, role, active, created_at, updated_at FROM users ORDER BY id
-  `).all() }));
+  app.get("/api/users", (c) => {
+    const rows = db.query(`
+      SELECT id, username, role, active, allowed_campaigns, created_at, updated_at FROM users ORDER BY id
+    `).all() as Array<Record<string, unknown>>;
+    return c.json({
+      users: rows.map((row) => ({
+        id: row.id,
+        username: row.username,
+        role: row.role,
+        active: row.active,
+        allowedCampaigns: parseAllowedCampaigns(row.allowed_campaigns as string | null),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      })),
+    });
+  });
 
   app.post("/api/users", async (c) => {
     const input = await body(c);
@@ -47,13 +78,23 @@ export function createUserRoutes(db: Database): Hono<AuthEnv> {
       return c.json({ error: "invalid user" }, 400);
     }
     const passwordHash = await Bun.password.hash(input.password, { algorithm: "argon2id" });
+    const restriction = parseCampaignRestriction(input.allowedCampaigns);
+    if (restriction instanceof Error) return c.json({ error: restriction.message }, 400);
     const timestamp = isoNow();
     try {
       const result = db.query(`
-        INSERT INTO users (username, password_hash, role, active, created_at, updated_at)
-        VALUES (?, ?, ?, 1, ?, ?)
-      `).run(username, passwordHash, role, timestamp, timestamp);
-      return c.json({ user: { id: Number(result.lastInsertRowid), username, role, active: true } }, 201);
+        INSERT INTO users (username, password_hash, role, active, allowed_campaigns, created_at, updated_at)
+        VALUES (?, ?, ?, 1, ?, ?, ?)
+      `).run(username, passwordHash, role, restriction === null ? null : JSON.stringify(restriction), timestamp, timestamp);
+      return c.json({
+        user: {
+          id: Number(result.lastInsertRowid),
+          username,
+          role,
+          active: true,
+          allowedCampaigns: restriction,
+        },
+      }, 201);
     } catch (error) {
       if ((error as Error).message.includes("UNIQUE")) return c.json({ error: "username already exists" }, 409);
       throw error;
@@ -81,10 +122,33 @@ export function createUserRoutes(db: Database): Hono<AuthEnv> {
       if (typeof input.password !== "string" || !input.password) return c.json({ error: "invalid password" }, 400);
       passwordHash = await Bun.password.hash(input.password, { algorithm: "argon2id" });
     }
+    const currentAllowedRawValue = currentAllowedRaw(db, id);
+    let restriction: number[] | null;
+    let restrictionRaw: string | null;
+    if (input.allowedCampaigns === undefined) {
+      restriction = parseAllowedCampaigns(currentAllowedRawValue);
+      restrictionRaw = currentAllowedRawValue;
+    } else {
+      const parsed = parseCampaignRestriction(input.allowedCampaigns);
+      if (parsed instanceof Error) return c.json({ error: parsed.message }, 400);
+      restriction = parsed;
+      restrictionRaw = restriction === null ? null : JSON.stringify(restriction);
+    }
+    // A campaign-restricted account must not retain (or gain) super_admin:
+    // unrestricted globals like admin settings would leak across the fence.
+    const effectiveRole: UserRole =
+      restriction !== null && restriction.length > 0 && role === "super_admin" ? "auditor" : role as UserRole;
     db.query(`
-      UPDATE users SET role = ?, active = ?, password_hash = COALESCE(?, password_hash), updated_at = ? WHERE id = ?
-    `).run(role, active ? 1 : 0, passwordHash, isoNow(), id);
-    return c.json({ user: { id, role, active } });
+      UPDATE users SET role = ?, active = ?, password_hash = COALESCE(?, password_hash), allowed_campaigns = ?, updated_at = ? WHERE id = ?
+    `).run(effectiveRole, active ? 1 : 0, passwordHash, restrictionRaw, isoNow(), id);
+    return c.json({
+      user: {
+        id,
+        role: effectiveRole,
+        active,
+        allowedCampaigns: parseAllowedCampaigns(restrictionRaw),
+      },
+    });
   });
 
   app.delete("/api/users/:id", (c) => {

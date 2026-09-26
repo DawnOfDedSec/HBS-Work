@@ -14,6 +14,7 @@ import { MAX_BATCH_FILES, configureIngest, ingestBatch, validateAndIngestEnvelop
 import { registerReportRoutes } from "./reports";
 import { registerRemediationRoutes } from "./remediation";
 import { registerAdminRoutes } from "./admin";
+import { registerNetworkRoutes } from "./network/routes";
 import { registerExportRoutes } from "./exports/xlsx";
 import { reportEvents } from "./sse";
 import { streamSSE } from "hono/streaming";
@@ -143,6 +144,8 @@ app.route("/", campaignApp);
 // views, and the super-admin diagnostic bundle.
 registerReportRoutes(app, db, campaignAuth);
 registerRemediationRoutes(app, db, campaignAuth);
+// Network device / firewall configuration review (upload → parse → review).
+registerNetworkRoutes(app, db, campaignAuth);
 registerAdminRoutes(app, db, campaignAuth, {
   databasePath: dbPath === ":memory:" ? undefined : dbPath,
   dataRoot: process.env.HBS_DATA_ROOT,

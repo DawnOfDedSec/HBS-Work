@@ -20,10 +20,13 @@ import { useToast } from "./components/ui";
 export type LiveStatus = "connecting" | "live" | "reconnecting";
 
 export type LiveEventLinks = {
-  reportId: number;
-  campaignId: number;
-  locationId: number;
-  hostId: number;
+  reportId: number | null;
+  campaignId: number | null;
+  locationId: number | null;
+  /** Sealed host report routing. */
+  hostId: number | null;
+  /** Network config review routing. */
+  deviceId: number | null;
 };
 
 export type LiveEvent = {
@@ -50,13 +53,15 @@ const LiveEventsContext = createContext<LiveEventsApi | null>(null);
 const MAX_EVENTS = 12;
 const BASE_RETRY_MS = 1_000;
 const MAX_RETRY_MS = 30_000;
-const EVENT_NAME = "report-arrived";
+const HOST_EVENT = "report-arrived";
+const NETWORK_EVENT = "network-config-arrived";
 
 type ReportArrivedPayload = {
   reportId?: unknown;
   campaignId?: unknown;
   locationId?: unknown;
   hostId?: unknown;
+  deviceId?: unknown;
   duplicate?: unknown;
 };
 
@@ -64,7 +69,7 @@ function num(value: unknown): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
 
-function parseEvent(raw: MessageEvent<string>): LiveEvent | null {
+function parseEvent(raw: MessageEvent<string>, kind: string): LiveEvent | null {
   let parsed: ReportArrivedPayload;
   try {
     parsed = JSON.parse(raw.data) as ReportArrivedPayload;
@@ -75,16 +80,28 @@ function parseEvent(raw: MessageEvent<string>): LiveEvent | null {
   const campaignId = num(parsed.campaignId);
   const locationId = num(parsed.locationId);
   const hostId = num(parsed.hostId);
-  if (reportId === null || campaignId === null || locationId === null || hostId === null) return null;
+  const deviceId = num(parsed.deviceId);
+  if (reportId === null || campaignId === null || locationId === null) return null;
+  if (kind === HOST_EVENT && hostId === null) return null;
+  if (kind === NETWORK_EVENT && deviceId === null) return null;
   const duplicate = parsed.duplicate === true;
+  const network = kind === NETWORK_EVENT;
   return {
-    id: `report-${reportId}-${raw.timeStamp ?? Date.now()}`,
-    kind: EVENT_NAME,
+    id: `${kind}-${reportId}-${raw.timeStamp ?? Date.now()}`,
+    kind,
     receivedAt: new Date().toISOString(),
     duplicate,
-    title: duplicate ? "Duplicate report received" : "New report received",
-    description: `Report #${reportId} · host #${hostId} · campaign #${campaignId}`,
-    links: { reportId, campaignId, locationId, hostId },
+    title: network
+      ? duplicate
+        ? "Duplicate device config received"
+        : "Device config reviewed"
+      : duplicate
+        ? "Duplicate report received"
+        : "New report received",
+    description: network
+      ? `Report #${reportId} · device #${deviceId} · campaign #${campaignId}`
+      : `Report #${reportId} · host #${hostId} · campaign #${campaignId}`,
+    links: { reportId, campaignId, locationId, hostId, deviceId },
   };
 }
 
@@ -118,8 +135,17 @@ export function LiveEventsProvider({ children }: { children: ReactNode }) {
         setStatus("live");
       };
 
-      source.addEventListener(EVENT_NAME, (event) => {
-        const parsed = parseEvent(event as MessageEvent<string>);
+      source.addEventListener(HOST_EVENT, (event) => {
+        const parsed = parseEvent(event as MessageEvent<string>, HOST_EVENT);
+        if (!parsed) return;
+        setEvents((current) => [parsed, ...current].slice(0, MAX_EVENTS));
+        setUnread((current) => current + 1);
+        setLastEventAt(parsed.receivedAt);
+        toastRef.current.info(parsed.title, { description: parsed.description });
+      });
+
+      source.addEventListener(NETWORK_EVENT, (event) => {
+        const parsed = parseEvent(event as MessageEvent<string>, NETWORK_EVENT);
         if (!parsed) return;
         setEvents((current) => [parsed, ...current].slice(0, MAX_EVENTS));
         setUnread((current) => current + 1);

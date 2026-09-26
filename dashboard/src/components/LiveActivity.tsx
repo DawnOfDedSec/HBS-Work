@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Bell, Server, Wifi, WifiOff } from "lucide-react";
+import { Bell, Network, Server, Wifi, WifiOff } from "lucide-react";
 import { Badge } from "./ui";
 import { cn, focusRing } from "./ui/cn";
 import { useLiveEvents, type LiveStatus } from "../useLiveEvents";
@@ -10,6 +10,8 @@ export type LiveActivityProps = {
   onOpenReport?: (reportId: number) => void;
   /** Open a host by id (App-owned navigation). */
   onOpenHost?: (hostId: number) => void;
+  /** Open a reviewed network device by id (App-owned navigation). */
+  onOpenNetworkDevice?: (deviceId: number) => void;
 };
 
 const STATUS_META: Record<LiveStatus, { label: string; dot: string; text: string }> = {
@@ -27,7 +29,7 @@ function TimeAgo({ at }: { at: string }) {
  * Topbar live indicator + notification bell. Subscribes to the shared SSE
  * context and lists the most recent `report-arrived` events with in-app links.
  */
-export function LiveActivity({ onOpenReport, onOpenHost }: LiveActivityProps) {
+export function LiveActivity({ onOpenReport, onOpenHost, onOpenNetworkDevice }: LiveActivityProps) {
   const { status, events, unread, markAllSeen } = useLiveEvents();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -115,12 +117,12 @@ export function LiveActivity({ onOpenReport, onOpenHost }: LiveActivityProps) {
                     </div>
                     <p className="mt-0.5 font-mono text-2xs text-ink-subtle">{event.description}</p>
                     <div className="mt-1.5 flex items-center gap-2">
-                      {onOpenReport ? (
+                      {onOpenReport && event.links.deviceId === null ? (
                         <button
                           type="button"
                           role="menuitem"
                           onClick={() => {
-                            onOpenReport(event.links.reportId);
+                            onOpenReport(event.links.reportId as number);
                             setOpen(false);
                           }}
                           className={cn("rounded text-2xs font-medium text-accent hover:underline", focusRing)}
@@ -128,12 +130,25 @@ export function LiveActivity({ onOpenReport, onOpenHost }: LiveActivityProps) {
                           Open report
                         </button>
                       ) : null}
-                      {onOpenHost ? (
+                      {onOpenNetworkDevice && event.links.deviceId !== null ? (
                         <button
                           type="button"
                           role="menuitem"
                           onClick={() => {
-                            onOpenHost(event.links.hostId);
+                            onOpenNetworkDevice(event.links.deviceId as number);
+                            setOpen(false);
+                          }}
+                          className={cn("inline-flex items-center gap-1 rounded text-2xs text-ink-muted hover:text-ink", focusRing)}
+                        >
+                          <Network size={11} aria-hidden /> Device
+                        </button>
+                      ) : null}
+                      {onOpenHost && event.links.hostId !== null ? (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            onOpenHost(event.links.hostId as number);
                             setOpen(false);
                           }}
                           className={cn("inline-flex items-center gap-1 rounded text-2xs text-ink-muted hover:text-ink", focusRing)}

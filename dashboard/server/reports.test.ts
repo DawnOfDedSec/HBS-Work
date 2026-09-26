@@ -23,6 +23,7 @@ import {
   recomputeCampaignMetrics,
   recomputeReportMetrics,
 } from "./reports";
+import { registerNetworkRoutes } from "./network/routes";
 
 // ---------------------------------------------------------------------------
 // Seed fixtures
@@ -45,6 +46,9 @@ function makeApp(user: TestUser) {
     await next();
   });
   registerReportRoutes(app, db, {
+    requireRole: (...roles: string[]) => requireRole(...(roles as UserRole[])) as any,
+  });
+  registerNetworkRoutes(app, db, {
     requireRole: (...roles: string[]) => requireRole(...(roles as UserRole[])) as any,
   });
   return app;
@@ -574,6 +578,107 @@ describe("findings explorer", () => {
     const overview = await request(VIEWER, "/api/overview");
     expect(riskChart.body.riskTrend).toEqual(overview.body.riskTrend);
     expect(riskChart.body.weightedRiskScore).toBe(overview.body.kpis.weightedRiskScore);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Network findings in the global explorer
+// ---------------------------------------------------------------------------
+
+describe("network findings in the global explorer", () => {
+  function seedNetworkReport(): number {
+    const now = "2026-03-01T00:00:00.000Z";
+    const device = db
+      .query(
+        `INSERT INTO network_devices (device_key, hostname, vendor, device_type, first_seen_at, last_seen_at)
+         VALUES ('host:fw-edge', 'fw-edge', 'cisco-asa', 'firewall', ?, ?)`,
+      )
+      .run(now, now);
+    const findings = [
+      {
+        checkId: "NET-MGMT-001",
+        title: "Telnet management service enabled",
+        severity: "Critical",
+        status: "NonCompliant",
+        category: "Management",
+        description: "Telnet transmits credentials in cleartext.",
+        evidence: [],
+        recommendation: "Use SSHv2 exclusively.",
+        references: ["CIS Benchmarks (Network Devices)"],
+      },
+      {
+        checkId: "NET-MGMT-010",
+        title: "Legal warning banner not configured",
+        severity: "Low",
+        status: "NonCompliant",
+        category: "Management",
+        description: "No login banner present.",
+        evidence: [],
+        recommendation: "Configure a legal warning banner.",
+        references: [],
+      },
+      {
+        checkId: "NET-MGMT-011",
+        title: "Minimum password length policy set",
+        severity: "Low",
+        status: "Compliant",
+        category: "Authentication",
+        description: "Minimum length configured.",
+        evidence: [],
+        recommendation: "Keep enforcing the policy.",
+        references: [],
+      },
+    ];
+    const inserted = db
+      .query(
+        `INSERT INTO network_reports
+           (device_id, location_id, campaign_id, config_name, config_sha256, config_size,
+            config_text, parsed_json, findings_json, score, received_at, uploaded_by)
+         VALUES (?, 1, 1, 'fw.cfg', 'netsha0000000001', 128, 'hostname fw-edge', '{}', ?, 62.5, ?, 'admin')`,
+      )
+      .run(Number(device.lastInsertRowid), JSON.stringify(findings), now);
+    return Number(inserted.lastInsertRowid);
+  }
+
+  it("merges network findings and honors the source filter", async () => {
+    const reportId = seedNetworkReport();
+
+    const merged = await request(VIEWER, "/api/findings");
+    expect(merged.body.total).toBe(8 + 3);
+
+    const hostOnly = await request(VIEWER, "/api/findings?source=host");
+    expect(hostOnly.body.total).toBe(8);
+
+    const networkOnly = await request(VIEWER, "/api/findings?source=network");
+    expect(networkOnly.body.total).toBe(3);
+    for (const row of networkOnly.body.results as Array<Record<string, unknown>>) {
+      expect(row.source).toBe("network");
+      expect(row.hostId).toBe(0);
+    }
+
+    const critical = await request(VIEWER, "/api/findings?source=network&severity=Critical");
+    expect(critical.body.total).toBe(1);
+    expect(critical.body.results[0].checkId).toBe("NET-MGMT-001");
+
+    // Location scoping applies to network findings too.
+    const scoped = await request(VIEWER, "/api/findings?source=network&locationId=2");
+    expect(scoped.body.total).toBe(0);
+
+    void reportId;
+  });
+
+  it("reflects network treatments in the global treatment board", async () => {
+    const reportId = seedNetworkReport();
+    const applied = await request(ADMIN, `/api/network/reports/${reportId}/findings/NET-MGMT-001/treatment`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ state: "accepted_risk", justification: "Telnet restricted to jump host." }),
+    });
+    expect(applied.status).toBe(200);
+
+    const board = await request(VIEWER, "/api/findings?source=network&treatment=accepted_risk");
+    expect(board.body.total).toBe(1);
+    expect(board.body.results[0].checkId).toBe("NET-MGMT-001");
   });
 });
 

@@ -108,6 +108,7 @@ type AdminUser = {
   username: string;
   role: AdminRole;
   active: number | boolean;
+  allowedCampaigns?: number[] | null;
   created_at: string;
   updated_at: string;
 };
@@ -132,6 +133,9 @@ export function Users({ role: providedRole }: { role?: AdminRole | null } = {}) 
   const [newRole, setNewRole] = useState<AdminRole>("viewer");
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [accessUser, setAccessUser] = useState<AdminUser | null>(null);
+  const [accessSelection, setAccessSelection] = useState<number[]>([]);
+  const [campaigns, setCampaigns] = useState<Array<{ id: number; name: string }>>([]);
   const toast = useToast();
 
   const refresh = useCallback(async () => {
@@ -206,6 +210,37 @@ export function Users({ role: providedRole }: { role?: AdminRole | null } = {}) 
     }
   }
 
+  async function openAccess(user: AdminUser) {
+    setAccessUser(user);
+    setAccessSelection(user.allowedCampaigns ?? []);
+    try {
+      const rows = await api.raw<Array<{ id: number; name: string }>>("GET", "/api/campaigns");
+      setCampaigns(Array.isArray(rows) ? rows.map((row) => ({ id: row.id, name: row.name })) : []);
+    } catch {
+      setCampaigns([]);
+    }
+  }
+
+  async function saveAccess() {
+    if (!accessUser) return;
+    setBusy(accessUser.id);
+    try {
+      await api.raw("PATCH", `/api/users/${accessUser.id}`, {
+        allowedCampaigns: accessSelection.length > 0 ? accessSelection : null,
+      });
+      toast.success(
+        accessSelection.length > 0 ? "Campaign access updated" : "Campaign restriction removed",
+        { description: sanitizeText(accessUser.username) },
+      );
+      setAccessUser(null);
+      await refresh();
+    } catch (err) {
+      toast.error("Could not update campaign access", { description: errorMessage(err) });
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const columns: Array<TableColumn<AdminUser>> = [
     {
       key: "username",
@@ -235,6 +270,20 @@ export function Users({ role: providedRole }: { role?: AdminRole | null } = {}) 
       header: "Status",
       render: (user) =>
         isActive(user) ? <Badge tone="compliant">Active</Badge> : <Badge tone="na">Deactivated</Badge>,
+    },
+    {
+      key: "campaignAccess",
+      header: "Campaign access",
+      render: (user) =>
+        isActive(user) ? (
+          <Button size="sm" variant="ghost" disabled={busy === user.id} onClick={() => void openAccess(user)}>
+            {user.allowedCampaigns && user.allowedCampaigns.length > 0
+              ? `${user.allowedCampaigns.length} campaign${user.allowedCampaigns.length === 1 ? "" : "s"}`
+              : "All campaigns"}
+          </Button>
+        ) : (
+          <span className="text-2xs text-ink-subtle">—</span>
+        ),
     },
     {
       key: "created_at",
@@ -355,6 +404,56 @@ export function Users({ role: providedRole }: { role?: AdminRole | null } = {}) 
             ) : null}
           </form>
         </Modal>
+
+      {accessUser ? (
+        <Modal
+          open
+          onClose={() => setAccessUser(null)}
+          size="lg"
+          title={`Campaign access · ${sanitizeText(accessUser.username)}`}
+          description="Restrict this account to specific campaigns. No selection means unrestricted access."
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setAccessUser(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                loading={busy === accessUser.id}
+                onClick={() => void saveAccess()}
+              >
+                Save access
+              </Button>
+            </>
+          }
+        >
+          <div className="flex flex-col gap-2">
+            {campaigns.length === 0 ? (
+              <p className="text-sm text-ink-subtle">No campaigns exist yet.</p>
+            ) : (
+              campaigns.map((campaign) => (
+                <label key={campaign.id} className="flex items-center gap-2 rounded-control px-1 py-1 text-sm text-ink">
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5"
+                    checked={accessSelection.includes(campaign.id)}
+                    onChange={(event) =>
+                      setAccessSelection((current) =>
+                        event.target.checked
+                          ? [...current, campaign.id].sort((a, b) => a - b)
+                          : current.filter((id) => id !== campaign.id),
+                      )
+                    }
+                  />
+                  <span className="truncate">
+                    {sanitizeText(campaign.name)} <span className="text-2xs text-ink-subtle">#{campaign.id}</span>
+                  </span>
+                </label>
+              ))
+            )}
+          </div>
+        </Modal>
+      ) : null}
       </section>
     </AdminGate>
   );

@@ -3,10 +3,12 @@ import {
   AlertTriangle,
   Download,
   MapPin,
+  Network,
   Plus,
   RefreshCw,
   Server,
   Tag,
+  Upload,
 } from "lucide-react";
 import { api, ApiError } from "../api";
 import {
@@ -23,6 +25,9 @@ import {
   useToast,
 } from "../components/ui";
 import { sanitizeText } from "../components/EvidenceDrawer";
+import { NetworkUploadModal } from "../components/NetworkUploadModal";
+import { scoreTone } from "../components/NetworkFindings";
+import type { NetworkDeviceSummary } from "../network-types";
 
 export type LocationRow = {
   id: number;
@@ -68,8 +73,11 @@ export type LocationStats = {
 
 export type LocationsProps = {
   campaignId: number;
+  /** Session role; upload requires auditor/super_admin. */
+  role?: string;
   onOpenHost?: (hostId: number) => void;
   onOpenDownloads?: (locationId: number) => void;
+  onOpenNetworkDevice?: (deviceId: number) => void;
 };
 
 function parseTagsInput(value: string): string[] {
@@ -109,10 +117,12 @@ function statsFromHosts(hosts: HostSummary[]): LocationStats {
 }
 
 /** Campaign locations with tags, retirement state, host counts, and freshness. */
-export function Locations({ campaignId, onOpenHost, onOpenDownloads }: LocationsProps) {
+export function Locations({ campaignId, role, onOpenHost, onOpenDownloads, onOpenNetworkDevice }: LocationsProps) {
   const [campaign, setCampaign] = useState<CampaignRow | null>(null);
   const [locations, setLocations] = useState<LocationRow[] | null>(null);
   const [stats, setStats] = useState<Record<number, LocationStats>>({});
+  const [networkDevices, setNetworkDevices] = useState<Record<number, NetworkDeviceSummary[]>>({});
+  const [uploadLocation, setUploadLocation] = useState<LocationRow | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
@@ -120,6 +130,8 @@ export function Locations({ campaignId, onOpenHost, onOpenDownloads }: Locations
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const toast = useToast();
+
+  const canUpload = role === "super_admin" || role === "auditor";
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -132,18 +144,20 @@ export function Locations({ campaignId, onOpenHost, onOpenDownloads }: Locations
 
       const entries = await Promise.all(
         locationRows.map(async (location) => {
+          const fallback: LocationStats = { hostCount: 0, critical: 0, nonCompliant: 0, freshness: null, hosts: [] };
           try {
-            const response = await api.raw<{ hosts: HostSummary[] }>(
-              "GET",
-              `/api/hosts?locationId=${location.id}`,
-            );
-            return [location.id, statsFromHosts(response.hosts ?? [])] as const;
+            const [hosts, devices] = await Promise.all([
+              api.raw<{ hosts: HostSummary[] }>("GET", `/api/hosts?locationId=${location.id}`),
+              api.listNetworkDevices({ locationId: location.id }).catch(() => ({ devices: [] as NetworkDeviceSummary[] })),
+            ]);
+            return { id: location.id, stats: statsFromHosts(hosts.hosts ?? []), devices: devices.devices ?? [] };
           } catch {
-            return [location.id, { hostCount: 0, critical: 0, nonCompliant: 0, freshness: null, hosts: [] }] as const;
+            return { id: location.id, stats: fallback, devices: [] as NetworkDeviceSummary[] };
           }
         }),
       );
-      setStats(Object.fromEntries(entries));
+      setStats(Object.fromEntries(entries.map((entry) => [entry.id, entry.stats])));
+      setNetworkDevices(Object.fromEntries(entries.map((entry) => [entry.id, entry.devices])));
     } catch (err) {
       const message = err instanceof ApiError ? err.message : "failed to load locations";
       setError(message);
@@ -192,6 +206,7 @@ export function Locations({ campaignId, onOpenHost, onOpenDownloads }: Locations
   const totalHosts = Object.values(stats).reduce((sum, entry) => sum + entry.hostCount, 0);
   const totalCritical = Object.values(stats).reduce((sum, entry) => sum + entry.critical, 0);
   const totalNonCompliant = Object.values(stats).reduce((sum, entry) => sum + entry.nonCompliant, 0);
+  const totalNetworkDevices = Object.values(networkDevices).reduce((sum, devices) => sum + devices.length, 0);
 
   return (
     <section aria-label="Locations" className="flex flex-col gap-5">
@@ -207,9 +222,10 @@ export function Locations({ campaignId, onOpenHost, onOpenDownloads }: Locations
         }
       />
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <Stat label="Locations" value={locations?.length ?? 0} icon={MapPin} hint={`Campaign #${campaignId}`} />
         <Stat label="Hosts" value={totalHosts} icon={Server} hint="Distinct machines seen" />
+        <Stat label="Network devices" value={totalNetworkDevices} icon={Network} hint="Reviewed configs" />
         <Stat label="Critical" value={totalCritical} icon={AlertTriangle} tone={totalCritical > 0 ? "critical" : "ok"} />
         <Stat
           label="Non-compliant"
@@ -342,10 +358,50 @@ export function Locations({ campaignId, onOpenHost, onOpenDownloads }: Locations
                   </ul>
                 ) : null}
 
+                {(networkDevices[location.id]?.length ?? 0) > 0 ? (
+                  <div className="flex flex-col gap-1">
+                    <span className="flex items-center gap-1 text-2xs font-semibold uppercase tracking-wide text-ink-subtle">
+                      <Network size={11} aria-hidden /> Network devices
+                    </span>
+                    <ul className="flex flex-wrap gap-1">
+                      {networkDevices[location.id]?.slice(0, 5).map((device) => (
+                        <li key={device.id}>
+                          <button
+                            type="button"
+                            onClick={() => onOpenNetworkDevice?.(device.id)}
+                            title={`Review score ${device.score === null ? "—" : device.score.toFixed(0)}`}
+                            className="inline-flex items-center gap-1.5 rounded-full border border-hairline bg-surface-raised px-2 py-0.5 text-2xs text-ink-muted hover:border-hairline-strong hover:text-ink"
+                          >
+                            <span className="max-w-28 truncate">{sanitizeText(device.hostname) || `#${device.id}`}</span>
+                            {device.score !== null ? (
+                              <Badge tone={scoreTone(device.score)} className="!px-1 !py-0 !text-2xs">
+                                {device.score.toFixed(0)}
+                              </Badge>
+                            ) : null}
+                            {device.severity.critical + device.severity.high > 0 ? (
+                              <span aria-hidden className="inline-block h-1.5 w-1.5 rounded-full bg-critical" />
+                            ) : null}
+                          </button>
+                        </li>
+                      ))}
+                      {(networkDevices[location.id]?.length ?? 0) > 5 ? (
+                        <li className="px-2 py-0.5 text-2xs text-ink-subtle">
+                          +{(networkDevices[location.id]?.length ?? 0) - 5} more
+                        </li>
+                      ) : null}
+                    </ul>
+                  </div>
+                ) : null}
+
                 <div className="mt-auto flex flex-wrap items-center gap-2 pt-1">
                   <Button size="sm" variant="secondary" icon={Download} onClick={() => onOpenDownloads?.(location.id)}>
                     Downloads
                   </Button>
+                  {canUpload && !location.retiredAt ? (
+                    <Button size="sm" variant="secondary" icon={Upload} onClick={() => setUploadLocation(location)}>
+                      Review configs
+                    </Button>
+                  ) : null}
                   {!location.retiredAt ? (
                     <Button size="sm" variant="ghost" onClick={() => void retire(location)}>
                       Retire
@@ -357,6 +413,17 @@ export function Locations({ campaignId, onOpenHost, onOpenDownloads }: Locations
           })}
         </ul>
       )}
+
+      {uploadLocation ? (
+        <NetworkUploadModal
+          open
+          campaignId={campaignId}
+          locationId={uploadLocation.id}
+          locationName={uploadLocation.name}
+          onClose={() => setUploadLocation(null)}
+          onUploaded={() => void load()}
+        />
+      ) : null}
     </section>
   );
 }

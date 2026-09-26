@@ -61,6 +61,9 @@ test.beforeAll(async () => {
         HOST: "127.0.0.1",
         HBS_DB_PATH: ":memory:",
         HBS_DATA_ROOT: mkdtempSync(join(tmpdir(), "hbs-uploads-")),
+        // The spec provisions its own superuser via /api/auth/setup; the
+        // first-run bootstrap admin would make setup return 409.
+        HBS_BOOTSTRAP_ADMIN: "false",
       },
       stdio: "ignore",
     });

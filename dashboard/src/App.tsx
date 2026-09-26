@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { FolderKanban, LayoutDashboard, Server } from "lucide-react";
+import { FolderKanban, LayoutDashboard, Network, Server } from "lucide-react";
 import { api } from "./api";
 import { Layout } from "./components/Layout";
 import { Toaster } from "./components/Toaster";
@@ -14,6 +14,8 @@ import { Findings } from "./pages/Findings";
 import { HostDetail } from "./pages/HostDetail";
 import { Locations } from "./pages/Locations";
 import { Login } from "./pages/Login";
+import { NetworkDeviceDetail } from "./pages/NetworkDeviceDetail";
+import { NetworkReportDetail } from "./pages/NetworkReportDetail";
 import { Overview } from "./pages/Overview";
 import { Remediation } from "./pages/Remediation";
 import { ReportDetail } from "./pages/ReportDetail";
@@ -37,6 +39,8 @@ export function App() {
   const [hostId, setHostId] = useState<number | null>(null);
   const [reportId, setReportId] = useState<number | null>(null);
   const [checkId, setCheckId] = useState<string | null>(null);
+  const [networkDeviceId, setNetworkDeviceId] = useState<number | null>(null);
+  const [networkReportId, setNetworkReportId] = useState<number | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -61,6 +65,8 @@ export function App() {
     setHostId(null);
     setReportId(null);
     setCheckId(null);
+    setNetworkDeviceId(null);
+    setNetworkReportId(null);
   }, []);
 
   const navigate = useCallback(
@@ -105,6 +111,16 @@ export function App() {
     [resetSelection],
   );
 
+  /** Open a reviewed network device from the live-activity feed. */
+  const openNetworkDevice = useCallback(
+    (deviceId: number) => {
+      setRoute("locations");
+      resetSelection();
+      setNetworkDeviceId(deviceId);
+    },
+    [resetSelection],
+  );
+
   /** Open a campaign from the command palette. */
   const openCampaign = useCallback(
     (campaignId: number) => {
@@ -142,8 +158,20 @@ export function App() {
           setHostId(null);
           setReportId(null);
           setCheckId(null);
+          setNetworkDeviceId(null);
+          setNetworkReportId(null);
         },
       });
+    }
+    if (networkDeviceId !== null) {
+      items.push({
+        label: `Device #${networkDeviceId}`,
+        icon: Network,
+        onClick: () => setNetworkReportId(null),
+      });
+    }
+    if (networkReportId !== null) {
+      items.push({ label: `Network report #${networkReportId}` });
     }
     if (hostId !== null) {
       items.push({
@@ -163,10 +191,11 @@ export function App() {
     }
     items.push({ label: routeLabel(route), icon: navItem(route)?.icon });
     return items;
-  }, [campaignId, hostId, reportId, checkId, route, navigate]);
+  }, [campaignId, hostId, reportId, checkId, networkDeviceId, networkReportId, route, navigate]);
 
   function workspace(): ReactNode {
     if (!user) return null;
+    const canWrite = user.role === "super_admin" || user.role === "auditor";
     if (route === "overview") return <Overview onDrilldown={drilldown} onNavigate={navigate} />;
     if (route === "executive") return <Executive onDrilldown={drilldown} />;
     if (route === "remediation") return <Remediation onDrilldown={drilldown} />;
@@ -177,18 +206,68 @@ export function App() {
     if (route === "admin") return <AdminHub role={user.role} />;
 
     if (route === "locations") {
+      if (networkReportId !== null) {
+        return (
+          <NetworkReportDetail
+            reportId={networkReportId}
+            canEdit={canWrite}
+            onBack={() => setNetworkReportId(null)}
+            onOpenDevice={(id) => {
+              setNetworkReportId(null);
+              setNetworkDeviceId(id);
+            }}
+          />
+        );
+      }
+      if (networkDeviceId !== null) {
+        return (
+          <NetworkDeviceDetail
+            deviceId={networkDeviceId}
+            canEdit={canWrite}
+            canDelete={user.role === "super_admin"}
+            onBack={() => setNetworkDeviceId(null)}
+            onOpenReport={(id) => setNetworkReportId(id)}
+          />
+        );
+      }
       if (hostId !== null) return <HostDetail hostId={hostId} onBack={() => setHostId(null)} />;
       if (campaignId === null) return <Campaigns onOpen={setCampaignId} />;
       return (
         <Locations
           campaignId={campaignId}
+          role={user.role}
           onOpenHost={setHostId}
           onOpenDownloads={(id) => setLocationId(id)}
+          onOpenNetworkDevice={setNetworkDeviceId}
         />
       );
     }
 
     // route === "campaigns"
+    if (networkReportId !== null) {
+      return (
+        <NetworkReportDetail
+          reportId={networkReportId}
+          canEdit={canWrite}
+          onBack={() => setNetworkReportId(null)}
+          onOpenDevice={(id) => {
+            setNetworkReportId(null);
+            setNetworkDeviceId(id);
+          }}
+        />
+      );
+    }
+    if (networkDeviceId !== null) {
+      return (
+        <NetworkDeviceDetail
+          deviceId={networkDeviceId}
+          canEdit={canWrite}
+          canDelete={user.role === "super_admin"}
+          onBack={() => setNetworkDeviceId(null)}
+          onOpenReport={(id) => setNetworkReportId(id)}
+        />
+      );
+    }
     if (checkId !== null) {
       return (
         <CheckDetail checkId={checkId} onBack={() => setCheckId(null)} onOpenReport={(id) => setReportId(id)} />
@@ -207,9 +286,11 @@ export function App() {
       return (
         <CampaignDetail
           campaignId={campaignId}
+          role={user.role}
           onBack={() => setCampaignId(null)}
           onOpenHost={setHostId}
           onOpenDownloads={(id) => setLocationId(id)}
+          onOpenNetworkDevice={setNetworkDeviceId}
           onDrilldown={drilldown}
         />
       );
@@ -240,6 +321,7 @@ export function App() {
           onLogout={logout}
           onOpenReport={openReport}
           onOpenHost={openHost}
+          onOpenNetworkDevice={openNetworkDevice}
           onOpenCampaign={openCampaign}
           breadcrumbs={breadcrumbs}
         >
