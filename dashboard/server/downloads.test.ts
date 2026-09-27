@@ -455,6 +455,6 @@ describe("issuance listing", () => {
       throw new Error("no template");
     });
     const missing = (await (await h.app.request(listUrl, { headers: { cookie: admin } })).json()) as Record<string, any>[];
-    expect(missing[0]!.versionStalenessWarning).toContain("unavailable");
+    expect(missing[0]!.versionStalenessWarning).toContain("no local extractor template");
   });
 });

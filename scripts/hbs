@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# HBS Console control CLI (Linux/macOS). Installed as `hbs` by scripts/install.sh.
+#
+#   hbs start|stop|restart|status|logs|update|open|uninstall
+set -euo pipefail
+
+HBS_HOME="${HBS_HOME:-$HOME/.hbs}"
+APP_DIR="$HBS_HOME/app"
+DATA_DIR="$HBS_HOME/data"
+BIN_DIR="$HOME/.local/bin"
+SERVICE="hbs"
+PLIST_LABEL="net.hbs.dashboard"
+IS_LINUX=0; IS_MAC=0
+[[ "$(uname -s)" == "Linux" ]] && IS_LINUX=1
+[[ "$(uname -s)" == "Darwin" ]] && IS_MAC=1
+
+cmd="${1:-status}"
+shift || true
+
+service_action() {
+  local action="$1"
+  if [[ $IS_LINUX -eq 1 ]] && command -v systemctl >/dev/null 2>&1; then
+    systemctl --user "$action" "$SERVICE"
+  elif [[ $IS_MAC -eq 1 ]]; then
+    case "$action" in
+      start)   launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/$PLIST_LABEL.plist" 2>/dev/null || launchctl kickstart -k "gui/$(id -u)/$PLIST_LABEL" ;;
+      stop)    launchctl bootout "gui/$(id -u)/$PLIST_LABEL" ;;
+      restart) launchctl bootout "gui/$(id -u)/$PLIST_LABEL" 2>/dev/null || true; launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/$PLIST_LABEL.plist" ;;
+      *) launchctl print "gui/$(id -u)/$PLIST_LABEL" | head -20 ;;
+    esac
+  else
+    echo "no service manager found" >&2; exit 1
+  fi
+}
+
+port() {
+  [[ -f "$DATA_DIR/hbs.env" ]] && grep -E '^PORT=' "$DATA_DIR/hbs.env" | cut -d= -f2 || echo 3000
+}
+
+case "$cmd" in
+  start)   service_action start;   echo "HBS started: http://127.0.0.1:$(port)" ;;
+  stop)    service_action stop;    echo "HBS stopped." ;;
+  restart) service_action restart; echo "HBS restarted: http://127.0.0.1:$(port)" ;;
+  status)  service_action status ;;
+  logs)
+    if [[ $IS_LINUX -eq 1 ]]; then journalctl --user -u "$SERVICE" -f --no-pager
+    else tail -f "$DATA_DIR/server.log" 2>/dev/null || echo "no log file (launchd logs to system)"; fi ;;
+  open)
+    url="http://127.0.0.1:$(port)"
+    if [[ $IS_LINUX -eq 1 ]]; then xdg-open "$url"
+    else open "$url"; fi ;;
+  update)
+    log() { printf '[hbs] %s\n' "$*"; }
+    if [[ -d "$APP_DIR/.git" ]]; then
+      git -C "$APP_DIR" fetch origin --quiet
+      git -C "$APP_DIR" reset --hard origin/main --quiet
+      (cd "$APP_DIR/dashboard" && bun install --quiet)
+      service_action restart
+      log "updated and restarted."
+    else
+      echo "app was not installed via git; re-run the installer to update." >&2; exit 1
+    fi ;;
+  uninstall)
+    echo "run the installer with --uninstall (add --purge to remove data):"
+    echo "  bash $APP_DIR/scripts/install.sh --uninstall [--purge]" ;;
+  *)
+    echo "usage: hbs {start|stop|restart|status|logs|update|open|uninstall}" ;;
+esac

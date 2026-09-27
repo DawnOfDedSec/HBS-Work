@@ -1,15 +1,16 @@
-import type { Database } from "bun:sqlite";
+﻿import type { Database } from "bun:sqlite";
 import type { Hono } from "hono";
 import { randomBytes, randomUUID } from "node:crypto";
 import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { KeyLifecycle, keygen } from "./keys";
 import { requireIssuableLocation } from "./locations";
+import { cachedAgentTemplate, ensureAgentTemplate, type AgentPlatform } from "./agent-release";
 import { SLOT_LEN, SLOT_MAGIC, createArtifact, patch } from "./patcher";
 import type { CampaignAuth } from "./campaigns";
 import { isExpired, registerDownloadRoutes, type IssuanceRow } from "./downloads";
 
-// Issuance creation, listing, and revocation. Contract: spec §6.2 and plan Task 47.
+// Issuance creation, listing, and revocation. Contract: spec Â§6.2 and plan Task 47.
 //
 // Campaign -> Location -> Issuance -> Host/Report. Each issuance has a unique
 // random extractor id and an independent X25519 keypair. The patched artifact is
@@ -28,8 +29,11 @@ export const DEFAULT_EXPIRY_DAYS = 90;
 export type IssuanceRouteOptions = {
   /** Root for `binaries/` and `keys/`. Default: HBS_DATA_ROOT or "server/data". */
   dataRoot?: string;
-  /** Base template loader; tests inject a synthetic binary with one placeholder slot. */
-  loadTemplate?: (platform: string) => Uint8Array;
+  /** Binaries cache directory. Default: dashboard/binaries. */
+  binariesDir?: string;
+  /** Base template loader; tests inject a synthetic binary with one placeholder slot.
+   *  May return a promise â€” the default loader falls back to GitHub Releases. */
+  loadTemplate?: (platform: string) => Uint8Array | Promise<Uint8Array>;
 };
 
 export function isSupportedPlatform(value: unknown): value is Platform {
@@ -83,17 +87,10 @@ function parseExtractorIdHex(uuid: string): Uint8Array {
   return new Uint8Array(Buffer.from(hex, "hex"));
 }
 
-function defaultLoadTemplate(platform: string): Uint8Array {
-  const path = join(import.meta.dir, "..", "binaries", platform);
-  try {
-    return new Uint8Array(readFileSync(path));
-  } catch {
-    throw new Error(
-      `extractor template for platform '${platform}' not found at ${path}; ` +
-        "build dashboard/binaries/<platform> or pass opts.loadTemplate",
-    );
-  }
-}
+/**
+ * Issuance creation resolves templates via `resolveTemplate` below:
+ * injected loader (tests) → local binaries cache → GitHub Releases.
+ */
 
 function numId(value: string | undefined): number | null {
   const parsed = Number(value);
@@ -200,7 +197,28 @@ export function registerIssuanceRoutes(
 ): void {
   prepareTables(db);
   const dataRoot = opts.dataRoot ?? process.env.HBS_DATA_ROOT ?? "server/data";
-  const loadTemplate = opts.loadTemplate ?? defaultLoadTemplate;
+  const binariesDir = opts.binariesDir ?? join(import.meta.dir, "..", "binaries");
+  const injectedLoader = opts.loadTemplate;
+  // Issuance creation resolves templates asynchronously: injected loader ->
+  // local binaries cache -> GitHub Releases download (checksum-verified).
+  const resolveTemplate = async (platform: string): Promise<Uint8Array> => {
+    if (injectedLoader) return await injectedLoader(platform);
+    const cached = cachedAgentTemplate(binariesDir, platform as AgentPlatform);
+    if (cached) return cached;
+    return (await ensureAgentTemplate(platform as AgentPlatform, { outputDir: binariesDir })).template;
+  };
+  // Listing stays network-free: injected (sync) loader or the local cache.
+  const warningTemplate = (platform: string): Uint8Array | null => {
+    if (injectedLoader) {
+      try {
+        const result = injectedLoader(platform);
+        return result instanceof Uint8Array ? result : null;
+      } catch {
+        return null;
+      }
+    }
+    return cachedAgentTemplate(binariesDir, platform as AgentPlatform);
+  };
 
   app.post(
     "/api/campaigns/:id/locations/:loc/issuances",
@@ -263,9 +281,9 @@ export function registerIssuanceRoutes(
 
       let template: Uint8Array;
       try {
-        template = loadTemplate(platform);
+        template = await resolveTemplate(platform);
       } catch (error) {
-        return c.json({ error: (error as Error).message }, 500);
+        return c.json({ error: (error as Error).message }, 503);
       }
 
       let patched: Uint8Array;
@@ -358,14 +376,10 @@ export function registerIssuanceRoutes(
         const platform = row.platform ?? "";
         let template = templates.get(platform);
         if (template === undefined) {
-          try {
-            template = loadTemplate(platform);
-          } catch {
-            template = null;
-          }
+          template = warningTemplate(platform);
           templates.set(platform, template);
         }
-        if (template === null) return `extractor template for '${platform}' is unavailable`;
+        if (template === null) return `no local extractor template for '${platform}' - it will be fetched from releases on the next issuance`;
         if (!row.artifact_path) return "artifact path is not recorded";
         let artifact: Uint8Array;
         try {
