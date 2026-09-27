@@ -1,4 +1,4 @@
-use hbs_extractor::platform::{detect, lower_own_priority, parse_os_release, DistroFamily, Os};
+﻿use hbs_extractor::platform::{detect, lower_own_priority, parse_os_release, DistroFamily, Os};
 
 #[test]
 fn os_release_families() {
@@ -35,8 +35,8 @@ fn priority_lowering_never_panics() {
 #[cfg(unix)]
 #[test]
 fn nice_actually_increases() {
-    let before = unsafe { libc::getpriority(libc::PRIO_PROCESS as i32, 0) };
+    let before = unsafe { libc::getpriority(libc::PRIO_PROCESS, 0) };
     lower_own_priority();
-    let after = unsafe { libc::getpriority(libc::PRIO_PROCESS as i32, 0) };
+    let after = unsafe { libc::getpriority(libc::PRIO_PROCESS, 0) };
     assert!(after > before, "nice did not increase: {before} -> {after}");
 }

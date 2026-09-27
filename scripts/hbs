@@ -19,7 +19,7 @@ shift || true
 
 service_action() {
   local action="$1"
-  if [[ $IS_LINUX -eq 1 ]] && command -v systemctl >/dev/null 2>&1; then
+  if [[ $IS_LINUX -eq 1 ]] && command -v systemctl >/dev/null 2>&1 && systemctl --user status >/dev/null 2>&1; then
     systemctl --user "$action" "$SERVICE"
   elif [[ $IS_MAC -eq 1 ]]; then
     case "$action" in
@@ -29,7 +29,20 @@ service_action() {
       *) launchctl print "gui/$(id -u)/$PLIST_LABEL" | head -20 ;;
     esac
   else
-    echo "no service manager found" >&2; exit 1
+    # no systemd/launchd (containers, bare shells): manage a plain background process
+    local pidfile="$DATA_DIR/server.pid"
+    case "$action" in
+      start)
+        [[ -f "$pidfile" ]] && kill -0 "$(cat "$pidfile")" 2>/dev/null && { echo "already running (pid $(cat "$pidfile"))"; return 0; }
+        (cd "$APP_DIR/dashboard" && HBS_DATA_ROOT="$DATA_DIR" PORT="${PORT:-3000}" nohup "$(command -v bun)" run server/index.ts >> "$DATA_DIR/server.log" 2>&1 & echo $! > "$pidfile")
+        sleep 1; echo "started (pid $(cat "$pidfile"))" ;;
+      stop)
+        [[ -f "$pidfile" ]] && kill "$(cat "$pidfile")" 2>/dev/null && rm -f "$pidfile" && echo "stopped." || echo "not running." ;;
+      restart) "$0" stop || true; "$0" start ;;
+      status)
+        [[ -f "$pidfile" ]] && kill -0 "$(cat "$pidfile")" 2>/dev/null && echo "running (pid $(cat "$pidfile"))" || echo "not running." ;;
+      *) echo "action $action unsupported without systemd" ;;
+    esac
   fi
 }
 

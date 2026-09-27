@@ -137,7 +137,7 @@ EOF
   systemctl --user daemon-reload
 }
 
-if [[ $IS_LINUX -eq 1 ]] && command -v systemctl >/dev/null 2>&1; then
+if [[ $IS_LINUX -eq 1 ]] && command -v systemctl >/dev/null 2>&1 && systemctl --user status >/dev/null 2>&1; then
   write_systemd
   if [[ $DO_START -eq 1 ]]; then
     systemctl --user enable --now "$SERVICE" 2>/dev/null || systemctl --user restart "$SERVICE"
@@ -165,6 +165,8 @@ EOF
   launchctl bootout "gui/$(id -u)/$PLIST_LABEL" 2>/dev/null || true
   [[ $DO_START -eq 1 ]] && launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/$PLIST_LABEL.plist"
   log "service: launchctl print gui/$(id -u)/$PLIST_LABEL"
+else
+  log "no service manager detected — start manually with: hbs start (or hbs tray on desktops)"
 fi
 
 log "done. console: http://127.0.0.1:$PORT  (first run: create the admin account in the browser)"
