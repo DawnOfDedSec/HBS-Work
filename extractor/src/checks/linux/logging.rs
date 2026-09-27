@@ -391,7 +391,7 @@ fn journald_kv(ctx: &mut ScanContext, key: &str, want: &str) -> CheckOutcome {
                     _ => "kernel default",
                 };
                 nok(
-                    format!("{key} unset — default {default} applies (expected {want})"),
+                    format!("{key} unset - default {default} applies (expected {want})"),
                     loc.to_string(),
                     format!("grep {key} {loc}"),
                 )
@@ -451,7 +451,7 @@ fn logrotate_present(ctx: &mut ScanContext) -> CheckOutcome {
         .collect();
     degraded_from_attempts(
         log,
-        "no logrotate configuration found — install/verify logrotate",
+        "no logrotate configuration found - install/verify logrotate",
     )
 }
 
@@ -470,7 +470,7 @@ fn logrotate_retention(ctx: &mut ScanContext) -> CheckOutcome {
                 "grep -E 'rotate|weekly'".into(),
             ),
             Some(n) => nok(
-                format!("rotate {n} weekly={weekly} — under 90-day retention target"),
+                format!("rotate {n} weekly={weekly} - under 90-day retention target"),
                 "/etc/logrotate.conf".into(),
                 "grep -E 'rotate|weekly'".into(),
             ),
@@ -521,7 +521,7 @@ fn file_create_mode(ctx: &mut ScanContext) -> CheckOutcome {
                 "grep FileCreateMode".into(),
             ),
             None => nok(
-                "$FileCreateMode not set (default 0644 applies — too permissive)".into(),
+                "$FileCreateMode not set (default 0644 applies - too permissive)".into(),
                 "/etc/rsyslog.conf".into(),
                 "grep FileCreateMode".into(),
             ),

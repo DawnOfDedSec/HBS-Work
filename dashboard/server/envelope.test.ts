@@ -1,4 +1,4 @@
-// Task 44 — bounded envelope parser/decryptor tests.
+// Task 44 - bounded envelope parser/decryptor tests.
 //
 // Consumes the independent cross-language vectors in
 // `fixtures/crypto-vectors.json` (Task 15). Mutations assert stable

@@ -308,7 +308,7 @@ export function Remediation({ onDrilldown }: RemediationProps) {
             className="truncate rounded bg-surface-sunken px-1.5 py-0.5 font-mono text-2xs text-ink-muted"
             title={row.repro || "No command recorded"}
           >
-            {row.repro || "—"}
+            {row.repro || "-"}
           </code>
           <IconButton
             size="sm"
@@ -537,7 +537,7 @@ export function Remediation({ onDrilldown }: RemediationProps) {
       <Drawer
         open={detail !== null}
         onClose={() => setDetail(null)}
-        title={detail ? `${detail.checkId} — ${detail.title}` : "Remediation"}
+        title={detail ? `${detail.checkId} - ${detail.title}` : "Remediation"}
         description={detail ? `${detail.severity} · ${detail.category} · ${detail.failingHosts} failing hosts` : undefined}
         size="lg"
       >
@@ -554,12 +554,12 @@ export function Remediation({ onDrilldown }: RemediationProps) {
 
             <div>
               <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-subtle">Recommendation</h3>
-              <p className="mt-1 text-sm text-ink">{sanitizeText(detail.recommendation) || "—"}</p>
+              <p className="mt-1 text-sm text-ink">{sanitizeText(detail.recommendation) || "-"}</p>
             </div>
 
             <div>
               <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-subtle">Impact</h3>
-              <p className="mt-1 text-sm text-ink">{sanitizeText(detail.impact) || "—"}</p>
+              <p className="mt-1 text-sm text-ink">{sanitizeText(detail.impact) || "-"}</p>
             </div>
 
             <div>
@@ -588,7 +588,7 @@ export function Remediation({ onDrilldown }: RemediationProps) {
             <div>
               <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-subtle">References</h3>
               {detail.references.length === 0 ? (
-                <p className="mt-1 text-sm text-ink-muted">—</p>
+                <p className="mt-1 text-sm text-ink-muted">-</p>
               ) : (
                 <ul className="mt-1 flex flex-wrap gap-1.5">
                   {detail.references.map((reference) => (

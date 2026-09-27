@@ -24,7 +24,7 @@ export default function License() {
           >
             LICENSE
           </a>{' '}
-          file is authoritative — this page is a plain-language summary, not legal advice.
+          file is authoritative - this page is a plain-language summary, not legal advice.
         </p>
         <div
           className="rounded-xl px-5 py-4 text-sm text-ink2"
@@ -33,7 +33,7 @@ export default function License() {
           <span className="mono-label mr-2" style={{ color: '#d8ccfe' }}>
             In short
           </span>
-          You are free to fork, modify, and use HBS Tool for free, for any purpose — including
+          You are free to fork, modify, and use HBS Tool for free, for any purpose - including
           commercial use, and building products or services around it. You may NOT sell the software
           itself (or a product or service whose value derives entirely or substantially from its
           functionality) as a paid product.

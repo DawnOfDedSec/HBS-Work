@@ -3,7 +3,7 @@
 //! This is the last-resort evidence source for registry checks when both
 //! `reg query` and PowerShell are absent (Server Core / Nano Server
 //! images ship neither). It never spawns a process, never writes, and
-//! every helper returns `None` on any failure — a missing key, a denied
+//! every helper returns `None` on any failure - a missing key, a denied
 //! read, a wrong type, or a malformed path all degrade the caller rather
 //! than panicking.
 //!

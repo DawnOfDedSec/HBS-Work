@@ -119,7 +119,7 @@ export function CheckDetail({ checkId, onBack, onOpenReport }: CheckDetailProps)
             Open #{row.reportId}
           </Button>
         ) : (
-          <span className="text-2xs text-ink-subtle">—</span>
+          <span className="text-2xs text-ink-subtle">-</span>
         ),
     },
   ];

@@ -148,7 +148,7 @@ function findingParagraphs(finding: ExportFinding): Paragraph[] {
           color: severityColor(finding.severity),
           font: "Consolas",
         }),
-        text(`${finding.checkId} — ${finding.title}`, { bold: true, size: 22 }),
+        text(`${finding.checkId} - ${finding.title}`, { bold: true, size: 22 }),
       ],
       spacing: { before: 160, after: 80 },
     }),
@@ -206,7 +206,7 @@ function coverPage(viewModel: ExportViewModel): (Paragraph | Table)[] {
     body("Technical Audit Report", { size: 30, color: "475569" }),
     body(`${viewModel.generator}`, { size: 18, color: "94A3B8", spacingAfter: 240 }),
     keyValueTable([
-      ["Client", viewModel.client ?? "—"],
+      ["Client", viewModel.client ?? "-"],
       ["Campaign", campaignLabel(viewModel.scope)],
       ["Scope", describeScopeText(viewModel.scope)],
       ["Generated", viewModel.generatedAt],
@@ -279,7 +279,7 @@ export async function renderDocx(viewModel: ExportViewModel): Promise<Buffer> {
   for (const check of viewModel.checks) {
     children.push(
       body(
-        `${check.checkId} — ${check.title} · ${check.severity} · ${check.findingCount} finding(s) on ${check.hostCount} host(s)${check.references.length > 0 ? ` · ${check.references.join(", ")}` : ""}`,
+        `${check.checkId} - ${check.title} · ${check.severity} · ${check.findingCount} finding(s) on ${check.hostCount} host(s)${check.references.length > 0 ? ` · ${check.references.join(", ")}` : ""}`,
         { size: 18 },
       ),
     );
@@ -291,7 +291,7 @@ export async function renderDocx(viewModel: ExportViewModel): Promise<Buffer> {
     for (const reference of viewModel.references) {
       children.push(
         body(
-          `${reference.reference} (${reference.standard}) — ${reference.count} finding(s), ${reference.nonCompliant} non-compliant, ${reference.hosts} host(s)`,
+          `${reference.reference} (${reference.standard}) - ${reference.count} finding(s), ${reference.nonCompliant} non-compliant, ${reference.hosts} host(s)`,
           { size: 16, color: "6B7280" },
         ),
       );

@@ -1,7 +1,7 @@
 // Server startup options. CLI flags take precedence over environment variables.
 //
 // Hosting:
-//   --host              bind to ALL interfaces (0.0.0.0) — exposes the dashboard
+//   --host              bind to ALL interfaces (0.0.0.0) - exposes the dashboard
 //   --host <address>    bind to one interface/address
 //   --port <n>          listen port (default 3000)
 //   --tls-cert/--tls-key  enable TLS (or HBS_TLS_CERT / HBS_TLS_KEY)

@@ -1,7 +1,7 @@
 // Host identity and location mapping (Task 48).
 //
 // Host identity is keyed by normalized stable `machine_id` (spec §6.3):
-//   * hostname is mutable display metadata — a rename updates the existing
+//   * hostname is mutable display metadata - a rename updates the existing
 //     host row, never creates a duplicate;
 //   * distinct machine IDs stay distinct even when hostnames collide;
 //   * `host_locations` records every campaign/location a machine has been

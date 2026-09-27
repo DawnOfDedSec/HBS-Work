@@ -2,15 +2,15 @@
 //
 // `renderXlsx` is a pure serializer over the normalized export view model and
 // produces a branded, client-ready workbook:
-//   * "Cover"             — title banner, campaign/client/scope, date, and the
+//   * "Cover"             - title banner, campaign/client/scope, date, and the
 //                           confidentiality note.
-//   * "Executive Summary" — KPI cards drawn as merged/coloured cells, a
+//   * "Executive Summary" - KPI cards drawn as merged/coloured cells, a
 //                           severity distribution block, and the plain-language
 //                           summary.
-//   * "Findings"          — one row per finding with severity colour coding, a
+//   * "Findings"          - one row per finding with severity colour coding, a
 //                           frozen header row, and an autofilter.
-//   * "By Host"           — per-host rollup with severity counts.
-//   * "By Check"          — per-check rollup with status counts and references.
+//   * "By Host"           - per-host rollup with severity counts.
+//   * "By Check"          - per-check rollup with status counts and references.
 //
 // `registerExportRoutes` is the single mount point for the export feature. It
 // wires the canonical scoped routes (report + campaign, `?format=`) plus the
@@ -127,7 +127,7 @@ function buildCoverSheet(ws: ExcelJS.Worksheet, viewModel: ExportViewModel): voi
 
   const metadata: [string, string | number][] = [
     ["Deliverable", viewModel.subtitle],
-    ["Client", viewModel.client ?? "—"],
+    ["Client", viewModel.client ?? "-"],
     ["Campaign", campaignLabel(viewModel.scope)],
     ["Scope", describeScopeText(viewModel.scope)],
     ["Generated", viewModel.generatedAt],
@@ -206,7 +206,7 @@ function buildExecutiveSheet(ws: ExcelJS.Worksheet, viewModel: ExportViewModel):
 
   ws.mergeCells("A1:F1");
   const title = ws.getCell("A1");
-  title.value = `${viewModel.title} — Executive Summary`;
+  title.value = `${viewModel.title} - Executive Summary`;
   title.font = { bold: true, size: 15, color: { argb: INK } };
   title.alignment = { vertical: "middle" };
   ws.getRow(1).height = 24;

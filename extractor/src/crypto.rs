@@ -43,7 +43,7 @@ fn info_bytes(suite: u8, key_id: u16, extractor_id: &[u8; 16]) -> Vec<u8> {
     v
 }
 
-/// HKDF-SHA256(ikm, salt, info) -> 32 bytes. Deterministic — the
+/// HKDF-SHA256(ikm, salt, info) -> 32 bytes. Deterministic - the
 /// cross-language test vector pins its output.
 pub fn derive_key(ikm: &[u8], salt: &[u8], info: &[u8]) -> [u8; 32] {
     let h = Hkdf::<Sha256>::new(Some(salt), ikm);

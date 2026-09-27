@@ -13,7 +13,7 @@ const EXAMPLES: { title: string; blurb: string; lang: string; code: string }[] =
   },
   {
     title: 'Air-gapped push over a jump host',
-    blurb: 'Let the extractor deliver the report itself — the only time it uses the network.',
+    blurb: 'Let the extractor deliver the report itself - the only time it uses the network.',
     lang: 'bash',
     code: `# token comes from the environment…
 HBS_PUSH_TOKEN=<campaignPushToken> ./hbs-extractor \\

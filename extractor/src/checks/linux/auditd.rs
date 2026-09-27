@@ -280,7 +280,7 @@ fn auditd_conf_num(ctx: &mut ScanContext, key: &str, min: u64, _at_least: bool) 
             }
         }
         None => degraded(&format!(
-            "{key} not set in auditd.conf (or file absent) — auditd may be uninstalled"
+            "{key} not set in auditd.conf (or file absent) - auditd may be uninstalled"
         )),
     }
 }
@@ -297,7 +297,7 @@ fn auditd_full_action(ctx: &mut ScanContext) -> CheckOutcome {
             "/etc/audit/auditd.conf".into(),
             "grep max_log_file_action".into(),
         ),
-        None => degraded("max_log_file_action not set — auditd may be uninstalled"),
+        None => degraded("max_log_file_action not set - auditd may be uninstalled"),
     }
 }
 
@@ -313,14 +313,14 @@ fn auditd_space_action(ctx: &mut ScanContext) -> CheckOutcome {
             "/etc/audit/auditd.conf".into(),
             "grep space_left_action".into(),
         ),
-        None => degraded("space_left_action not set — auditd may be uninstalled"),
+        None => degraded("space_left_action not set - auditd may be uninstalled"),
     }
 }
 
 fn audit_rules_watch(ctx: &mut ScanContext, paths: &[&str]) -> CheckOutcome {
     let Some(rules) = audit_rules_text(ctx) else {
         return degraded(
-            "audit rules not readable (auditd absent or needs root — run with --elevate)",
+            "audit rules not readable (auditd absent or needs root - run with --elevate)",
         );
     };
     let missing: Vec<&str> = paths
@@ -346,7 +346,7 @@ fn audit_rules_watch(ctx: &mut ScanContext, paths: &[&str]) -> CheckOutcome {
 
 fn time_change_audited(ctx: &mut ScanContext) -> CheckOutcome {
     let Some(rules) = audit_rules_text(ctx) else {
-        return degraded("audit rules not readable (needs root — run with --elevate)");
+        return degraded("audit rules not readable (needs root - run with --elevate)");
     };
     let has_watch = rules.contains("/etc/localtime");
     let has_syscalls = rules.contains("time-change")
@@ -375,7 +375,7 @@ fn time_change_audited(ctx: &mut ScanContext) -> CheckOutcome {
 
 fn perm_mod_audited(ctx: &mut ScanContext) -> CheckOutcome {
     let Some(rules) = audit_rules_text(ctx) else {
-        return degraded("audit rules not readable (needs root — run with --elevate)");
+        return degraded("audit rules not readable (needs root - run with --elevate)");
     };
     let mut have = 0;
     for sc in [
@@ -403,7 +403,7 @@ fn perm_mod_audited(ctx: &mut ScanContext) -> CheckOutcome {
 
 fn delete_audited(ctx: &mut ScanContext) -> CheckOutcome {
     let Some(rules) = audit_rules_text(ctx) else {
-        return degraded("audit rules not readable (needs root — run with --elevate)");
+        return degraded("audit rules not readable (needs root - run with --elevate)");
     };
     if rules.contains("unlink") || rules.contains("unlinkat") {
         ok(
@@ -435,7 +435,7 @@ fn audit_immutable(ctx: &mut ScanContext) -> CheckOutcome {
         )
     } else if rules.lines().any(|l| l.trim() == "-e 1") {
         nok(
-            "-e 1 (immutable until next reboot) — upgrade to -e 2".into(),
+            "-e 1 (immutable until next reboot) - upgrade to -e 2".into(),
             "/etc/audit/audit.rules".into(),
             "grep '\\-e ' /etc/audit/audit.rules".into(),
         )

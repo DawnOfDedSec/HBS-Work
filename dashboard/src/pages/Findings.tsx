@@ -440,7 +440,7 @@ export function Findings({ role }: { role?: AuthUser["role"] }) {
         row.evidenceDepth ? (
           <EvidenceDepthBadge depth={row.evidenceDepth} />
         ) : (
-          <span className="text-2xs text-ink-subtle">—</span>
+          <span className="text-2xs text-ink-subtle">-</span>
         ),
     },
     {
@@ -536,20 +536,20 @@ export function Findings({ role }: { role?: AuthUser["role"] }) {
       header: "Risk",
       align: "right",
       sortable: true,
-      render: (row) => (row.riskScore === null ? "—" : row.riskScore.toFixed(1)),
+      render: (row) => (row.riskScore === null ? "-" : row.riskScore.toFixed(1)),
     },
     {
       key: "coverage",
       header: "Coverage",
       align: "right",
       sortable: true,
-      render: (row) => (row.coverage === null ? "—" : `${row.coverage.toFixed(1)}%`),
+      render: (row) => (row.coverage === null ? "-" : `${row.coverage.toFixed(1)}%`),
     },
     {
       key: "latestReceivedAt",
       header: "Last report",
       render: (row) => (
-        <span className="text-xs text-ink-muted">{sanitizeText(row.latestReceivedAt) || "—"}</span>
+        <span className="text-xs text-ink-muted">{sanitizeText(row.latestReceivedAt) || "-"}</span>
       ),
     },
   ];

@@ -632,7 +632,7 @@ fn evaluate(ctx: &mut ScanContext, d: &'static SecOptionDef) -> CheckOutcome {
         // A NonEmpty option read as absent can mean the value does not
         // exist: that is a hardening failure, not missing evidence. But
         // when every read-only source was unavailable, no evidence was
-        // gathered at all — that is DegradedPartial, never Error.
+        // gathered at all - that is DegradedPartial, never Error.
         if matches!(d.kind, ValueKind::NonEmpty) {
             let observed_absent = attempts
                 .iter()

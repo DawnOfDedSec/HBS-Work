@@ -154,12 +154,12 @@ function defaultDrilldown(urlQuery: string): void {
 }
 
 function formatMs(value: number | null | undefined): string {
-  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  if (value === null || value === undefined || !Number.isFinite(value)) return "-";
   return value < 1000 ? `${value} ms` : `${(value / 1000).toFixed(2)} s`;
 }
 
 function formatBytes(value: number | null | undefined): string {
-  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  if (value === null || value === undefined || !Number.isFinite(value)) return "-";
   if (value < 1024) return `${value} B`;
   const units = ["KiB", "MiB", "GiB", "TiB"];
   let size = value / 1024;
@@ -634,7 +634,7 @@ export function Telemetry({ onDrilldown }: TelemetryProps = {}) {
     {
       key: "latest",
       header: "Last report",
-      render: (row) => <span className="text-xs text-ink-muted">{row.host.latestReceivedAt ?? "—"}</span>,
+      render: (row) => <span className="text-xs text-ink-muted">{row.host.latestReceivedAt ?? "-"}</span>,
     },
     {
       key: "age",
@@ -656,7 +656,7 @@ export function Telemetry({ onDrilldown }: TelemetryProps = {}) {
       header: "Risk",
       align: "right",
       sortable: true,
-      render: (row) => (row.host.riskScore === null ? "—" : row.host.riskScore.toFixed(1)),
+      render: (row) => (row.host.riskScore === null ? "-" : row.host.riskScore.toFixed(1)),
     },
   ];
 
@@ -672,7 +672,7 @@ export function Telemetry({ onDrilldown }: TelemetryProps = {}) {
       />
       <Stat
         label="Avg risk"
-        value={risk ? risk.weightedRiskScore.toFixed(1) : "—"}
+        value={risk ? risk.weightedRiskScore.toFixed(1) : "-"}
         icon={Gauge}
         tone={!risk ? "default" : risk.weightedRiskScore >= 80 ? "ok" : risk.weightedRiskScore >= 50 ? "default" : "high"}
         hint="Weighted, server-authoritative"

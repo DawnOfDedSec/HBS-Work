@@ -101,7 +101,7 @@ export function RiskGauge({ score, coverage, onDrilldown }: RiskGaugeProps) {
       rows={[
         { key: "score", cells: ["Risk score", clamped.toFixed(1)] },
         { key: "band", cells: ["Band", band.label] },
-        { key: "coverage", cells: ["Coverage", coverage === undefined ? "—" : `${coverage.toFixed(1)}%`] },
+        { key: "coverage", cells: ["Coverage", coverage === undefined ? "-" : `${coverage.toFixed(1)}%`] },
       ]}
     />
   );

@@ -1,6 +1,6 @@
 //! Read-only evidence collection: capped file reads and allowlisted
 //! query-command execution with timeouts. This module is where the
-//! spec's read-only guarantee is enforced — nothing else in the crate
+//! spec's read-only guarantee is enforced - nothing else in the crate
 //! may open files or spawn processes directly.
 
 use crate::model::{AuditKind, AuditStatus, SelfAudit};
@@ -252,7 +252,7 @@ fn outcome_label(s: AuditStatus) -> &'static str {
 /// Read a file read-only, at most [`MAX_READ`] bytes, lossily decoded.
 /// Records a structured attempt (before the open, updated after) plus the
 /// compact `files_read` list on success. Any error (missing, permission,
-/// ...) yields None — callers turn that into a fallback-log entry, never
+/// ...) yields None - callers turn that into a fallback-log entry, never
 /// an abort.
 pub fn read_file_capped(path: &Path, audit: &mut SelfAudit) -> Option<String> {
     let source = path.to_string_lossy().into_owned();
@@ -260,7 +260,7 @@ pub fn read_file_capped(path: &Path, audit: &mut SelfAudit) -> Option<String> {
 }
 
 /// Like [`read_file_capped`] but records `source` (a logical path) in the
-/// audit instead of the on-disk path — used by [`crate::context::ScanContext`]
+/// audit instead of the on-disk path - used by [`crate::context::ScanContext`]
 /// so cache-hit attempts, evidence blocks, and the compact list all share
 /// one stable logical source.
 pub fn read_file_capped_as(path: &Path, source: &str, audit: &mut SelfAudit) -> Option<String> {

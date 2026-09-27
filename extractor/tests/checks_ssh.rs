@@ -57,7 +57,7 @@ fn sshd_dash_t_fallback_used_when_config_missing() {
 #[test]
 fn unset_key_degrades() {
     // The injector simulates `sshd -T` without HostbasedAuthentication so the
-    // test stays hermetic — hosted runners may ship a real sshd whose config
+    // test stays hermetic - hosted runners may ship a real sshd whose config
     // would otherwise answer the probe and flip the result to Compliant.
     let mut ctx = ctx_with(
         "tests/fixtures/ssh-weak",

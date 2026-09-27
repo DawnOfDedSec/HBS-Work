@@ -67,7 +67,7 @@ pub fn register(reg: &mut Vec<RegisteredCheck>) {
         "nftables ruleset is non-empty",
         "A loaded nftables ruleset must contain actual rules.",
         "Empty rulesets lull operators; nothing is filtered.",
-        "nft list ruleset — define table/filter chains.",
+        "nft list ruleset - define table/filter chains.",
         Medium,
         "Firewall",
         &["CIS 3.5.2.5"],
@@ -128,7 +128,7 @@ fn fw_running(ctx: &mut ScanContext) -> CheckOutcome {
             } else {
                 nok(
                     format!(
-                        "no firewall service active — probes: {}",
+                        "no firewall service active - probes: {}",
                         log.iter()
                             .map(|f| format!("{}={}", f.source, f.outcome))
                             .collect::<Vec<_>>()
@@ -193,7 +193,7 @@ fn fw_default_zone(ctx: &mut ScanContext) -> CheckOutcome {
         if zone == "drop" || zone == "block" || zone == "public" {
             if zone == "public" {
                 ok(
-                    format!("default zone {zone} (public — verify only intended services allowed)"),
+                    format!("default zone {zone} (public - verify only intended services allowed)"),
                     loc,
                     "firewall-cmd --get-default-zone".into(),
                 )

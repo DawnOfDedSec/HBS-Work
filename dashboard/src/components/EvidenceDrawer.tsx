@@ -324,7 +324,7 @@ export function EvidenceDrawer({ open, finding, reportId, hostname, onClose }: E
             </div>
             <div>
               <dt className="text-ink-subtle">UID</dt>
-              <dd className="font-mono text-ink">{run.uid ?? "—"}</dd>
+              <dd className="font-mono text-ink">{run.uid ?? "-"}</dd>
             </div>
             <div>
               <dt className="text-ink-subtle">Elevated</dt>

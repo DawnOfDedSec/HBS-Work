@@ -1,5 +1,5 @@
 //! LIN-TH (part 1): threat-informed checks grounded in recent attack
-//! patterns — kernel attack-surface kill-switches and persistence
+//! patterns - kernel attack-surface kill-switches and persistence
 //! hunting (spec §5, threat-informed layer).
 
 use crate::checks::linux::network::{sysctl_eq, sysctl_num_at_least};
@@ -351,7 +351,7 @@ fn userns_restricted(ctx: &mut ScanContext) -> CheckOutcome {
     } else if !any_value {
         degraded_from_attempts(log, "user-namespace sysctls not readable on this kernel")
     } else {
-        nok("unprivileged user namespaces are UNRESTRICTED — precondition of recent kernel LPE chains".into(), "/proc/sys".into(), "sysctl kernel.unprivileged_userns_clone".into())
+        nok("unprivileged user namespaces are UNRESTRICTED - precondition of recent kernel LPE chains".into(), "/proc/sys".into(), "sysctl kernel.unprivileged_userns_clone".into())
     }
 }
 
@@ -651,7 +651,7 @@ fn root_authorized_keys(ctx: &mut ScanContext) -> CheckOutcome {
                 .count();
             nok(
                 format!(
-                    "root authorized_keys contains {keys} key(s) — must be deliberate and reviewed"
+                    "root authorized_keys contains {keys} key(s) - must be deliberate and reviewed"
                 ),
                 "/root/.ssh/authorized_keys".into(),
                 "sudo cat /root/.ssh/authorized_keys | wc -l".into(),
@@ -896,7 +896,7 @@ fn hidden_accounts(ctx: &mut ScanContext) -> CheckOutcome {
 
 fn sudo_nopasswd(ctx: &mut ScanContext) -> CheckOutcome {
     let Some(sudoers) = ctx.read("/etc/sudoers") else {
-        return degraded("/etc/sudoers not readable (needs root — run with --elevate)");
+        return degraded("/etc/sudoers not readable (needs root - run with --elevate)");
     };
     let mut grants = Vec::new();
     let mut sources = vec![("/etc/sudoers".to_string(), sudoers)];
@@ -953,7 +953,7 @@ fn ssh_version(ctx: &mut ScanContext) -> CheckOutcome {
         }
         (Some(_), Some(_)) => nok(
             format!(
-                "OpenSSH {ver} < 9.8p1 — verify distro backports (regreSSHion CVE-2024-6387 class)",
+                "OpenSSH {ver} < 9.8p1 - verify distro backports (regreSSHion CVE-2024-6387 class)",
                 ver = ver
             ),
             "sshd -V".into(),

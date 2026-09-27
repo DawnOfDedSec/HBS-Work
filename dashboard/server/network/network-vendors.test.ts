@@ -334,7 +334,7 @@ describe("Cisco ASA full config", () => {
     const byId = new Map(findings.map((finding) => [finding.checkId, finding]));
     expect(byId.get("NET-VPN-001")?.status).toBe("NonCompliant");
     expect(byId.get("NET-MGMT-001")?.status).toBe("NonCompliant");
-    // telnet is allowed from the inside interface only — no WAN exposure
+    // telnet is allowed from the inside interface only - no WAN exposure
     expect(byId.get("NET-FW-005")?.status).toBe("Compliant");
   });
 });
@@ -679,7 +679,7 @@ describe("Arista EOS running-config", () => {
     const byId = new Map(findings.map((finding) => [finding.checkId, finding]));
     expect(byId.get("NET-SVC-003")?.status).toBe("NonCompliant");
     expect(byId.get("NET-SW-007")?.status).toBe("Compliant");
-    // Arista `secret 5` is legacy MD5 — must be migrated
+    // Arista `secret 5` is legacy MD5 - must be migrated
     expect(byId.get("NET-AUTH-004")?.status).toBe("NonCompliant");
   });
 });

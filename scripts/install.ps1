@@ -51,7 +51,7 @@ if (-not (Get-Command bun -ErrorAction SilentlyContinue)) {
   powershell -NoProfile -ExecutionPolicy Bypass -Command "irm bun.sh/install.ps1 | iex"
   $env:Path = "$env:USERPROFILE\.bun\bin;$env:Path"
 }
-if (-not (Get-Command bun -ErrorAction SilentlyContinue)) { Fail "Bun installation failed — open a new terminal and re-run" }
+if (-not (Get-Command bun -ErrorAction SilentlyContinue)) { Fail "Bun installation failed - open a new terminal and re-run" }
 
 New-Item -ItemType Directory -Force -Path $AppDir, $DataDir, $BinDir, $ScriptsDir | Out-Null
 

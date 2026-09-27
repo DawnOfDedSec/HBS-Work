@@ -7,7 +7,7 @@ use console::{style, Term};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::io::Write as _;
 
-/// One line per completed check — the unit-testable core of the
+/// One line per completed check - the unit-testable core of the
 /// display. Icons: pass ✓ / fail ✗ / degraded ⚠ / error ! / n/a -.
 /// Failed checks carry a bracketed severity tag.
 pub fn fmt_check_line(r: &CheckResult) -> String {
@@ -62,7 +62,7 @@ impl Progress {
 
     pub fn banner(&self, version: &str, host: &str, os_line: &str, privilege: &str) {
         if self.quiet {
-            println!("hbs-extractor {version} — {host} ({privilege})");
+            println!("hbs-extractor {version} - {host} ({privilege})");
             return;
         }
         let box_line =

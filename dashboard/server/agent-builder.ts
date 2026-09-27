@@ -87,7 +87,7 @@ function binaryName(platform: AgentPlatform): string {
 }
 
 function defaultSourcePath(): string | null {
-  // The dashboard normally runs inside the repo clone — the extractor source
+  // The dashboard normally runs inside the repo clone - the extractor source
   // is the sibling folder. Also honor an explicit env override.
   const candidates = [
     process.env.HBS_AGENT_SOURCE_PATH,
@@ -178,7 +178,7 @@ export function templateStatus(outputDir: string | undefined, platform: AgentPla
   return { present: true, path, size: stats.size, builtAt: stats.mtime.toISOString() };
 }
 
-/** CLI entry: `bun server/agent-builder.ts <platform>` — builds and prints the path. */
+/** CLI entry: `bun server/agent-builder.ts <platform>` - builds and prints the path. */
 if (import.meta.main) {
   const platform = process.argv[2] as AgentPlatform | undefined;
   if (!platform || !["windows-amd64", "linux-amd64", "linux-arm64"].includes(platform)) {

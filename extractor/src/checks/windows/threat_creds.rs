@@ -298,7 +298,7 @@ fn driver_blocklist(ctx: &mut ScanContext) -> CheckOutcome {
     }
 }
 
-/// WIN-TH-005: application control active — WDAC policy or AppLocker.
+/// WIN-TH-005: application control active - WDAC policy or AppLocker.
 fn app_control(ctx: &mut ScanContext) -> CheckOutcome {
     let mut attempts = Vec::new();
     if let Some(guard) = device_guard(ctx, &mut attempts) {

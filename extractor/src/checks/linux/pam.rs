@@ -235,7 +235,7 @@ fn pwquality_num(ctx: &mut ScanContext, key: &str, want: i64, at_least: bool) ->
             }
         }
         None => degraded(&format!(
-            "{key} not set — distro default applies (often weaker than target)"
+            "{key} not set - distro default applies (often weaker than target)"
         )),
     }
 }
@@ -247,7 +247,7 @@ fn pwquality_classes(ctx: &mut ScanContext) -> CheckOutcome {
                 source: "/etc/security/pwquality.conf".into(),
                 outcome: "missing or unreadable".into(),
             }],
-            "/etc/security/pwquality.conf missing — password class policy not readable",
+            "/etc/security/pwquality.conf missing - password class policy not readable",
         );
     }
     let minclass = pwquality_kv(ctx, "minclass");
@@ -460,7 +460,7 @@ fn hashing_method(ctx: &mut ScanContext) -> CheckOutcome {
                 "grep ENCRYPT_METHOD /etc/login.defs".into(),
             ),
             None => nok(
-                "ENCRYPT_METHOD unset — crypt(3) default (DES on legacy) may apply".into(),
+                "ENCRYPT_METHOD unset - crypt(3) default (DES on legacy) may apply".into(),
                 loc,
                 "grep ENCRYPT_METHOD".into(),
             ),
@@ -502,7 +502,7 @@ fn sudoers_has(ctx: &mut ScanContext, option: &str) -> CheckOutcome {
                 )
             }
         }
-        None => degraded("/etc/sudoers not readable (needs root — run with --elevate)"),
+        None => degraded("/etc/sudoers not readable (needs root - run with --elevate)"),
     }
 }
 
@@ -526,7 +526,7 @@ fn sudoers_logfile(ctx: &mut ScanContext) -> CheckOutcome {
                 )
             }
         }
-        None => degraded("/etc/sudoers not readable (needs root — run with --elevate)"),
+        None => degraded("/etc/sudoers not readable (needs root - run with --elevate)"),
     }
 }
 
@@ -558,7 +558,7 @@ fn sudo_timeout(ctx: &mut ScanContext) -> CheckOutcome {
                     }
                 }
                 None => nok(
-                    "timestamp_timeout not set — default 15 (tty_tickets-dependent); verify".into(),
+                    "timestamp_timeout not set - default 15 (tty_tickets-dependent); verify".into(),
                     loc,
                     "sudo grep timestamp_timeout".into(),
                 ),

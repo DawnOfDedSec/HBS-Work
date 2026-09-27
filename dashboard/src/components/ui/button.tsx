@@ -87,7 +87,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
 
 export type IconButtonProps = Omit<ButtonProps, "size" | "icon"> & {
   icon: LucideIcon;
-  /** Accessible name — required because the button has no visible text. */
+  /** Accessible name - required because the button has no visible text. */
   label: string;
   size?: "sm" | "md" | "lg";
 };

@@ -1791,7 +1791,7 @@ fn firewall_default_deny(ctx: &mut ScanContext) -> CheckOutcome {
                 }
                 z if !z.is_empty() => {
                     return degraded(&format!(
-                        "firewalld default zone {z} — verify inbound rules"
+                        "firewalld default zone {z} - verify inbound rules"
                     ))
                 }
                 _ => {}
@@ -1894,7 +1894,7 @@ fn mgmt_listener_binding(ctx: &mut ScanContext) -> CheckOutcome {
                     "grep ListenAddress /etc/ssh/sshd_config".into(),
                 );
             }
-            return degraded("no explicit ListenAddress — sshd defaults to all interfaces; verify firewall exposure");
+            return degraded("no explicit ListenAddress - sshd defaults to all interfaces; verify firewall exposure");
         }
         log.push(att("/etc/ssh/sshd_config", "missing"));
         if let Some(out) = cmd_log(ctx, &mut log, "sshd", &["-T"]) {
@@ -2342,7 +2342,7 @@ fn secureboot_tpm_summary(ctx: &mut ScanContext) -> CheckOutcome {
     match (sb, tpm) {
         (Some(true), Some(true)) => ok("Secure Boot enabled and TPM present".into(), "firmware".into(), "mokutil --sb-state; ls /sys/class/tpm".into()),
         (Some(false), _) => nok("Secure Boot disabled".into(), "firmware".into(), "mokutil --sb-state".into()),
-        // A VM that exposes no TPM device has no virtual TPM to assess —
+        // A VM that exposes no TPM device has no virtual TPM to assess -
         // never report it as a missing-hardware failure.
         (_, Some(false)) if on_vm(ctx) => not_applicable(&format!(
             "this virtual machine ({}) exposes no TPM device (no virtual TPM configured)",

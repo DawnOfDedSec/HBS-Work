@@ -1,10 +1,10 @@
 // PDF deliverable export (Task 58, spec §6.6).
 //
 // Two templates render from the SAME normalized view model:
-//   * Executive  — cover page with an arc risk gauge, KPI table, severity
+//   * Executive  - cover page with an arc risk gauge, KPI table, severity
 //                  breakdown, top 10 findings, plain-language summary, and
 //                  references.
-//   * Technical  — cover, KPI table, per-host and per-check sections with
+//   * Technical  - cover, KPI table, per-host and per-check sections with
 //                  evidence ±3 context windows (offending line highlighted),
 //                  fallback attempt logs, read-only repro commands, impact,
 //                  remediation, and references.
@@ -235,7 +235,7 @@ function drawCover(doc: PDFKit.PDFDocument, viewModel: ExportViewModel, template
 
   doc.moveDown(1.4);
   drawKeyValueTable(doc, [
-    ["Client", viewModel.client ?? "—"],
+    ["Client", viewModel.client ?? "-"],
     ["Campaign", campaignLabel(viewModel.scope)],
     ["Scope", describeScopeText(viewModel.scope)],
     ["Generated", viewModel.generatedAt],
@@ -320,7 +320,7 @@ function renderExecutive(doc: PDFKit.PDFDocument, viewModel: ExportViewModel): v
         .font("Helvetica-Bold")
         .fontSize(10)
         .fillColor(INK)
-        .text(`${index + 1}. ${finding.checkId} — ${finding.title}`, MARGIN + badgeWidth + 8, startY + 2, {
+        .text(`${index + 1}. ${finding.checkId} - ${finding.title}`, MARGIN + badgeWidth + 8, startY + 2, {
           width: contentWidth(doc) - badgeWidth - 8,
         });
       doc.y = Math.max(doc.y, startY + 16);
@@ -341,7 +341,7 @@ function renderExecutive(doc: PDFKit.PDFDocument, viewModel: ExportViewModel): v
     for (const reference of viewModel.references.slice(0, 100)) {
       paragraph(
         doc,
-        `${reference.reference} (${reference.standard}) — ${reference.count} finding(s), ${reference.nonCompliant} non-compliant`,
+        `${reference.reference} (${reference.standard}) - ${reference.count} finding(s), ${reference.nonCompliant} non-compliant`,
         { size: 8, color: MUTED },
       );
     }
@@ -388,7 +388,7 @@ function drawFindingDetail(doc: PDFKit.PDFDocument, finding: ExportFinding): voi
     .font("Helvetica-Bold")
     .fontSize(11)
     .fillColor(INK)
-    .text(`${finding.checkId} — ${finding.title}`, MARGIN + badgeWidth + 8, startY + 3, {
+    .text(`${finding.checkId} - ${finding.title}`, MARGIN + badgeWidth + 8, startY + 3, {
       width: contentWidth(doc) - badgeWidth - 8,
     });
   doc.y = Math.max(doc.y, startY + 18);
@@ -480,7 +480,7 @@ function renderTechnical(doc: PDFKit.PDFDocument, viewModel: ExportViewModel): v
   sectionHeading(doc, "Findings by Check", 15);
   for (const check of viewModel.checks) {
     ensureSpace(doc, 40);
-    paragraph(doc, `${check.checkId} — ${check.title}`, { size: 10, bold: true, color: severityHex(check.severity) });
+    paragraph(doc, `${check.checkId} - ${check.title}`, { size: 10, bold: true, color: severityHex(check.severity) });
     paragraph(
       doc,
       `Severity ${check.severity} · ${check.findingCount} finding(s) on ${check.hostCount} host(s)${check.references.length > 0 ? ` · ${check.references.join(", ")}` : ""}`,
@@ -493,7 +493,7 @@ function renderTechnical(doc: PDFKit.PDFDocument, viewModel: ExportViewModel): v
     for (const reference of viewModel.references) {
       paragraph(
         doc,
-        `${reference.reference} (${reference.standard}) — ${reference.count} finding(s), ${reference.nonCompliant} non-compliant, ${reference.hosts} host(s)`,
+        `${reference.reference} (${reference.standard}) - ${reference.count} finding(s), ${reference.nonCompliant} non-compliant, ${reference.hosts} host(s)`,
         { size: 8, color: MUTED },
       );
     }
@@ -520,7 +520,7 @@ export function renderPdf(
         bufferPages: true,
         compress: false,
         info: {
-          Title: `${viewModel.title} — ${template === "executive" ? "Executive Summary" : "Technical Audit"}`,
+          Title: `${viewModel.title} - ${template === "executive" ? "Executive Summary" : "Technical Audit"}`,
           Author: viewModel.generator,
           Subject: template === "executive" ? "Executive Summary" : "Technical Audit",
           Keywords: [

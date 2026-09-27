@@ -56,7 +56,7 @@ switch ($Command) {
   "open"    { Start-Process "http://127.0.0.1:$(Get-EnvPort)" }
   "tray" {
     Start-Process powershell -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", (Join-Path $ScriptsDir "tray-windows.ps1")
-    Write-Host "[hbs] tray icon started — look for the shield icon in the system tray"
+    Write-Host "[hbs] tray icon started - look for the shield icon in the system tray"
   }
   "update" {
     if (Test-Path (Join-Path $AppDir ".git")) {

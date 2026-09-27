@@ -2,8 +2,8 @@
 //
 // Consumes a normalized `ParsedNetworkConfig` (see ./config-parser) and runs
 // a catalog of vendor-aware hardening checks against it. Every check always
-// resolves to exactly one authoritative status — Compliant, NonCompliant, or
-// NotApplicable — mirroring the extractor's "never false-pass, never error"
+// resolves to exactly one authoritative status - Compliant, NonCompliant, or
+// NotApplicable - mirroring the extractor's "never false-pass, never error"
 // contract: when the platform does not expose a feature the check becomes
 // NotApplicable rather than passing.
 //
@@ -59,7 +59,7 @@ const CIS_V8 = "CIS Controls v8 (4.4/12.2)";
 
 /**
  * Curated, conservative end-of-support markers per vendor. These are widely
- * published lifecycle milestones — always verify against the vendor's EOL
+ * published lifecycle milestones - always verify against the vendor's EOL
  * portal before acting. Matched on the leading version segments only.
  */
 const EOS_MARKERS: Array<{ vendor: VendorId | "any"; match: RegExp; product: string; note: string }> = [
@@ -173,7 +173,7 @@ const RULES: Rule[] = [
     severity: "High",
     category: "Authentication",
     description:
-      "Cisco type-7 passwords are obfuscated, not hashed — they can be reversed in seconds with publicly available tools. `service password-encryption` produces type 7 and must not be relied on.",
+      "Cisco type-7 passwords are obfuscated, not hashed - they can be reversed in seconds with publicly available tools. `service password-encryption` produces type 7 and must not be relied on.",
     recommendation:
       "Re-enter all passwords/secrets using `secret 9` (SCRYPT) or `secret 8` (PBKDF2). Treat any existing type-7 value as compromised and rotate it.",
     references: [CIS_BENCH, NIST_IA],
@@ -257,7 +257,7 @@ const RULES: Rule[] = [
     severity: "Critical",
     category: "Management",
     description:
-      "Telnet transmits everything — including credentials — in cleartext. An attacker positioned on the path captures administrative passwords trivially.",
+      "Telnet transmits everything - including credentials - in cleartext. An attacker positioned on the path captures administrative passwords trivially.",
     recommendation:
       "Disable Telnet (`no feature telnet`, `transport input ssh`, remove `telnet-server enable`, drop telnet from FortiOS allowaccess) and use SSHv2 exclusively.",
     references: [CIS_BENCH, NIST_AC, PCI_DSS, CIS_V8],
@@ -380,7 +380,7 @@ const RULES: Rule[] = [
     severity: "Medium",
     category: "Management",
     description:
-      "Without `exec-timeout`, abandoned privileged sessions stay open indefinitely — a workstation left unattended becomes an open management console.",
+      "Without `exec-timeout`, abandoned privileged sessions stay open indefinitely - a workstation left unattended becomes an open management console.",
     recommendation: "Set vty and console `exec-timeout 10 0` (10 minutes) or shorter.",
     references: [CIS_BENCH],
     applies: (ctx) => isCiscoIosFamily(ctx.profile.vendor) || ctx.profile.vendor === "cisco-asa",
@@ -437,7 +437,7 @@ const RULES: Rule[] = [
       "A well-known default account (admin/cisco/ubnt/…) is present with plaintext or missing credentials. Default credential lists are the first thing an attacker tries.",
     recommendation:
       "Rename or disable default accounts, set unique strong credentials, and record the change in the credential vault.",
-    references: [CIS_BENCH, "CISA Known Exploited Vulnerabilities — default credentials guidance"],
+    references: [CIS_BENCH, "CISA Known Exploited Vulnerabilities - default credentials guidance"],
     applies: (ctx) => ctx.profile.users.length > 0,
     evaluate: (ctx) => {
       const defaults = new Set(["admin", "cisco", "ubnt", "root", "manager", "operator"]);
@@ -495,7 +495,7 @@ const RULES: Rule[] = [
     severity: "Critical",
     category: "SNMP",
     description:
-      "The well-known `public`/`private` community strings (or vendor defaults) are active. They are attempted first by any scanning tool and expose full device state — or write access.",
+      "The well-known `public`/`private` community strings (or vendor defaults) are active. They are attempted first by any scanning tool and expose full device state - or write access.",
     recommendation:
       "Delete default communities, create unique randomized strings (or better, move to SNMPv3 with authPriv), and restrict with ACLs.",
     references: [CIS_BENCH, NIST_IA],
@@ -537,7 +537,7 @@ const RULES: Rule[] = [
     severity: "Critical",
     category: "SNMP",
     description:
-      "A read-write community grants full configuration changes over SNMP — equivalent to handing out a privileged CLI account, often with no per-user accountability.",
+      "A read-write community grants full configuration changes over SNMP - equivalent to handing out a privileged CLI account, often with no per-user accountability.",
     recommendation: "Remove RW communities; if write access is unavoidable, use SNMPv3 views scoped to specific OIDs with authPriv.",
     references: [CIS_BENCH, PCI_DSS],
     applies: (ctx) => ctx.profile.snmp.communities.length > 0 || ctx.profile.snmp.v3Configured === true,
@@ -629,7 +629,7 @@ const RULES: Rule[] = [
     severity: "Low",
     category: "Time synchronization",
     description:
-      "Unauthenticated NTP lets an attacker spoof time responses — invalidating logs and potentially breaking certificate validation or Kerberos-style authentication downstream.",
+      "Unauthenticated NTP lets an attacker spoof time responses - invalidating logs and potentially breaking certificate validation or Kerberos-style authentication downstream.",
     recommendation: "Enable NTP authentication with a keyed MD5/SHA key against the internal NTP servers.",
     references: [CIS_BENCH],
     applies: (ctx) => ctx.profile.ntp.servers.length > 0 && ctx.profile.ntp.authenticated !== null,
@@ -835,7 +835,7 @@ const RULES: Rule[] = [
     severity: "Medium",
     category: "Switching",
     description:
-      "Without DHCP snooping, a rogue DHCP server on user ports can hand out a malicious default gateway/DNS — enabling man-in-the-middle of the whole segment.",
+      "Without DHCP snooping, a rogue DHCP server on user ports can hand out a malicious default gateway/DNS - enabling man-in-the-middle of the whole segment.",
     recommendation: "Enable `ip dhcp snooping` and `ip dhcp snooping vlan <user-vlans>`, and mark only uplinks as trusted.",
     references: [CIS_BENCH],
     applies: (ctx) => (ctx.profile.deviceType === "switch" && isCiscoIosFamily(ctx.profile.vendor)) || ctx.profile.vendor === "aruba-switch",
@@ -851,7 +851,7 @@ const RULES: Rule[] = [
     severity: "Medium",
     category: "Switching",
     description:
-      "Without DAI, any host can send gratuitous ARP replies and spoof the gateway MAC — the classic MITM on flat networks. DAI builds on DHCP snooping bindings.",
+      "Without DAI, any host can send gratuitous ARP replies and spoof the gateway MAC - the classic MITM on flat networks. DAI builds on DHCP snooping bindings.",
     recommendation: "Enable `ip arp inspection vlan <user-vlans>` with trusted uplinks and a binding database.",
     references: [CIS_BENCH],
     applies: (ctx) => ctx.profile.deviceType === "switch" && isCiscoIosFamily(ctx.profile.vendor),
@@ -911,7 +911,7 @@ const RULES: Rule[] = [
     category: "Switching",
     description:
       "Open wall ports are free network access for visitors and attackers. Ports with no configuration and no shutdown remain live by default on Cisco/Aruba switches.",
-    recommendation: "Shut down all unused access ports (`shutdown`) — or place them in a quarantine VLAN with no uplink.",
+    recommendation: "Shut down all unused access ports (`shutdown`) - or place them in a quarantine VLAN with no uplink.",
     references: [CIS_BENCH],
     applies: (ctx) =>
       (ctx.profile.deviceType === "switch" || ctx.profile.interfaces.some((iface) => iface.mode === "access")) &&
@@ -979,7 +979,7 @@ const RULES: Rule[] = [
     severity: "Medium",
     category: "Wireless",
     description:
-      "TKIP and WPA(prepended) are deprecated — TKIP is broken (Michael/temporal key attacks) and is prohibited by 802.11-2012 and Wi-Fi Alliance certification.",
+      "TKIP and WPA(prepended) are deprecated - TKIP is broken (Michael/temporal key attacks) and is prohibited by 802.11-2012 and Wi-Fi Alliance certification.",
     recommendation: "Require WPA2-AES/CCMP at minimum (prefer WPA3-SAE/Enterprise). Remove TKIP pairings from SSID security configuration.",
     references: [CIS_BENCH, "NIST SP 800-153"],
     applies: (ctx) => ctx.profile.wirelessLans.length > 0,
@@ -1030,7 +1030,7 @@ const RULES: Rule[] = [
     severity: "Medium",
     category: "Routing",
     description:
-      "Source-routed packets let the sender choose the path — a route-spoofing/trust-bypass technique. Benchmarks require `no ip source-route` on every L3 device.",
+      "Source-routed packets let the sender choose the path - a route-spoofing/trust-bypass technique. Benchmarks require `no ip source-route` on every L3 device.",
     recommendation: "Apply `no ip source-route` globally (Cisco). Verify with an ACL test that source-routed packets are dropped.",
     references: [CIS_BENCH],
     applies: (ctx) => isCiscoIosFamily(ctx.profile.vendor),
@@ -1050,7 +1050,7 @@ const RULES: Rule[] = [
     severity: "Low",
     category: "Services",
     description:
-      "Cisco Discovery Protocol advertises platform, software version, and VLAN topology to anyone on the segment — free reconnaissance on user-facing or DMZ ports.",
+      "Cisco Discovery Protocol advertises platform, software version, and VLAN topology to anyone on the segment - free reconnaissance on user-facing or DMZ ports.",
     recommendation: "Disable CDP globally (`no cdp run`) and enable per-interface only on trusted infrastructure links if required.",
     references: [CIS_BENCH],
     applies: (ctx) => isCiscoIosFamily(ctx.profile.vendor) || ctx.profile.vendor === "arista-eos",
@@ -1090,7 +1090,7 @@ const RULES: Rule[] = [
     severity: "High",
     category: "Routing",
     description:
-      "Dynamic routing neighbors without cryptographic authentication accept any peer on the segment. An attacker (or a misconfigured lab device) can inject routes, blackhole traffic, or become the default path — the same mechanism behind large-scale BGP hijack and OSPF rogue-router incidents.",
+      "Dynamic routing neighbors without cryptographic authentication accept any peer on the segment. An attacker (or a misconfigured lab device) can inject routes, blackhole traffic, or become the default path - the same mechanism behind large-scale BGP hijack and OSPF rogue-router incidents.",
     recommendation:
       "Configure neighbor authentication on every routing adjacency: OSPF/EIGRP message-digest or HMAC-SHA key chains, BGP neighbor passwords (MD5) or GTSM/TTL-security, and prefer AES-keyed proposals where the platform supports them.",
     references: [CIS_BENCH, "NIST SP 800-53 SC-8", CIS_V8],
@@ -1138,7 +1138,7 @@ const RULES: Rule[] = [
     severity: "Medium",
     category: "Management",
     description:
-      "Without a control-plane policing policy, traffic floods aimed at the device itself (SYN floods, oversized pings, TTL-expiry attacks) consume CPU and can freeze management access — the standard prelude to attacks like the 2023-era router worm waves.",
+      "Without a control-plane policing policy, traffic floods aimed at the device itself (SYN floods, oversized pings, TTL-expiry attacks) consume CPU and can freeze management access - the standard prelude to attacks like the 2023-era router worm waves.",
     recommendation:
       "Define a CoPP/CPP policy classifying and rate-limiting management, routing, and exception traffic (`control-plane` + `service-policy input COPP`) and monitor drop counters for tuning.",
     references: [CIS_BENCH, "NIST SP 800-53 SC-5"],
@@ -1182,7 +1182,7 @@ const RULES: Rule[] = [
     severity: "Low",
     category: "Logging",
     description:
-      "Without configuration archiving there is no who-changed-what audit trail on the device itself, so unauthorized or accidental changes cannot be reconstructed after an incident — a recurring finding in post-incident reviews.",
+      "Without configuration archiving there is no who-changed-what audit trail on the device itself, so unauthorized or accidental changes cannot be reconstructed after an incident - a recurring finding in post-incident reviews.",
     recommendation:
       "Enable configuration archiving with `archive` → `log config` → `logging enable`, ship archives to central management, and review changes on every maintenance window.",
     references: ["NIST SP 800-53 AU-9", CIS_BENCH],
@@ -1199,7 +1199,7 @@ const RULES: Rule[] = [
     severity: "High",
     category: "Services",
     description:
-      "`service config` makes the device broadcast for and load a configuration file from the network at boot. Anyone answering on the segment can feed it a hostile configuration — an unauthenticated, network-triggered code path on the management plane.",
+      "`service config` makes the device broadcast for and load a configuration file from the network at boot. Anyone answering on the segment can feed it a hostile configuration - an unauthenticated, network-triggered code path on the management plane.",
     recommendation: "Disable it explicitly with `no service config` (and `no boot network` where present) and verify after the next reload.",
     references: [CIS_BENCH],
     applies: (ctx) => isCiscoIosFamily(ctx.profile.vendor),
@@ -1260,7 +1260,7 @@ export function reviewConfig(profile: ParsedNetworkConfig, lines: RawLine[]): Re
       evidence = rule.evaluate(ctx);
       findings.push(toFinding(rule, evidence.status, evidence.evidence, evidence.severity));
     } catch {
-      // A rule must never break the review — degrade to NotApplicable.
+      // A rule must never break the review - degrade to NotApplicable.
       findings.push(toFinding(rule, "NotApplicable", []));
     }
   }

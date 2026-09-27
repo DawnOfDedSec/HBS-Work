@@ -79,7 +79,7 @@ export function scoreHex(score: number): string {
 
 /** Confidentiality notice rendered on every deliverable. */
 export const CONFIDENTIALITY_NOTE =
-  "Confidential — prepared for the commissioning client. Contains redacted security findings.";
+  "Confidential - prepared for the commissioning client. Contains redacted security findings.";
 
 /** Platform attribution rendered on covers and document metadata. */
 export const GENERATOR_NAME = "HBS Security Review Platform";
@@ -655,9 +655,9 @@ function scopeDescriptor(
 }
 
 function exportTitle(scope: ExportScope): string {
-  if (scope.campaignName) return `Security Audit — ${scope.campaignName}`;
-  if (scope.campaignId) return `Security Audit — Campaign #${scope.campaignId}`;
-  if (scope.reportId) return `Security Audit — Report #${scope.reportId}`;
+  if (scope.campaignName) return `Security Audit - ${scope.campaignName}`;
+  if (scope.campaignId) return `Security Audit - Campaign #${scope.campaignId}`;
+  if (scope.reportId) return `Security Audit - Report #${scope.reportId}`;
   return "Security Audit";
 }
 

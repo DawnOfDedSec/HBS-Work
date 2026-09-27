@@ -20,7 +20,7 @@ menu() {
 }
 
 if ! command -v yad >/dev/null 2>&1; then
-  echo "tray-linux: 'yad' is not installed — using plain control commands instead."
+  echo "tray-linux: 'yad' is not installed - using plain control commands instead."
   echo "  hbs start | hbs stop | hbs restart | hbs status | hbs logs"
   echo "install yad (e.g. 'sudo apt install yad') and re-run for a real tray icon."
   exit 0

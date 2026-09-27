@@ -30,7 +30,7 @@ fn hardened_mounts_pass() {
         assert_eq!(
             r.status,
             Status::Compliant,
-            "{id}: {:?} — {}",
+            "{id}: {:?} - {}",
             r.status,
             r.evidence
         );

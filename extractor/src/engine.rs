@@ -35,7 +35,7 @@ pub fn run_all(registry: &[RegisteredCheck], ctx: &mut ScanContext) -> Vec<Check
                 CheckOutcome {
                     status: Status::DegradedPartial,
                     evidence:
-                        "requires elevation — rerun with --elevate for this check's full depth"
+                        "requires elevation - rerun with --elevate for this check's full depth"
                             .into(),
                     location: String::new(),
                     repro: String::new(),

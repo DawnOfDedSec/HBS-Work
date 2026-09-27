@@ -1,11 +1,11 @@
-// Network device & firewall configuration review — API routes and ingest.
+// Network device & firewall configuration review - API routes and ingest.
 //
 // Mirrors the sealed-report model where it applies:
 //   * one stable device identity per hostname (or config hash when the
 //     hostname is absent), like hosts keyed by machine_id;
 //   * per-location presence (`network_device_locations`, like host_locations);
 //   * one immutable row per uploaded configuration version
-//     (`network_reports`, UNIQUE(device, location, sha256) — replay-safe);
+//     (`network_reports`, UNIQUE(device, location, sha256) - replay-safe);
 //   * server-authoritative score/summary recomputed from raw findings;
 //   * append-only treatment history with justification enforcement;
 //   * bounded multipart batch (≤32 files, ≤4 MiB per config) with a single

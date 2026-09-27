@@ -210,7 +210,7 @@ fn disabled_check(ctx: &mut ScanContext, def: &ServiceCheckDef) -> CheckOutcome 
     }
 }
 
-/// Policy: disable where unused (Spooler) — enabled is NonCompliant with
+/// Policy: disable where unused (Spooler) - enabled is NonCompliant with
 /// role-aware wording.
 fn disable_if_unused(ctx: &mut ScanContext, def: &ServiceCheckDef) -> CheckOutcome {
     match fetch_service_group(ctx, def.services) {

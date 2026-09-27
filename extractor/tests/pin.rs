@@ -1,5 +1,5 @@
 //! Pinned cross-language HKDF vector. The same value must come out of
-//! the TypeScript side (dashboard/server/envelope.test.ts) — this
+//! the TypeScript side (dashboard/server/envelope.test.ts) - this
 //! constant is the contract between the two implementations.
 
 #[test]

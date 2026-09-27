@@ -272,7 +272,7 @@ export function parseRequestQuery(
   c: any,
   options: { campaignId?: number | null } = {},
 ): ParsedOrError {
-  // Per-campaign access fence: intersect nothing client-supplied — the
+  // Per-campaign access fence: intersect nothing client-supplied - the
   // restriction comes solely from the session user record.
   const user = c.get("user") as { allowedCampaigns?: number[] | null } | undefined;
   const fence = user?.allowedCampaigns ?? null;

@@ -1,5 +1,5 @@
 //! Runtime platform/arch/distro detection and own-priority lowering.
-//! One binary detects everything at runtime — there are no per-distro
+//! One binary detects everything at runtime - there are no per-distro
 //! builds (spec §3).
 
 use crate::evidence;
@@ -24,8 +24,8 @@ pub enum DistroFamily {
 
 /// Where the extractor is actually running. Controls that can only exist
 /// on real hardware (Secure Boot, TPM, bootloader, host firewall, kernel
-/// modules) are `NotApplicable` — never `NonCompliant` and never
-/// `Degraded` — inside a container, and virtual-firmware controls are
+/// modules) are `NotApplicable` - never `NonCompliant` and never
+/// `Degraded` - inside a container, and virtual-firmware controls are
 /// `NotApplicable` on a VM that exposes no such device.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum Environment {
@@ -249,7 +249,7 @@ pub fn detect() -> PlatformInfo {
 // ---------------------------------------------------------------------------
 
 /// Real-host probe used by [`detect`]. Commands/reads are recorded in a
-/// throwaway audit — the plugin scan re-detects through `ScanContext`.
+/// throwaway audit - the plugin scan re-detects through `ScanContext`.
 struct HostProbe<'a> {
     audit: &'a mut SelfAudit,
 }

@@ -43,13 +43,13 @@ export type NetworkDeviceDetailProps = {
 };
 
 function formatTimestamp(value: string | null | undefined): string {
-  if (!value) return "—";
+  if (!value) return "-";
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? new Date(parsed).toLocaleString() : sanitizeText(value);
 }
 
 function formatBytes(value: number | null): string {
-  if (value === null || !Number.isFinite(value)) return "—";
+  if (value === null || !Number.isFinite(value)) return "-";
   if (value < 1024) return `${value} B`;
   const units = ["KiB", "MiB", "GiB"];
   let size = value / 1024;
@@ -271,7 +271,7 @@ export function NetworkDeviceDetail({ deviceId, canEdit, canDelete = false, onBa
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <Stat
               label="Review score"
-              value={latest?.score === null || latest?.score === undefined ? "—" : latest.score.toFixed(1)}
+              value={latest?.score === null || latest?.score === undefined ? "-" : latest.score.toFixed(1)}
               tone={latest?.score === null || latest?.score === undefined ? "default" : latest.score >= 90 ? "ok" : latest.score >= 70 ? "default" : "high"}
               hint="Latest configuration"
             />
@@ -292,7 +292,7 @@ export function NetworkDeviceDetail({ deviceId, canEdit, canDelete = false, onBa
               <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
                 <div className="min-w-0">
                   <dt className="text-2xs font-semibold uppercase tracking-wide text-ink-subtle">Hostname</dt>
-                  <dd className="mt-0.5 truncate text-sm text-ink">{sanitizeText(device.hostname) || "—"}</dd>
+                  <dd className="mt-0.5 truncate text-sm text-ink">{sanitizeText(device.hostname) || "-"}</dd>
                 </div>
                 <div>
                   <dt className="text-2xs font-semibold uppercase tracking-wide text-ink-subtle">Vendor</dt>
@@ -306,15 +306,15 @@ export function NetworkDeviceDetail({ deviceId, canEdit, canDelete = false, onBa
                 </div>
                 <div className="min-w-0">
                   <dt className="text-2xs font-semibold uppercase tracking-wide text-ink-subtle">Model</dt>
-                  <dd className="mt-0.5 truncate text-sm text-ink">{sanitizeText(device.model) || "—"}</dd>
+                  <dd className="mt-0.5 truncate text-sm text-ink">{sanitizeText(device.model) || "-"}</dd>
                 </div>
                 <div className="min-w-0">
                   <dt className="text-2xs font-semibold uppercase tracking-wide text-ink-subtle">OS version</dt>
-                  <dd className="mt-0.5 truncate text-sm text-ink">{sanitizeText(device.osVersion) || "—"}</dd>
+                  <dd className="mt-0.5 truncate text-sm text-ink">{sanitizeText(device.osVersion) || "-"}</dd>
                 </div>
                 <div className="min-w-0">
                   <dt className="text-2xs font-semibold uppercase tracking-wide text-ink-subtle">Serial</dt>
-                  <dd className="mt-0.5 truncate font-mono text-xs text-ink-muted">{sanitizeText(device.serial) || "—"}</dd>
+                  <dd className="mt-0.5 truncate font-mono text-xs text-ink-muted">{sanitizeText(device.serial) || "-"}</dd>
                 </div>
                 <div>
                   <dt className="text-2xs font-semibold uppercase tracking-wide text-ink-subtle">First seen</dt>
@@ -344,7 +344,7 @@ export function NetworkDeviceDetail({ deviceId, canEdit, canDelete = false, onBa
                         {entry} {severity[entry.toLowerCase() as "critical"]}
                       </span>
                     ))}
-                    <Badge tone={scoreTone(latest.score)}>score {latest.score === null ? "—" : latest.score.toFixed(0)}</Badge>
+                    <Badge tone={scoreTone(latest.score)}>score {latest.score === null ? "-" : latest.score.toFixed(0)}</Badge>
                   </span>
                 }
               />
@@ -393,7 +393,7 @@ export function NetworkDeviceDetail({ deviceId, canEdit, canDelete = false, onBa
                       <span className="font-mono">{sanitizeText(report.configName)}</span>
                       <span>sha256 {sanitizeText(report.configSha256.slice(0, 16))}…</span>
                       <span>size {formatBytes(report.configSize)}</span>
-                      <span>by {sanitizeText(report.uploadedBy) || "—"}</span>
+                      <span>by {sanitizeText(report.uploadedBy) || "-"}</span>
                       <span>location #{report.locationId}</span>
                     </div>
                   </li>

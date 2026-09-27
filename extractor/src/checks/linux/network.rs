@@ -325,7 +325,7 @@ fn linux(p: &crate::platform::PlatformInfo) -> bool {
 }
 
 /// Compare one sysctl to an expected value. `default_one` marks keys
-/// that are 1 by default on modern kernels — absence is degraded (safe
+/// that are 1 by default on modern kernels - absence is degraded (safe
 /// default) rather than non-compliant.
 pub(crate) fn sysctl_eq(
     ctx: &mut ScanContext,
@@ -361,7 +361,7 @@ pub(crate) fn sysctl_eq(
                 outcome: "unavailable".into(),
             });
             if default_one {
-                degraded(&format!("{key} not readable; modern-kernel default is the secure value — verify manually"))
+                degraded(&format!("{key} not readable; modern-kernel default is the secure value - verify manually"))
             } else {
                 degraded_from_attempts(
                     log,
@@ -394,7 +394,7 @@ pub(crate) fn sysctl_num_at_least(ctx: &mut ScanContext, key: &str, want: i64) -
             }
         }
         None => degraded(&format!(
-            "{key} not readable; kernel default applies — verify"
+            "{key} not readable; kernel default applies - verify"
         )),
     }
 }

@@ -34,7 +34,7 @@ import { ScopeControls, clearScopeKeys } from "../components/ScopeSelector";
 import { resolveScope, type ScopeFilters } from "../filters";
 import { useScopeFilters } from "../useScopeFilters";
 
-/** Persisted states only — the schema rejects anything else. */
+/** Persisted states only - the schema rejects anything else. */
 export const TREATMENT_STATES = ["open", "accepted_risk", "false_positive", "remediated"] as const;
 export type TreatmentState = (typeof TREATMENT_STATES)[number];
 

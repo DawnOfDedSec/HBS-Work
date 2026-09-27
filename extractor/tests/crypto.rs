@@ -93,7 +93,7 @@ fn tampered_extractor_id_rejected() {
 #[test]
 fn wrong_extractor_id_at_seal_fails_open_detection() {
     // Envelope sealed with one issuance id must not decrypt when the
-    // HKDF info differs — simulate via direct header swap from another
+    // HKDF info differs - simulate via direct header swap from another
     // envelope sealed with a different extractor_id.
     let (priv_b, pub_b) = recipient();
     let other_id: [u8; 16] = [0x11; 16];

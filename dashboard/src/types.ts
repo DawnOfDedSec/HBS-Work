@@ -1,7 +1,7 @@
 // Wire types for the sealed report and dashboard API. These mirror the
 // actual serialized shapes produced by the Rust extractor
 // (`extractor/src/model.rs`, serde `rename_all = "camelCase"`) and the
-// dashboard route responses. Keep in lock-step with those — do not invent
+// dashboard route responses. Keep in lock-step with those - do not invent
 // aliases.
 
 export type Severity = "Critical" | "High" | "Medium" | "Low" | "Informational";

@@ -1,4 +1,4 @@
-//! GEN-INV: shared informational inventory — context evidence, never
+//! GEN-INV: shared informational inventory - context evidence, never
 //! pass/fail (spec §5). Collected on every OS where the sources exist.
 
 use crate::checks::windows::native_accounts;
@@ -489,7 +489,7 @@ fn installed_packages(ctx: &mut ScanContext) -> CheckOutcome {
     if !linux_only(ctx) {
         // Windows sources that need no package manager. Win32_Product via
         // CIM first (PowerShell), then the registry Uninstall keys read
-        // natively — the only path that survives a PowerShell-less image.
+        // natively - the only path that survives a PowerShell-less image.
         let cim_args: [&str; 4] = [
             "-NoProfile",
             "-NonInteractive",
@@ -907,7 +907,7 @@ fn open_shares(ctx: &mut ScanContext) -> CheckOutcome {
     let mut log = Vec::new();
     if linux_only(ctx) {
         // Local-only sources: the static export table and the live kernel
-        // export table. `showmount` is deliberately not used — it speaks
+        // export table. `showmount` is deliberately not used - it speaks
         // RPC to a (potentially remote) NFS server. Where neither file
         // exists there is no independent local fallback: NFS exports can
         // only be configured through these two files, so absence is
@@ -1495,7 +1495,7 @@ fn backup_agent(ctx: &mut ScanContext) -> CheckOutcome {
         }
     }
     if candidates.is_empty() {
-        return degraded("no known backup agent detected — verify backups exist for this host");
+        return degraded("no known backup agent detected - verify backups exist for this host");
     }
     inv_ok(
         format!("backup-related services: {}", candidates.join(", ")),

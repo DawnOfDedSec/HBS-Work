@@ -278,7 +278,7 @@ export function Downloads({ campaignId, locationId, onBack }: DownloadsProps) {
                 </div>
                 <div>
                   <dt className="text-ink-subtle">Expires</dt>
-                  <dd className="text-ink">{sanitizeText(issuance.expiresAt) || "—"}</dd>
+                  <dd className="text-ink">{sanitizeText(issuance.expiresAt) || "-"}</dd>
                 </div>
                 <div>
                   <dt className="text-ink-subtle">Extractor ID</dt>

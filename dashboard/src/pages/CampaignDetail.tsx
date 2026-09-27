@@ -111,28 +111,28 @@ function ReportsPanel({ campaignId, onDrilldown }: { campaignId: number; onDrill
 
   const columns: Array<TableColumn<ReportListRow>> = [
     { key: "id", header: "Report", render: (row) => <span className="font-mono text-xs text-ink">#{row.id}</span> },
-    { key: "hostname", header: "Host", render: (row) => sanitizeText(row.hostname) || "—" },
+    { key: "hostname", header: "Host", render: (row) => sanitizeText(row.hostname) || "-" },
     {
       key: "receivedAt",
       header: "Received",
       sortable: true,
       render: (row) => <span className="text-xs text-ink-muted">{sanitizeText(row.receivedAt)}</span>,
     },
-    { key: "extractorVersion", header: "Extractor", render: (row) => sanitizeText(row.extractorVersion) || "—" },
-    { key: "via", header: "Via", render: (row) => <Badge tone="neutral">{sanitizeText(row.via) || "—"}</Badge> },
+    { key: "extractorVersion", header: "Extractor", render: (row) => sanitizeText(row.extractorVersion) || "-" },
+    { key: "via", header: "Via", render: (row) => <Badge tone="neutral">{sanitizeText(row.via) || "-"}</Badge> },
     {
       key: "score",
       header: "Risk",
       align: "right",
       sortable: true,
-      render: (row) => (row.score === null ? "—" : row.score.toFixed(1)),
+      render: (row) => (row.score === null ? "-" : row.score.toFixed(1)),
     },
     {
       key: "coverage",
       header: "Coverage",
       align: "right",
       sortable: true,
-      render: (row) => (row.coverage === null ? "—" : `${row.coverage.toFixed(1)}%`),
+      render: (row) => (row.coverage === null ? "-" : `${row.coverage.toFixed(1)}%`),
     },
     {
       key: "actions",

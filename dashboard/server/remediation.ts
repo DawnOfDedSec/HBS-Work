@@ -4,7 +4,7 @@
 // collapsed into one actionable unit with the exact repro/remediation command,
 // the affected hosts, references, and the current treatment roll-up.
 //
-// Scoping is delegated to the canonical query layer in `reports.ts` — this
+// Scoping is delegated to the canonical query layer in `reports.ts` - this
 // module never re-implements the filter parser or the report scoping. All
 // aggregation happens in JS over the scoped findings (already read from the
 // stored report JSON), so no user value ever reaches SQL as text.

@@ -2,7 +2,7 @@
 //!
 //! With a simulated container environment, controls that genuinely cannot
 //! exist (firmware, TPM, bootloader, kernel modules/lockdown, host
-//! firewall, host partition layout, swap) must be `NotApplicable` — never
+//! firewall, host partition layout, swap) must be `NotApplicable` - never
 //! `NonCompliant` and never `Error`. Ordinary controls must still
 //! evaluate normally, so the environment gate is not a blanket skip.
 
@@ -110,15 +110,15 @@ fn container_host_only_controls_are_not_applicable() {
         match r.status {
             Status::NotApplicable => {}
             other => problems.push(format!(
-                "{id}: expected NotApplicable, got {other:?} — {}",
+                "{id}: expected NotApplicable, got {other:?} - {}",
                 r.evidence
             )),
         }
         if r.status == Status::Error {
-            problems.push(format!("{id}: returned Error — {}", r.evidence));
+            problems.push(format!("{id}: returned Error - {}", r.evidence));
         }
         if r.status == Status::NonCompliant {
-            problems.push(format!("{id}: false NonCompliant — {}", r.evidence));
+            problems.push(format!("{id}: false NonCompliant - {}", r.evidence));
         }
     }
 

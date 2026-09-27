@@ -1,7 +1,7 @@
 //! Whole-catalog audit (Task 16 Step 1 / Task 40).
 //!
 //! Builds the real catalog, checks ID hygiene, then runs every check twice
-//! — once as Linux, once as Windows — against an empty temp root with a
+//! - once as Linux, once as Windows - against an empty temp root with a
 //! command injector that returns `None` for everything. No process is
 //! spawned and no host file is read: every source is missing, so the only
 //! acceptable outcomes are Compliant / NonCompliant / NotApplicable /

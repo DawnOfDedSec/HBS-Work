@@ -9,7 +9,7 @@ Thanks for your interest in contributing! This file covers everything you need t
 | Extractor | Rust (stable), single static binary, zero runtime dependencies |
 | Dashboard | Bun + Hono backend, Vite + React SPA, SQLite |
 | Platforms | Linux (musl, amd64/arm64) and Windows (amd64, arm64/armv7 stretch) |
-| Docs site | `docs/` — Vite + React + TypeScript, built with Bun, deployed to GitHub Pages |
+| Docs site | `docs/` - Vite + React + TypeScript, built with Bun, deployed to GitHub Pages |
 
 The two sides share two exact byte formats (the `.hbs` sealed-report envelope and
 the binary keyslot) implemented identically in Rust and TypeScript, with
@@ -18,8 +18,8 @@ implementations and the fixtures must change in the same PR.
 
 ## Prerequisites
 
-- **Rust stable** (`rustup`) — the extractor; `rust-toolchain.toml` pins the version
-- **Bun 1.1+** — the dashboard and the docs site
+- **Rust stable** (`rustup`) - the extractor; `rust-toolchain.toml` pins the version
+- **Bun 1.1+** - the dashboard and the docs site
 - Optional: `cargo-zigbuild` (cross-compilation), Docker (distro/container sweeps), Playwright browsers (E2E)
 
 ## Building
@@ -95,7 +95,7 @@ behavior, never aspirational behavior.
 ## CI
 
 - **`validate.yml`**: Linux + Windows build/tests/sealed smoke scan and the dashboard suite on every push and PR
-- **`release.yml`**: after `validate` succeeds on `main` — builds the target matrix, emits `SHA256SUMS`/`manifest.json`, publishes the release
+- **`release.yml`**: after `validate` succeeds on `main` - builds the target matrix, emits `SHA256SUMS`/`manifest.json`, publishes the release
 - **`docs-pages.yml`**: builds the docs site; pushes to `main` deploy it to GitHub Pages
 
 ## Reporting Issues

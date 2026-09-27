@@ -18,47 +18,58 @@ export const DOC_SECTIONS: DocSection[] = [
   {
     slug: 'getting-started',
     title: 'Getting started',
-    blurb: 'Install the dashboard, issue a patched extractor, run the read-only scan, deliver the sealed report.',
+    blurb: 'Install the dashboard, sign in, issue a patched extractor, run the read-only scan, and read your first results.',
     content: [
-      { type: 'h3', content: '1. The dashboard (hosted on your machine)' },
+      { type: 'h3', content: '1. Install and open the dashboard' },
       {
-        type: 'code',
-        lang: 'bash',
-        title: 'Linux / macOS one-line install',
-        content: `curl -fsSL https://raw.githubusercontent.com/PotenFYR-Studios/HBS-Tool/main/scripts/install.sh | bash
-
-# Windows (PowerShell)
-irm https://raw.githubusercontent.com/PotenFYR-Studios/HBS-Tool/main/scripts/install.ps1 | iex`,
+        type: 'text',
+        content:
+          'The dashboard runs on the machine you manage scans from (a workstation or server) and stores all data locally. The installers set it up as a background service and print the console address when done:',
       },
       {
         type: 'code',
         lang: 'bash',
-        title: 'From a clone',
-        content: `cd dashboard
-bun install
-bun run build                 # emits dist/ (the API server serves the SPA too)
-bun server/index.ts           # http://127.0.0.1:3000`,
+        title: 'Linux / macOS',
+        content: `curl -fsSL https://raw.githubusercontent.com/PotenFYR-Studios/HBS-Tool/main/scripts/install.sh | bash`,
+      },
+      {
+        type: 'code',
+        lang: 'powershell',
+        title: 'Windows (PowerShell)',
+        content: `irm https://raw.githubusercontent.com/PotenFYR-Studios/HBS-Tool/main/scripts/install.ps1 | iex`,
+      },
+      {
+        type: 'text',
+        content:
+          'Open http://127.0.0.1:3000 on the machine running the dashboard. To reach it from another computer, start it with --host and open http://<dashboard-ip>:3000; add TLS (HBS_TLS_CERT / HBS_TLS_KEY) for anything beyond your LAN.',
       },
       {
         type: 'note',
         tone: 'info',
         content:
-          'On first launch (no users) the server prints superuser credentials once in the CLI. Sign in and change the password.',
+          'On first launch the server creates a superuser account and prints its credentials once in the terminal or service log. Sign in with those and change the password under Admin → Users; after that everything happens in the browser.',
       },
-      { type: 'h3', content: '2. Create campaign → location → issuance' },
+      { type: 'h3', content: '2. Create a campaign and generate an extractor' },
       {
         type: 'text',
         content:
-          'In the UI: Campaigns → New campaign (adds the first location), then Locations → Generate extractor. Or via API:',
+          'Three levels: Campaign (the review, e.g. "Acme Q3") → Location (a site, e.g. "DC-East") → Issuance (one extractor binary locked to that campaign/location with its own encryption key and expiry).',
       },
       {
-        type: 'code',
-        lang: 'http',
-        content: `POST /api/campaigns                         { "name":"Acme Q3", "locations":[{"name":"DC-East"}] }
-POST /api/campaigns/:id/locations/:loc/issuances   { "platform":"linux-amd64" }
-GET  /api/issuances/:id/download?token=<downloadToken>`,
+        type: 'list',
+        items: [
+          'Sign in and open Campaigns.',
+          'Click New campaign, give it a name, and add your first location.',
+          'Open the campaign, go to Locations & Hosts, and click Generate extractor.',
+          "Pick the platform of the machines you will scan (linux-amd64 or windows-amd64) and download the file. Reports it produces can only be opened by this dashboard.",
+        ],
       },
-      { type: 'h3', content: '3. Run the extractor on the target (offline)' },
+      { type: 'h3', content: '3. Scan a server (offline, read-only)' },
+      {
+        type: 'text',
+        content:
+          'Copy the extractor to the target server any way you already use (SCP, USB stick, network share) and run it there:',
+      },
       {
         type: 'code',
         lang: 'bash',
@@ -68,22 +79,117 @@ GET  /api/issuances/:id/download?token=<downloadToken>`,
 # Windows (PowerShell/cmd)
 hbs-extractor.exe --no-elevate --quiet`,
       },
-      { type: 'h3', content: '4. Deliver the report — pick one' },
+      {
+        type: 'note',
+        tone: 'tip',
+        content:
+          'That is the whole scan: strictly read-only, no internet access, exactly one file written (hbs-report-*.hbs). On Windows, double-clicking the .exe also works; use --elevate for admin-only checks (declining the UAC prompt is safe).',
+      },
+      { type: 'h3', content: '4. Get the report into the dashboard' },
+      {
+        type: 'list',
+        items: [
+          'Manual upload (default): copy the .hbs file back, open Campaigns → your campaign → Locations & Hosts, and drag it into the drop zone (batch uploads up to 32 files).',
+          'Direct push (optional): copy the push token from the issuance page and run the extractor with --push https://<dashboard-host>:3000/api/ingest. This is the only situation in which the extractor touches the network.',
+        ],
+      },
+      {
+        type: 'text',
+        content:
+          'The host appears immediately via live notification. Campaign and location are derived from the issuance, and re-scanning a server auto-resolves findings that now pass.',
+      },
+      { type: 'h3', content: '5. Read the results' },
+      {
+        type: 'table',
+        headers: ['You are...', 'Open...', 'You get...'],
+        rows: [
+          ['Management', 'Executive Summary', 'One-page risk overview, plain-language narrative, print/PDF for the board'],
+          ['Sysadmin', 'Remediation', 'Every failing check grouped into fix actions with copyable commands'],
+          ['Analyst', 'Findings', 'Filter/pivot by host or check, open evidence, diff hosts against each other'],
+          ['Auditor', 'Standards + Treatment', 'CIS / NIST 800-53 / ISO 27001 / PCI-DSS coverage, accepted-risk board'],
+        ],
+      },
+    ],
+  },
+  {
+    slug: 'first-scan',
+    title: 'First scan walkthrough',
+    blurb: 'From zero to your first reviewed server report in about 15 minutes, entirely in the browser.',
+    content: [
+      {
+        type: 'text',
+        content:
+          'This walkthrough takes one dashboard machine and one target server (here: Ubuntu) from nothing to a reviewed, exported report. Every step except copying files is a click in the browser.',
+      },
+      { type: 'h3', content: 'Step 1: start the dashboard (5 minutes, one time)' },
       {
         type: 'code',
         lang: 'bash',
-        content: `# (A) Upload in the dashboard
-#     Campaign → Locations & Hosts → drag the .hbs into the drop zone
-
-# (B) Optional push from the extractor (only then does it use the network)
-HBS_PUSH_TOKEN=<campaignPushToken> ./hbs-extractor \\
-  --no-elevate --quiet --push https://dashboard.example/api/ingest`,
+        title: 'on the machine that will store the reports',
+        content: `curl -fsSL https://raw.githubusercontent.com/PotenFYR-Studios/HBS-Tool/main/scripts/install.sh | bash`,
+      },
+      {
+        type: 'text',
+        content:
+          'The installer finishes with the console address (http://127.0.0.1:3000 on this machine) and one-time superuser credentials. Open the address in a browser, sign in, and change the password under Admin → Users.',
+      },
+      { type: 'h3', content: 'Step 2: campaign, location, extractor (2 minutes)' },
+      {
+        type: 'list',
+        items: [
+          'Campaigns → New campaign → name it (e.g. "First look") → add a location (e.g. "Office").',
+          'Open the campaign → Locations & Hosts → Generate extractor.',
+          "Platform: linux-amd64 (or windows-amd64 for Windows servers) → download the binary.",
+        ],
+      },
+      {
+        type: 'note',
+        tone: 'info',
+        content:
+          'The downloaded file is tied to this issuance: it expires on schedule, can be revoked from the same page, and its reports can only be decrypted by this dashboard.',
+      },
+      { type: 'h3', content: 'Step 3: scan the target server (2 minutes)' },
+      {
+        type: 'code',
+        lang: 'bash',
+        title: 'copy the binary to the server, then on the server',
+        content: `chmod +x hbs-extractor
+./hbs-extractor --no-elevate --quiet`,
+      },
+      {
+        type: 'text',
+        content:
+          'Unprivileged, offline, and done in about two minutes for the full catalog. It leaves exactly one new file next to itself: hbs-report-*.hbs. Copy that file back to the dashboard machine.',
+      },
+      { type: 'h3', content: 'Step 4: upload and see results (1 minute)' },
+      {
+        type: 'text',
+        content:
+          'Back in the browser: Locations & Hosts → drop the .hbs into the upload zone. The host appears within seconds and the console notifies you when ingestion finishes. Then look at:',
+      },
+      {
+        type: 'list',
+        items: [
+          'Overview: KPI tiles and the severity donut for what was just ingested.',
+          'Remediation: the concrete fix list, ordered by severity, with copyable commands.',
+          'Executive Summary: the same result as a one-page narrative, ready to print or save as PDF.',
+        ],
+      },
+      { type: 'h3', content: 'Step 5: what to do next' },
+      {
+        type: 'list',
+        items: [
+          'Add more locations and generate one extractor per site; batch-upload a whole fleet of reports at once (up to 32 files per drop).',
+          'Fix something on the server, scan it again, upload: previously open findings that now pass are auto-resolved, and the diff is kept per host.',
+          'Record accepted risks on the Treatment board so they stop counting as open findings.',
+          'Invite teammates as auditor or viewer under Admin → Users; everyone works in the browser.',
+        ],
       },
       {
         type: 'note',
         tone: 'tip',
         content:
-          'The dashboard derives campaign and location solely from the issuance, keys the host by machine ID, and auto-resolves previously open findings that now pass on a subsequent scan.',
+          'Report did not arrive? Run the extractor without --quiet to see progress, and check the Troubleshooting section of the README. Push failures never lose data: the local report is always kept.',
       },
     ],
   },
@@ -122,7 +228,7 @@ cargo build --release     # LTO, stripped, panic=abort, opt-level=z`,
         type: 'note',
         tone: 'warn',
         content:
-          'Hidden/internal: --elevated-child (relaunch guard) and, debug builds only, --dev-insecure-key <64-hex> — never present in release builds.',
+          'Hidden/internal: --elevated-child (relaunch guard) and, debug builds only, --dev-insecure-key <64-hex> - never present in release builds.',
       },
       { type: 'h3', content: 'Environment variables' },
       {
@@ -140,9 +246,9 @@ cargo build --release     # LTO, stripped, panic=abort, opt-level=z`,
         type: 'list',
         items: [
           'Output: one sealed .hbs file, written next to the extractor binary by default, or to --out. It is the only file written on the target.',
-          '0 — success',
-          '2 — unissued/placeholder or expired keyslot',
-          '3 — no checks matched the filters, sealing/write failure, or push-token configuration error',
+          '0 - success',
+          '2 - unissued/placeholder or expired keyslot',
+          '3 - no checks matched the filters, sealing/write failure, or push-token configuration error',
           'A network push failure does not fail the scan: the local report is kept and the summary shows a push-failed status.',
         ],
       },
@@ -182,8 +288,8 @@ bun run build && bun server/index.ts   # production single-process`,
           ['--host', 'HOST', 'Bare --host binds all interfaces (0.0.0.0); --host <addr> binds one; default 127.0.0.1'],
           ['--port <n>', 'PORT', 'Listen port (default 3000)'],
           ['--tls-cert / --tls-key', 'HBS_TLS_CERT / HBS_TLS_KEY', 'Enable TLS (fingerprint printed at startup)'],
-          ['—', 'HBS_DB_PATH', 'SQLite path (default server/data/hbs.sqlite)'],
-          ['—', 'HBS_DATA_ROOT', 'Keys/artifacts root (default server/data)'],
+          ['-', 'HBS_DB_PATH', 'SQLite path (default server/data/hbs.sqlite)'],
+          ['-', 'HBS_DATA_ROOT', 'Keys/artifacts root (default server/data)'],
         ],
       },
       { type: 'h3', content: 'First run & users' },
@@ -201,12 +307,12 @@ bun run build && bun server/index.ts   # production single-process`,
         type: 'list',
         items: [
           'Campaign + location (creation can include the first location atomically).',
-          'Issuance — a unique random extractor_id and independent X25519 keypair; the dashboard patches the binary and stores the immutable artifact + SHA-256.',
-          'Download — token or session authenticated; streams the exact stored bytes and verifies the hash.',
-          'Scan — air-gapped by default, or --push.',
-          'Ingest — bounds → issuance resolution → token auth → AEAD decrypt + bounded decompress → schema/identity cross-binding → dedupe → one transaction → SSE report-arrived.',
-          'Triage — treatment workflow with audit history; owners, due dates, justifications.',
-          'Export — Excel, CSV, PDF (executive + technical), Word, diagnostic bundle.',
+          'Issuance - a unique random extractor_id and independent X25519 keypair; the dashboard patches the binary and stores the immutable artifact + SHA-256.',
+          'Download - token or session authenticated; streams the exact stored bytes and verifies the hash.',
+          'Scan - air-gapped by default, or --push.',
+          'Ingest - bounds → issuance resolution → token auth → AEAD decrypt + bounded decompress → schema/identity cross-binding → dedupe → one transaction → SSE report-arrived.',
+          'Triage - treatment workflow with audit history; owners, due dates, justifications.',
+          'Export - Excel, CSV, PDF (executive + technical), Word, diagnostic bundle.',
         ],
       },
       { type: 'h3', content: 'Console pages' },
@@ -287,9 +393,9 @@ GET    /api/export/campaign/:id?format=…`,
       {
         type: 'list',
         items: [
-          'results[] — status, severity, evidence, location, repro, impact, recommendation, references, fallbackLog, evidenceBlocks, runContext.',
-          'selfAudit.attempts[] — every file read / command / registry / API query with kind, redacted source, status, exitCode, bytes, durationMs, and evidenceRef linking a finding to the log line that produced it.',
-          'diagnostics — environment/hypervisor, catalog fingerprint, privilege, peak RSS, phase durations, missingData, and a bounded human-readable log.',
+          'results[] - status, severity, evidence, location, repro, impact, recommendation, references, fallbackLog, evidenceBlocks, runContext.',
+          'selfAudit.attempts[] - every file read / command / registry / API query with kind, redacted source, status, exitCode, bytes, durationMs, and evidenceRef linking a finding to the log line that produced it.',
+          'diagnostics - environment/hypervisor, catalog fingerprint, privilege, peak RSS, phase durations, missingData, and a bounded human-readable log.',
           'All strings are redacted and size-bounded before sealing.',
         ],
       },
@@ -309,7 +415,7 @@ GET    /api/export/campaign/:id?format=…`,
       {
         type: 'text',
         content:
-          '368 testcases — Linux LIN-* (165), Windows WIN-* (153), and shared GEN-* (50). Checks are applicability-gated, not duplicated: a Linux host runs ~215, a Windows host ~200; the union is 368.',
+          '368 testcases - Linux LIN-* (165), Windows WIN-* (153), and shared GEN-* (50). Checks are applicability-gated, not duplicated: a Linux host runs ~215, a Windows host ~200; the union is 368.',
       },
       {
         type: 'table',

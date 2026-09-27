@@ -266,7 +266,7 @@ fn mta_local_only(ctx: &mut ScanContext) -> CheckOutcome {
         }
     } else {
         ok(
-            "no postfix main.cf — MTA absent or non-postfix".into(),
+            "no postfix main.cf - MTA absent or non-postfix".into(),
             "/etc/postfix/main.cf".into(),
             "ls /etc/postfix".into(),
         )

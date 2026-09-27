@@ -78,7 +78,7 @@ pub fn register(reg: &mut Vec<RegisteredCheck>) {
         "LIN-TH-032",
         "Distro not end-of-life",
         "OS within vendor support.",
-        "EOL systems (CentOS 7 etc.) receive no security patches — permanent exposure.",
+        "EOL systems (CentOS 7 etc.) receive no security patches - permanent exposure.",
         "Migrate to a supported release before vendor EOL.",
         High,
         "Threat",
@@ -408,14 +408,14 @@ fn distro_eol(ctx: &mut ScanContext) -> CheckOutcome {
     }
     let Some((key, eol)) = matched else {
         return degraded(&format!(
-            "no EOL data for '{name} {ver}' — verify support status"
+            "no EOL data for '{name} {ver}' - verify support status"
         ));
     };
     let now = chrono_now_ym();
     if now.as_deref() > Some(eol) {
         nok(
             format!(
-                "{key} reached EOL on {eol} (now {}) — unsupported",
+                "{key} reached EOL on {eol} (now {}) - unsupported",
                 now.unwrap_or_default()
             ),
             "/etc/os-release".into(),
@@ -531,7 +531,7 @@ fn kernel_currency(ctx: &mut ScanContext) -> CheckOutcome {
         )
     } else {
         nok(
-            format!("running {running} but newest installed is {latest} — reboot debt"),
+            format!("running {running} but newest installed is {latest} - reboot debt"),
             "/boot".into(),
             "ls /boot; uname -r".into(),
         )

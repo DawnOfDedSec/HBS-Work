@@ -1,0 +1,140 @@
+﻿2026-09-27T18:29:20.3249741Z Current runner version: '2.337.0'
+2026-09-27T18:29:20.3276965Z ##[group]Runner Image Provisioner
+2026-09-27T18:29:20.3277939Z Hosted Compute Agent
+2026-09-27T18:29:20.3278616Z Version: 20260828.587
+2026-09-27T18:29:20.3279289Z Commit: abac92662cab4cc7352de4f9f9d2e2419aad9c29
+2026-09-27T18:29:20.3280145Z Build Date: 2026-08-28T16:44:25Z
+2026-09-27T18:29:20.3280859Z Worker ID: {5c3a7089-1351-4d26-b19b-3bdca006c2b3}
+2026-09-27T18:29:20.3281832Z Azure Region: westcentralus
+2026-09-27T18:29:20.3282525Z ##[endgroup]
+2026-09-27T18:29:20.3284061Z ##[group]Operating System
+2026-09-27T18:29:20.3284788Z Ubuntu
+2026-09-27T18:29:20.3285342Z 24.04.5
+2026-09-27T18:29:20.3285860Z LTS
+2026-09-27T18:29:20.3286514Z ##[endgroup]
+2026-09-27T18:29:20.3287098Z ##[group]Runner Image
+2026-09-27T18:29:20.3288237Z Image: ubuntu-24.04
+2026-09-27T18:29:20.3288835Z Version: 20260920.314.1
+2026-09-27T18:29:20.3290233Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260920.314/images/ubuntu/Ubuntu2404-Readme.md
+2026-09-27T18:29:20.3292016Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260920.314
+2026-09-27T18:29:20.3293158Z ##[endgroup]
+2026-09-27T18:29:20.3294377Z ##[group]GITHUB_TOKEN Permissions
+2026-09-27T18:29:20.3296786Z Contents: read
+2026-09-27T18:29:20.3297402Z Metadata: read
+2026-09-27T18:29:20.3297968Z Packages: read
+2026-09-27T18:29:20.3298620Z ##[endgroup]
+2026-09-27T18:29:20.3300804Z Secret source: Actions
+2026-09-27T18:29:20.3302354Z Cache mode: write
+2026-09-27T18:29:20.3303100Z Prepare workflow directory
+2026-09-27T18:29:20.3909670Z Prepare all required actions
+2026-09-27T18:29:20.3975658Z Getting action download info
+2026-09-27T18:29:20.6722564Z Download action repository 'actions/checkout@v7' (SHA:3d3c42e5aac5ba805825da76410c181273ba90b1)
+2026-09-27T18:29:20.8484859Z Complete job name: extractor (rockylinux:9)
+2026-09-27T18:29:20.8968627Z ##[group]Checking docker version
+2026-09-27T18:29:20.8984429Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-09-27T18:29:20.9600660Z '1.48'
+2026-09-27T18:29:20.9612961Z Docker daemon API version: '1.48'
+2026-09-27T18:29:20.9613750Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-09-27T18:29:20.9786162Z '1.48'
+2026-09-27T18:29:20.9799839Z Docker client API version: '1.48'
+2026-09-27T18:29:20.9806157Z ##[endgroup]
+2026-09-27T18:29:20.9808566Z ##[group]Clean up resources from previous jobs
+2026-09-27T18:29:20.9814014Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=dbb962"
+2026-09-27T18:29:20.9964907Z ##[command]/usr/bin/docker network prune --force --filter "label=dbb962"
+2026-09-27T18:29:21.0104855Z ##[endgroup]
+2026-09-27T18:29:21.0105700Z ##[group]Create local container network
+2026-09-27T18:29:21.0116355Z ##[command]/usr/bin/docker network create --label dbb962 github_network_a342c002e0024737bf06b2fcd5acda42
+2026-09-27T18:29:21.0626364Z 3a4ec0963f1e9c808ffb4fcf6f0a40520298abd0e0b1d10b70de9bf2003d1fb9
+2026-09-27T18:29:21.0645926Z ##[endgroup]
+2026-09-27T18:29:21.0669964Z ##[group]Starting job container
+2026-09-27T18:29:21.0691880Z ##[command]/usr/bin/docker pull rockylinux:9
+2026-09-27T18:29:21.7956638Z 9: Pulling from library/rockylinux
+2026-09-27T18:29:21.9873511Z 446f83f14b23: Pulling fs layer
+2026-09-27T18:29:22.5602987Z 446f83f14b23: Verifying Checksum
+2026-09-27T18:29:22.5603715Z 446f83f14b23: Download complete
+2026-09-27T18:29:24.8018550Z 446f83f14b23: Pull complete
+2026-09-27T18:29:24.8158794Z Digest: sha256:d7be1c094cc5845ee815d4632fe377514ee6ebcf8efaed6892889657e5ddaaa6
+2026-09-27T18:29:24.8171448Z Status: Downloaded newer image for rockylinux:9
+2026-09-27T18:29:24.8179331Z docker.io/library/rockylinux:9
+2026-09-27T18:29:24.8262913Z ##[command]/usr/bin/docker create --name 8bb67e5765d64fdab154d7cf467aaffb_rockylinux9_1b44f8 --label dbb962 --workdir /__w/HBS-Tool/HBS-Tool --network github_network_a342c002e0024737bf06b2fcd5acda42  -e "HOME=/github/home" -e GITHUB_ACTIONS=true -e CI=true -v "/var/run/docker.sock":"/var/run/docker.sock" -v "/home/runner/work":"/__w" -v "/home/runner/actions-runner/cached/2.337.0/externals":"/__e":ro -v "/home/runner/work/_temp":"/__w/_temp" -v "/home/runner/work/_actions":"/__w/_actions" -v "/opt/hostedtoolcache":"/__t" -v "/home/runner/work/_temp/_github_home":"/github/home" -v "/home/runner/work/_temp/_github_workflow":"/github/workflow" --entrypoint "tail" rockylinux:9 "-f" "/dev/null"
+2026-09-27T18:29:25.0987805Z 94c08469a960eb3dc3bb2411bad8c338c5deb6754c98cc7f3b89c410204a71b9
+2026-09-27T18:29:25.1010793Z ##[command]/usr/bin/docker start 94c08469a960eb3dc3bb2411bad8c338c5deb6754c98cc7f3b89c410204a71b9
+2026-09-27T18:29:25.7779210Z 94c08469a960eb3dc3bb2411bad8c338c5deb6754c98cc7f3b89c410204a71b9
+2026-09-27T18:29:25.7797751Z ##[command]/usr/bin/docker ps --all --filter id=94c08469a960eb3dc3bb2411bad8c338c5deb6754c98cc7f3b89c410204a71b9 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-09-27T18:29:25.7972212Z 94c08469a960eb3dc3bb2411bad8c338c5deb6754c98cc7f3b89c410204a71b9 Up Less than a second
+2026-09-27T18:29:25.7992885Z ##[command]/usr/bin/docker inspect --format "{{range .Config.Env}}{{println .}}{{end}}" 94c08469a960eb3dc3bb2411bad8c338c5deb6754c98cc7f3b89c410204a71b9
+2026-09-27T18:29:25.8172256Z HOME=/github/home
+2026-09-27T18:29:25.8172908Z GITHUB_ACTIONS=true
+2026-09-27T18:29:25.8183030Z CI=true
+2026-09-27T18:29:25.8184142Z PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+2026-09-27T18:29:25.8194434Z ##[endgroup]
+2026-09-27T18:29:25.8204183Z ##[group]Waiting for all services to be ready
+2026-09-27T18:29:25.8205843Z ##[endgroup]
+2026-09-27T18:29:25.8473722Z ##[group]Run actions/checkout@v7
+2026-09-27T18:29:25.8474271Z with:
+2026-09-27T18:29:25.8474523Z   repository: PotenFYR-Studios/HBS-Tool
+2026-09-27T18:29:25.8477474Z   token: ***
+2026-09-27T18:29:25.8477700Z   ssh-strict: true
+2026-09-27T18:29:25.8477922Z   ssh-user: git
+2026-09-27T18:29:25.8478155Z   persist-credentials: true
+2026-09-27T18:29:25.8478415Z   clean: true
+2026-09-27T18:29:25.8478675Z   sparse-checkout-cone-mode: true
+2026-09-27T18:29:25.8478967Z   fetch-depth: 1
+2026-09-27T18:29:25.8479173Z   fetch-tags: false
+2026-09-27T18:29:25.8479402Z   show-progress: true
+2026-09-27T18:29:25.8479624Z   lfs: false
+2026-09-27T18:29:25.8479820Z   submodules: false
+2026-09-27T18:29:25.8480040Z   set-safe-directory: true
+2026-09-27T18:29:25.8480291Z   allow-unsafe-pr-checkout: false
+2026-09-27T18:29:25.8480710Z ##[endgroup]
+2026-09-27T18:29:25.8542617Z ##[command]/usr/bin/docker exec  94c08469a960eb3dc3bb2411bad8c338c5deb6754c98cc7f3b89c410204a71b9 sh -c "cat /etc/*release | grep ^ID"
+2026-09-27T18:29:26.0557107Z Syncing repository: PotenFYR-Studios/HBS-Tool
+2026-09-27T18:29:26.0559055Z ##[group]Getting Git version info
+2026-09-27T18:29:26.0559592Z Working directory is '/__w/HBS-Tool/HBS-Tool'
+2026-09-27T18:29:26.0560401Z ##[endgroup]
+2026-09-27T18:29:26.0560793Z Deleting the contents of '/__w/HBS-Tool/HBS-Tool'
+2026-09-27T18:29:26.0561422Z The repository will be downloaded using the GitHub REST API
+2026-09-27T18:29:26.0562415Z To create a local Git repository instead, add Git 2.18 or higher to the PATH
+2026-09-27T18:29:26.0563108Z Downloading the archive
+2026-09-27T18:29:26.8205630Z Writing archive to disk
+2026-09-27T18:29:26.8217656Z Extracting the archive
+2026-09-27T18:29:26.8306285Z [command]/usr/bin/tar xz --warning=no-unknown-keyword --overwrite -C /__w/HBS-Tool/HBS-Tool/d4bbbe4c-6b98-434b-aad5-c234dc35eaf4 -f /__w/HBS-Tool/HBS-Tool/d4bbbe4c-6b98-434b-aad5-c234dc35eaf4.tar.gz
+2026-09-27T18:29:26.8679102Z Resolved version PotenFYR-Studios-HBS-Tool-6eb795b
+2026-09-27T18:29:26.8949251Z ##[group]Run set -e
+2026-09-27T18:29:26.8949642Z [36;1mset -e[0m
+2026-09-27T18:29:26.8949946Z [36;1mif command -v apt-get >/dev/null 2>&1; then[0m
+2026-09-27T18:29:26.8950295Z [36;1m  apt-get update -qq[0m
+2026-09-27T18:29:26.8950736Z [36;1m  apt-get install -y -qq --no-install-recommends curl ca-certificates build-essential[0m
+2026-09-27T18:29:26.8951216Z [36;1melif command -v dnf >/dev/null 2>&1; then[0m
+2026-09-27T18:29:26.8951560Z [36;1m  dnf install -y -q curl ca-certificates gcc[0m
+2026-09-27T18:29:26.8952430Z [36;1melif command -v apk >/dev/null 2>&1; then[0m
+2026-09-27T18:29:26.8952804Z [36;1m  apk add --no-cache curl ca-certificates gcc musl-dev[0m
+2026-09-27T18:29:26.8953148Z [36;1mfi[0m
+2026-09-27T18:29:26.8953454Z [36;1mexport HOME="$(getent passwd "$(id -u)" | cut -d: -f6)"[0m
+2026-09-27T18:29:26.8953973Z [36;1mcurl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs |[0m
+2026-09-27T18:29:26.8954548Z [36;1m  sh -s -- -y --default-toolchain stable --profile minimal --no-modify-path[0m
+2026-09-27T18:29:26.8955027Z [36;1mecho "$CARGO_HOME/bin" >> "$GITHUB_PATH"[0m
+2026-09-27T18:29:26.8955394Z [36;1mecho "RUSTUP_HOME=$RUSTUP_HOME" >> "$GITHUB_ENV"[0m
+2026-09-27T18:29:26.8955771Z [36;1mecho "CARGO_HOME=$CARGO_HOME" >> "$GITHUB_ENV"[0m
+2026-09-27T18:29:26.8959732Z shell: bash --noprofile --norc -e -o pipefail {0}
+2026-09-27T18:29:26.8960081Z env:
+2026-09-27T18:29:26.8960312Z   RUSTUP_HOME: /github/home/.rustup
+2026-09-27T18:29:26.8960635Z   CARGO_HOME: /github/home/.cargo
+2026-09-27T18:29:26.8960897Z ##[endgroup]
+2026-09-27T18:29:37.3084170Z Error: 
+2026-09-27T18:29:37.3084811Z  Problem: problem with installed package curl-minimal-7.76.1-26.el9_3.2.0.1.x86_64
+2026-09-27T18:29:37.3085959Z   - package curl-minimal-7.76.1-26.el9_3.2.0.1.x86_64 from @System conflicts with curl provided by curl-7.76.1-40.el9_8.7.x86_64 from baseos
+2026-09-27T18:29:37.3087327Z   - package curl-minimal-7.76.1-40.el9.x86_64 from baseos conflicts with curl provided by curl-7.76.1-40.el9_8.7.x86_64 from baseos
+2026-09-27T18:29:37.3088654Z   - package curl-minimal-7.76.1-40.el9_8.5.x86_64 from baseos conflicts with curl provided by curl-7.76.1-40.el9_8.7.x86_64 from baseos
+2026-09-27T18:29:37.3090035Z   - package curl-minimal-7.76.1-40.el9_8.7.x86_64 from baseos conflicts with curl provided by curl-7.76.1-40.el9_8.7.x86_64 from baseos
+2026-09-27T18:29:37.3090984Z   - cannot install the best candidate for the job
+2026-09-27T18:29:37.3403858Z ##[error]Process completed with exit code 1.
+2026-09-27T18:29:37.3554966Z Post job cleanup.
+2026-09-27T18:29:37.3563440Z ##[command]/usr/bin/docker exec  94c08469a960eb3dc3bb2411bad8c338c5deb6754c98cc7f3b89c410204a71b9 sh -c "cat /etc/*release | grep ^ID"
+2026-09-27T18:29:37.5480017Z Stop and remove container: 8bb67e5765d64fdab154d7cf467aaffb_rockylinux9_1b44f8
+2026-09-27T18:29:37.5485971Z ##[command]/usr/bin/docker rm --force 94c08469a960eb3dc3bb2411bad8c338c5deb6754c98cc7f3b89c410204a71b9
+2026-09-27T18:29:37.6925174Z 94c08469a960eb3dc3bb2411bad8c338c5deb6754c98cc7f3b89c410204a71b9
+2026-09-27T18:29:37.6953924Z Remove container network: github_network_a342c002e0024737bf06b2fcd5acda42
+2026-09-27T18:29:37.6958104Z ##[command]/usr/bin/docker network rm github_network_a342c002e0024737bf06b2fcd5acda42
+2026-09-27T18:29:37.8007846Z github_network_a342c002e0024737bf06b2fcd5acda42
+2026-09-27T18:29:37.8079102Z Cleaning up orphan processes

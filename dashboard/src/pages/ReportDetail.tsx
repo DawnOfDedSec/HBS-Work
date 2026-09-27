@@ -81,16 +81,16 @@ export type ReportDetailProps = {
 };
 
 function asText(value: unknown): string {
-  return sanitizeText(value) || "—";
+  return sanitizeText(value) || "-";
 }
 
 function formatDuration(ms: number | undefined): string {
-  if (typeof ms !== "number" || !Number.isFinite(ms)) return "—";
+  if (typeof ms !== "number" || !Number.isFinite(ms)) return "-";
   return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(2)} s`;
 }
 
 function formatBytes(kb: number | undefined): string {
-  if (typeof kb !== "number" || !Number.isFinite(kb)) return "—";
+  if (typeof kb !== "number" || !Number.isFinite(kb)) return "-";
   if (kb < 1024) return `${kb} KiB`;
   return `${(kb / 1024).toFixed(1)} MiB`;
 }
@@ -243,14 +243,14 @@ export function ReportDetail({ reportId, onBack, onOpenCheck }: ReportDetailProp
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <Stat
               label="Risk score"
-              value={report.score === null ? "—" : report.score.toFixed(1)}
+              value={report.score === null ? "-" : report.score.toFixed(1)}
               icon={Gauge}
               tone={report.score === null ? "default" : report.score >= 80 ? "ok" : report.score >= 50 ? "default" : "high"}
               hint="Server-authoritative"
             />
             <Stat
               label="Coverage"
-              value={report.coverage === null ? "—" : `${report.coverage.toFixed(1)}%`}
+              value={report.coverage === null ? "-" : `${report.coverage.toFixed(1)}%`}
               icon={ShieldCheck}
               hint="Decided / applicable"
             />
@@ -271,11 +271,11 @@ export function ReportDetail({ reportId, onBack, onOpenCheck }: ReportDetailProp
                   <DetailItem label="Extractor" value={asText(report.scan.extractorVersion)} />
                   <DetailItem
                     label="Platform"
-                    value={sanitizeText([report.scan.platform, report.scan.arch].filter(Boolean).join(" · ")) || "—"}
+                    value={sanitizeText([report.scan.platform, report.scan.arch].filter(Boolean).join(" · ")) || "-"}
                   />
                   <DetailItem
                     label="OS"
-                    value={sanitizeText([report.scan.osName, report.scan.osVersion].filter(Boolean).join(" ")) || "—"}
+                    value={sanitizeText([report.scan.osName, report.scan.osVersion].filter(Boolean).join(" ")) || "-"}
                   />
                   <DetailItem
                     label="Privilege"

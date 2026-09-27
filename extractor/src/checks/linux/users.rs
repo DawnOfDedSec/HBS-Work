@@ -352,7 +352,7 @@ fn file_owner_root(ctx: &mut ScanContext, path: &str) -> CheckOutcome {
 
 fn shadow_text(ctx: &mut ScanContext) -> Option<String> {
     ctx.read("/etc/shadow").or_else(|| {
-        // unprivileged hosts can't read shadow — that itself is good
+        // unprivileged hosts can't read shadow - that itself is good
         None
     })
 }
@@ -380,7 +380,7 @@ fn shadow_empty_passwords(ctx: &mut ScanContext) -> CheckOutcome {
                 nok(format!("accounts with EMPTY passwords: {}", empty.join(", ")), "/etc/shadow".into(), "awk -F: '($2==\"\")' /etc/shadow".into())
             }
         }
-        None => degraded("/etc/shadow not readable — run with --elevate to verify empty passwords (unreadable itself suggests correct perms)"),
+        None => degraded("/etc/shadow not readable - run with --elevate to verify empty passwords (unreadable itself suggests correct perms)"),
     }
 }
 
@@ -529,7 +529,7 @@ fn root_path(ctx: &mut ScanContext) -> CheckOutcome {
     }
     if path_entries.is_empty() {
         return degraded(
-            "root PATH definition not readable — verify manually for writable entries",
+            "root PATH definition not readable - verify manually for writable entries",
         );
     }
     let mut bad = Vec::new();

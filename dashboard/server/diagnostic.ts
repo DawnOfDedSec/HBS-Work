@@ -1,7 +1,7 @@
 // Redacted diagnostic bundle route (Task 49).
 //
 // `GET /api/diagnostic` is super-admin only. The bundle is assembled in
-// `reports.ts` from IDs, counts, timings, and enum values only — never from
+// `reports.ts` from IDs, counts, timings, and enum values only - never from
 // `reports.envelope` or `reports.report_json`, and never from any evidence
 // block, evidence string, justification, or credential. This module only owns
 // the route shape and the super-admin gate.

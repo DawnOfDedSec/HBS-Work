@@ -46,7 +46,7 @@ if (import.meta.main && process.env.HBS_BOOTSTRAP_ADMIN !== "false") {
   if (created) {
     const rule = "=".repeat(72);
     console.log(rule);
-    console.log("  HBS dashboard — first-run superuser created");
+    console.log("  HBS dashboard - first-run superuser created");
     console.log(`  username: ${created.username}`);
     console.log(`  password: ${created.password}`);
     console.log("  Store these credentials securely and change the password after sign-in.");
@@ -193,7 +193,7 @@ if (isExposed(host)) {
   console.log(`hbs-dashboard is exposed on the network (${host}):`);
   for (const url of urls) console.log(`  ${url}`);
   if (!tls) {
-    console.log("  WARNING: TLS is not configured — dashboard traffic and session cookies are unencrypted. Use --tls-cert/--tls-key on untrusted networks.");
+    console.log("  WARNING: TLS is not configured - dashboard traffic and session cookies are unencrypted. Use --tls-cert/--tls-key on untrusted networks.");
   }
 } else {
   console.log(`hbs-dashboard listening on ${scheme}://${host}:${port} (localhost only; pass --host to expose it)`);

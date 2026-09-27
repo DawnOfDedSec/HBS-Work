@@ -1,5 +1,5 @@
 // Network review exports: one workbook per report or device (xlsx/csv).
-// Self-contained by design — the host export pipeline models sealed host
+// Self-contained by design - the host export pipeline models sealed host
 // reports, while network findings live in network_reports JSON documents.
 
 import type { Database } from "bun:sqlite";
@@ -169,9 +169,9 @@ function metaLines(device: DeviceMeta, extra: string[]): string[] {
     `Hostname: ${device.hostname ?? "(unnamed)"}`,
     `Vendor: ${device.vendor}`,
     `Type: ${device.device_type ?? "unknown"}`,
-    `Model: ${device.model ?? "—"}`,
-    `OS version: ${device.os_version ?? "—"}`,
-    `Serial: ${device.serial ?? "—"}`,
+    `Model: ${device.model ?? "-"}`,
+    `OS version: ${device.os_version ?? "-"}`,
+    `Serial: ${device.serial ?? "-"}`,
     ...extra,
   ];
 }
@@ -218,9 +218,9 @@ export function registerNetworkExportRoutes(app: Hono<any>, db: Database, auth: 
       "Network configuration review",
       metaLines(device, [
         `Report: #${reportId} (${report.config_name})`,
-        `Score: ${report.score === null ? "—" : report.score.toFixed(1)}`,
+        `Score: ${report.score === null ? "-" : report.score.toFixed(1)}`,
         `Received: ${report.received_at}`,
-        `Uploaded by: ${report.uploaded_by ?? "—"}`,
+        `Uploaded by: ${report.uploaded_by ?? "-"}`,
         `Config sha256: ${report.config_sha256}`,
       ]),
       [{ sheetName: "Findings", caption: "Review findings", rows }],
@@ -228,7 +228,7 @@ export function registerNetworkExportRoutes(app: Hono<any>, db: Database, auth: 
     return send(c, bytes, format, `${slugify(device.hostname ?? "device")}-report-${reportId}.xlsx`);
   });
 
-  // Whole-device export: latest report per sheet is not needed — one findings
+  // Whole-device export: latest report per sheet is not needed - one findings
   // sheet containing every report's rows with a Report column.
   app.get("/api/network/devices/:id/export", auth.requireRole(...READ_ROLES), async (c) => {
     const deviceId = positiveInt(c.req.param("id"));

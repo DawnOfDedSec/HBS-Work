@@ -2,7 +2,7 @@
 // `dashboard/binaries/<platform>`, the prebuilt extractor from the project's
 // latest release is downloaded, checksum-verified against SHA256SUMS, and
 // cached as the issuance template. The per-issuance keyslot patching (which
-// embeds the report-encryption keypair) happens afterwards in issuances.ts —
+// embeds the report-encryption keypair) happens afterwards in issuances.ts -
 // private key material never enters this module.
 
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
@@ -47,7 +47,7 @@ function isPlatform(value: unknown): value is AgentPlatform {
   return value === "windows-amd64" || value === "linux-amd64" || value === "linux-arm64";
 }
 
-/** SHA-256 (hex) via WebCrypto — available in Bun without extra deps. */
+/** SHA-256 (hex) via WebCrypto - available in Bun without extra deps. */
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", bytes as unknown as ArrayBuffer);
   return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -121,7 +121,7 @@ export async function ensureAgentTemplate(
   if (expected) {
     const actual = await sha256Hex(bytes);
     if (actual !== expected) {
-      throw new Error(`checksum mismatch for ${asset.name}: expected ${expected}, got ${actual} — refusing the binary`);
+      throw new Error(`checksum mismatch for ${asset.name}: expected ${expected}, got ${actual} - refusing the binary`);
     }
   }
 

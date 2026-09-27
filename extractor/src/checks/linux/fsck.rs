@@ -420,7 +420,7 @@ fn bootloader_password(ctx: &mut ScanContext) -> CheckOutcome {
         )
     } else {
         nok(
-            "no bootloader password set — console users can edit kernel parameters".into(),
+            "no bootloader password set - console users can edit kernel parameters".into(),
             path.into(),
             format!("grep -c password {path}"),
         )

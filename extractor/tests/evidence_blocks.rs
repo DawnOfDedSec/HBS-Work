@@ -30,7 +30,7 @@ fn evidence_block_pins_line_col_and_redacts() {
 fn evidence_block_column_is_char_accurate() {
     let mut ctx = linux_ctx("tests/fixtures/ssh-weak");
     let b = evidence_at(&mut ctx, "/etc/ssh/sshd_config", "yes").expect("found");
-    // 'PermitRootLogin yes' — 'yes' starts at char 17
+    // 'PermitRootLogin yes' - 'yes' starts at char 17
     assert_eq!(b.col, 17, "col was {}", b.col);
 }
 

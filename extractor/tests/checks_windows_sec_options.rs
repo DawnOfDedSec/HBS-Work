@@ -342,7 +342,7 @@ fn missing_registry_keys_degrade_gracefully() {
         assert_eq!(
             res.status,
             Status::DegradedPartial,
-            "Check {id} expected DegradedPartial on missing keys: {:?} — {}",
+            "Check {id} expected DegradedPartial on missing keys: {:?} - {}",
             res.status,
             res.evidence
         );

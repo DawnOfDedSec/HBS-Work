@@ -298,7 +298,7 @@ export function CampaignSummary({ campaignId, onDrilldown }: CampaignSummaryProp
       {presentation ? (
         <Card className="border-hairline-strong">
           <CardHeader
-            title={`${summary.campaign.name} — plain-language posture`}
+            title={`${summary.campaign.name} - plain-language posture`}
             description={summaryText}
             icon={BarChart3}
           />

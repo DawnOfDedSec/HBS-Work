@@ -1,6 +1,6 @@
 //! Privilege handling: elevation detection and (Windows) a polite UAC
 //! self-relaunch. When the user declines, the scan continues
-//! degraded — elevation is never required (spec §4.2).
+//! degraded - elevation is never required (spec §4.2).
 
 #[cfg(unix)]
 pub fn is_elevated() -> bool {
@@ -46,7 +46,7 @@ pub fn is_elevated() -> bool {
     }
 }
 
-/// Offer a UAC relaunch via the standard `runas` verb — no bypass,
+/// Offer a UAC relaunch via the standard `runas` verb - no bypass,
 /// the user always sees and decides the consent dialog. Returns true
 /// when an elevated child was launched and the caller should exit(0);
 /// false when declined (or already elevated / --no-elevate): continue

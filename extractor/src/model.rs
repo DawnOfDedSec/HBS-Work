@@ -84,7 +84,7 @@ pub struct EvidenceBlock {
     pub file_gid: Option<u32>,
 }
 
-/// Who ran the check and with what privileges — recorded per testcase
+/// Who ran the check and with what privileges - recorded per testcase
 /// so every finding carries its own trust context.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

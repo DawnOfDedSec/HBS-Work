@@ -12,7 +12,7 @@ const FEATURES = [
   {
     icon: '🔒',
     title: 'Sealed reports',
-    text: 'Every scan produces a single .hbs file — an AEAD envelope (X25519 + ChaCha20-Poly1305/AES-256-GCM) that only the issuing dashboard can decrypt. The entire header is authenticated as AAD.',
+    text: 'Every scan produces a single .hbs file - an AEAD envelope (X25519 + ChaCha20-Poly1305/AES-256-GCM) that only the issuing dashboard can decrypt. The entire header is authenticated as AAD.',
   },
   {
     icon: '📖',
@@ -22,7 +22,7 @@ const FEATURES = [
   {
     icon: '🔌',
     title: 'Air-gapped by default',
-    text: 'The extractor touches no network unless you explicitly pass --push. Reports travel by USB drop or dashboard upload — the dashboard derives campaign and location from the issuance alone.',
+    text: 'The extractor touches no network unless you explicitly pass --push. Reports travel by USB drop or dashboard upload - the dashboard derives campaign and location from the issuance alone.',
   },
   {
     icon: '🧭',
@@ -32,7 +32,7 @@ const FEATURES = [
   {
     icon: '📏',
     title: 'Bounded and honest',
-    text: 'Peak RSS < 200 MB, < 10 MB binary, exactly one disk write. Checks degrade to DegradedPartial with missingData — never false-pass, never silent Error.',
+    text: 'Peak RSS < 200 MB, < 10 MB binary, exactly one disk write. Checks degrade to DegradedPartial with missingData - never false-pass, never silent Error.',
   },
   {
     icon: '🧪',
@@ -86,7 +86,7 @@ export default function Home() {
           <p className="mt-3 leading-relaxed text-muted">
             The dashboard patches a per-issuance X25519 public key into the extractor keyslot. On the
             target, the extractor scans unprivileged and writes one sealed report beside itself. Upload
-            it — or let --push deliver it. Everything else is automatic.
+            it - or let --push deliver it. Everything else is automatic.
           </p>
           <div className="mt-5 flex flex-wrap gap-3">
             <Link to="/docs/getting-started" className="btn-ghost">
@@ -100,7 +100,7 @@ export default function Home() {
         <Code
           lang="bash"
           title="target host (offline, unprivileged)"
-          content={`# run the issued extractor on the target — no network
+          content={`# run the issued extractor on the target - no network
 ./hbs-extractor --no-elevate --quiet
 
 # hbs-report-*.hbs appears beside the binary: the only
@@ -150,7 +150,7 @@ export default function Home() {
           Ready to run your first <span className="grad-text">sealed scan</span>?
         </h2>
         <p className="mx-auto mt-3 max-w-[560px] text-muted">
-          The dashboard runs on your machine; the extractor runs on theirs — and never phones home.
+          The dashboard runs on your machine; the extractor runs on theirs - and never phones home.
         </p>
         <div className="mt-7 flex justify-center">
           <Link to="/docs/getting-started" className="btn-primary">

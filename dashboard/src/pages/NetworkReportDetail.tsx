@@ -28,7 +28,7 @@ export type NetworkReportDetailProps = {
 };
 
 function formatTimestamp(value: string | null | undefined): string {
-  if (!value) return "—";
+  if (!value) return "-";
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? new Date(parsed).toLocaleString() : sanitizeText(value);
 }
@@ -37,7 +37,7 @@ function Meta({ label, value }: { label: string; value: string | number | null |
   return (
     <div className="min-w-0">
       <dt className="text-2xs font-semibold uppercase tracking-wide text-ink-subtle">{label}</dt>
-      <dd className="mt-0.5 truncate text-sm text-ink">{typeof value === "number" ? value : sanitizeText(value) || "—"}</dd>
+      <dd className="mt-0.5 truncate text-sm text-ink">{typeof value === "number" ? value : sanitizeText(value) || "-"}</dd>
     </div>
   );
 }
@@ -138,7 +138,7 @@ export function NetworkReportDetail({ reportId, canEdit, onBack, onOpenDevice }:
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <Stat
               label="Review score"
-              value={report.score === null ? "—" : report.score.toFixed(1)}
+              value={report.score === null ? "-" : report.score.toFixed(1)}
               tone={report.score === null ? "default" : report.score >= 90 ? "ok" : report.score >= 70 ? "default" : "high"}
               hint="CIS/NIST weighted"
             />
@@ -155,7 +155,7 @@ export function NetworkReportDetail({ reportId, canEdit, onBack, onOpenDevice }:
               actions={
                 <span className="inline-flex items-center gap-2">
                   <Badge tone="info">{sanitizeText(device.vendorLabel)}</Badge>
-                  <Badge tone={scoreTone(report.score)}>score {report.score === null ? "—" : report.score.toFixed(0)}</Badge>
+                  <Badge tone={scoreTone(report.score)}>score {report.score === null ? "-" : report.score.toFixed(0)}</Badge>
                 </span>
               }
             />

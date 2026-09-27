@@ -2,7 +2,7 @@ name: release
 
 # Runs only after `validate` succeeds on main (or manually). Builds every
 # target in parallel, then creates the GitHub Release for the version in
-# extractor/Cargo.toml — or, if that release already exists, overwrites the
+# extractor/Cargo.toml - or, if that release already exists, overwrites the
 # assets and APPENDS the new changelog.
 
 on:

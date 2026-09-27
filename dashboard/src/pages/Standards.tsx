@@ -192,19 +192,19 @@ export function Standards({ onDrilldown, onNavigate }: StandardsProps) {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Stat
           label="Standards"
-          value={loading && !data ? "—" : standards.length}
+          value={loading && !data ? "-" : standards.length}
           icon={ShieldCheck}
           hint="Reference families in scope"
         />
         <Stat
           label="References"
-          value={loading && !data ? "—" : data?.references.length ?? 0}
+          value={loading && !data ? "-" : data?.references.length ?? 0}
           icon={BookOpen}
           hint="Distinct control references"
         />
         <Stat
           label="Checks evaluated"
-          value={loading && !data ? "—" : data?.total ?? 0}
+          value={loading && !data ? "-" : data?.total ?? 0}
           icon={ShieldCheck}
           hint="Results contributing to coverage"
         />

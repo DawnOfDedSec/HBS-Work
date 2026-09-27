@@ -90,8 +90,8 @@ $notify.Add_Click({
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 10000
 $timer.Add_Tick({
-  if (Server-Running) { $notify.Text = "HBS Console — running (port $(Get-Port))" }
-  else { $notify.Text = "HBS Console — stopped" }
+  if (Server-Running) { $notify.Text = "HBS Console - running (port $(Get-Port))" }
+  else { $notify.Text = "HBS Console - stopped" }
 })
 $timer.Start()
 

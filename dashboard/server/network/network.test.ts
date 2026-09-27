@@ -22,7 +22,7 @@ import { reviewConfig, ruleCatalog } from "./review";
 import { ingestNetworkConfig, registerNetworkRoutes, MAX_NETWORK_BATCH_FILES } from "./routes";
 
 // ---------------------------------------------------------------------------
-// Fixtures — realistic excerpts per platform
+// Fixtures - realistic excerpts per platform
 // ---------------------------------------------------------------------------
 
 const CISCO_IOS_SWITCH = `
@@ -626,7 +626,7 @@ describe("network config parsing", () => {
 
   it("keeps hostname-less configs with generic filenames distinct", () => {
     // Two different hostname-less exports both named config.txt must NOT merge
-    // into one device identity — the generic name is not a hostname.
+    // into one device identity - the generic name is not a hostname.
     const a = parseProfile(CISCO_IOS_SWITCH.replace(/^hostname .*\n/m, ""), "config.txt");
     const b = parseProfile(CISCO_IOS_ROUTER_HARDENED.replace(/^hostname .*\n/m, ""), "config.txt");
     expect(a.hostname).toBeNull();
@@ -841,7 +841,7 @@ describe("network configuration review", () => {
 
 function ok(byId: Map<string, { status: string }>, id: string): void {
   const finding = byId.get(id);
-  // AUTH-006 is gated to apply only when AAA is on but no remote server — it
+  // AUTH-006 is gated to apply only when AAA is on but no remote server - it
   // is legitimately NotApplicable on the hardened router (tacacs present), so
   // accept either N/A or Compliant there.
   if (id === "NET-AUTH-006") {

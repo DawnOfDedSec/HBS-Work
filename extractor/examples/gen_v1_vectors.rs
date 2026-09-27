@@ -2,7 +2,7 @@
 //!
 //! The extractor only issues v2 envelopes now. The dashboard keeps a bounded
 //! v1 migration route, so these immutable expected bytes let the TypeScript
-//! `envelope.ts` parser prove it can still open real v1 reports — including
+//! `envelope.ts` parser prove it can still open real v1 reports - including
 //! suite 0 (ChaCha20-Poly1305, the extractor's historical default), which
 //! `node:crypto` in Bun cannot produce.
 //!

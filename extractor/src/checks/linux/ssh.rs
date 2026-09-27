@@ -354,7 +354,7 @@ fn ssh_kv(ctx: &mut ScanContext, key: &str, good: &[&str], bad: &str) -> CheckOu
                 .iter()
                 .any(|f| f.source == "/etc/ssh/sshd_config" && f.outcome == "read")
             {
-                degraded(&format!("{key} not explicitly set — OpenSSH default applies; verify default is acceptable"))
+                degraded(&format!("{key} not explicitly set - OpenSSH default applies; verify default is acceptable"))
             } else {
                 degraded_from_attempts(log, "sshd config and sshd -T unavailable")
             }
@@ -393,7 +393,7 @@ fn ssh_kv_contains_any(ctx: &mut ScanContext, key: &str, want_any: &[&str]) -> C
                 return na_no_ssh();
             }
             if log.iter().any(|f| f.outcome == "read") {
-                degraded(&format!("{key} not set — OpenSSH defaults apply (modern defaults are strong; verify version)"))
+                degraded(&format!("{key} not set - OpenSSH defaults apply (modern defaults are strong; verify version)"))
             } else {
                 degraded_from_attempts(log, "sshd config and sshd -T unavailable")
             }
@@ -426,7 +426,7 @@ fn ssh_num_max(ctx: &mut ScanContext, key: &str, max: u64) -> CheckOutcome {
                 return na_no_ssh();
             }
             if log.iter().any(|f| f.outcome == "read") {
-                degraded(&format!("{key} not set — OpenSSH default applies"))
+                degraded(&format!("{key} not set - OpenSSH default applies"))
             } else {
                 degraded_from_attempts(log, "sshd config and sshd -T unavailable")
             }
@@ -456,7 +456,7 @@ fn client_alive(ctx: &mut ScanContext) -> CheckOutcome {
                 nok(format!("ClientAliveInterval {i} too long"), loc, "sshd -T | grep -i clientalive".into())
             }
         }
-        _ => degraded("ClientAlive settings absent — OpenSSH defaults never terminate idle sessions (compliant only if enforced elsewhere)"),
+        _ => degraded("ClientAlive settings absent - OpenSSH defaults never terminate idle sessions (compliant only if enforced elsewhere)"),
     }
 }
 
@@ -478,7 +478,7 @@ fn ssh_banner(ctx: &mut ScanContext) -> CheckOutcome {
                 return na_no_ssh();
             }
             if log.iter().any(|f| f.outcome == "read") {
-                degraded("Banner not set — OpenSSH default (none)")
+                degraded("Banner not set - OpenSSH default (none)")
             } else {
                 degraded_from_attempts(log, "sshd config and sshd -T unavailable")
             }

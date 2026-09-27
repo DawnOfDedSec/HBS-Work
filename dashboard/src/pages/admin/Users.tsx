@@ -282,7 +282,7 @@ export function Users({ role: providedRole }: { role?: AdminRole | null } = {}) 
               : "All campaigns"}
           </Button>
         ) : (
-          <span className="text-2xs text-ink-subtle">—</span>
+          <span className="text-2xs text-ink-subtle">-</span>
         ),
     },
     {

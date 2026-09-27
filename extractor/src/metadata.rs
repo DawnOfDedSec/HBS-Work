@@ -6,7 +6,7 @@
 //! recorded as a [`CollectionAttempt`] and surfaced under
 //! `metadata._collection.attempts` for the report's diagnostics. A field
 //! whose sources all fail becomes an explicit `null` with a recorded
-//! reason — never an omitted key, never a panic.
+//! reason - never an omitted key, never a panic.
 //!
 //! All collection funnels through the [`ScanContext`] (root prefix +
 //! injector) so both OS collectors are unit-testable on any host. FQDN

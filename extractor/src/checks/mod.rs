@@ -126,7 +126,7 @@ pub fn nok(evidence: String, location: String, repro: String) -> CheckOutcome {
 }
 
 /// Partial evidence: a value/section was absent and defaults or reduced
-/// visibility applied — the check completed but with reduced certainty.
+/// visibility applied - the check completed but with reduced certainty.
 pub fn degraded(reason: &str) -> CheckOutcome {
     CheckOutcome {
         status: Status::DegradedPartial,
@@ -187,7 +187,7 @@ pub fn degraded_from_attempts(log: Vec<FallbackAttempt>, reason: &str) -> CheckO
     let evidence = if joined.is_empty() {
         format!("degraded: {reason}")
     } else {
-        format!("degraded: {reason} — {joined}")
+        format!("degraded: {reason} - {joined}")
     };
     CheckOutcome {
         status: Status::DegradedPartial,
@@ -201,7 +201,7 @@ pub fn degraded_from_attempts(log: Vec<FallbackAttempt>, reason: &str) -> CheckO
     }
 }
 
-/// Render ordered fallback attempts as `"source (outcome); …"` — the same
+/// Render ordered fallback attempts as `"source (outcome); …"` - the same
 /// convenience the former `err_outcome` helper offered.
 pub fn join_attempts(log: &[FallbackAttempt]) -> String {
     log.iter()

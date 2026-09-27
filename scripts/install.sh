@@ -94,7 +94,7 @@ if ! command -v bun >/dev/null 2>&1; then
   curl -fsSL https://bun.sh/install | bash
   export PATH="$HOME/.bun/bin:$PATH"
 fi
-command -v bun >/dev/null 2>&1 || fail "Bun installation failed — open a new shell and re-run"
+command -v bun >/dev/null 2>&1 || fail "Bun installation failed - open a new shell and re-run"
 mkdir -p "$APP_DIR" "$DATA_DIR" "$BIN_DIR"
 
 # --- app: clone or update ----------------------------------------------------
@@ -182,7 +182,7 @@ EOF
   [[ $DO_START -eq 1 ]] && launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/$PLIST_LABEL.plist"
   log "service: launchctl print gui/$(id -u)/$PLIST_LABEL"
 else
-  log "no service manager detected — start manually with: hbs start (or hbs tray on desktops)"
+  log "no service manager detected - start manually with: hbs start (or hbs tray on desktops)"
 fi
 
 log "done. console: http://127.0.0.1:$PORT  (first run: create the admin account in the browser)"

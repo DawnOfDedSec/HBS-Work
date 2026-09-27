@@ -96,13 +96,13 @@ export type HostDetailProps = {
 };
 
 function formatTimestamp(value: string | null): string {
-  if (!value) return "—";
+  if (!value) return "-";
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? new Date(parsed).toLocaleString() : sanitizeText(value);
 }
 
 function formatBytes(value: number | null): string {
-  if (value === null || !Number.isFinite(value)) return "—";
+  if (value === null || !Number.isFinite(value)) return "-";
   if (value < 1024) return `${value} B`;
   const units = ["KiB", "MiB", "GiB"];
   let size = value / 1024;
@@ -204,13 +204,13 @@ export function HostDetail({ hostId, onBack }: HostDetailProps) {
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <Stat
               label="Risk score"
-              value={host.riskScore === null ? "—" : host.riskScore.toFixed(1)}
+              value={host.riskScore === null ? "-" : host.riskScore.toFixed(1)}
               tone={host.riskScore === null ? "default" : host.riskScore >= 80 ? "ok" : host.riskScore >= 50 ? "default" : "high"}
               hint="Latest report"
             />
             <Stat
               label="Coverage"
-              value={host.coverage === null ? "—" : `${host.coverage.toFixed(1)}%`}
+              value={host.coverage === null ? "-" : `${host.coverage.toFixed(1)}%`}
               tone={host.coverage !== null && host.coverage >= 90 ? "ok" : "default"}
               hint="Authoritative decided"
             />
@@ -224,7 +224,7 @@ export function HostDetail({ hostId, onBack }: HostDetailProps) {
               <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
                 <div className="min-w-0">
                   <dt className="text-2xs font-semibold uppercase tracking-wide text-ink-subtle">Hostname</dt>
-                  <dd className="mt-0.5 truncate text-sm text-ink">{sanitizeText(host.hostname) || "—"}</dd>
+                  <dd className="mt-0.5 truncate text-sm text-ink">{sanitizeText(host.hostname) || "-"}</dd>
                 </div>
                 <div className="min-w-0">
                   <dt className="text-2xs font-semibold uppercase tracking-wide text-ink-subtle">Machine ID</dt>
@@ -239,7 +239,7 @@ export function HostDetail({ hostId, onBack }: HostDetailProps) {
                 </div>
                 <div className="min-w-0">
                   <dt className="text-2xs font-semibold uppercase tracking-wide text-ink-subtle">OS</dt>
-                  <dd className="mt-0.5 truncate text-sm text-ink">{sanitizeText(host.os) || "—"}</dd>
+                  <dd className="mt-0.5 truncate text-sm text-ink">{sanitizeText(host.os) || "-"}</dd>
                 </div>
                 <div>
                   <dt className="text-2xs font-semibold uppercase tracking-wide text-ink-subtle">First seen</dt>
@@ -252,13 +252,13 @@ export function HostDetail({ hostId, onBack }: HostDetailProps) {
                 <div>
                   <dt className="text-2xs font-semibold uppercase tracking-wide text-ink-subtle">Latest report</dt>
                   <dd className="mt-0.5 text-sm text-ink">
-                    {host.latestReportId === null ? "—" : `#${host.latestReportId}`}
+                    {host.latestReportId === null ? "-" : `#${host.latestReportId}`}
                     {host.latestReceivedAt ? ` · ${formatTimestamp(host.latestReceivedAt)}` : ""}
                   </dd>
                 </div>
                 <div>
                   <dt className="text-2xs font-semibold uppercase tracking-wide text-ink-subtle">Campaign</dt>
-                  <dd className="mt-0.5 text-sm text-ink">{reports[0] ? `#${reports[0].campaignId}` : "—"}</dd>
+                  <dd className="mt-0.5 text-sm text-ink">{reports[0] ? `#${reports[0].campaignId}` : "-"}</dd>
                 </div>
               </dl>
             </CardBody>
@@ -361,11 +361,11 @@ export function HostDetail({ hostId, onBack }: HostDetailProps) {
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-2xs text-ink-subtle">
-                      <span>via {sanitizeText(report.via) || "—"}</span>
-                      <span>extractor {sanitizeText(report.extractorVersion) || "—"}</span>
+                      <span>via {sanitizeText(report.via) || "-"}</span>
+                      <span>extractor {sanitizeText(report.extractorVersion) || "-"}</span>
                       <span>scan {formatTimestamp(report.scanTimestamp)}</span>
-                      <span>privilege {sanitizeText(report.privilegeLevel) || "—"}</span>
-                      <span>evidence {sanitizeText(report.evidenceDepth) || "—"}</span>
+                      <span>privilege {sanitizeText(report.privilegeLevel) || "-"}</span>
+                      <span>evidence {sanitizeText(report.evidenceDepth) || "-"}</span>
                       <span>size {formatBytes(report.bytes)}</span>
                     </div>
                   </li>

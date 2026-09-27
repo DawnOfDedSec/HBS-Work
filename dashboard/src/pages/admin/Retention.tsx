@@ -173,8 +173,8 @@ export function Retention({ role: providedRole }: { role?: AdminRole | null } = 
             <Card className="border-high/40">
               <CardHeader
                 icon={AlertTriangle}
-                title="Dry-run preview — nothing has been deleted"
-                description={`Cutoff ${sanitizeText(preview.cutoff) || "—"}. Reports under legal hold are never deleted.`}
+                title="Dry-run preview - nothing has been deleted"
+                description={`Cutoff ${sanitizeText(preview.cutoff) || "-"}. Reports under legal hold are never deleted.`}
                 actions={<Badge tone="degraded">Preview only</Badge>}
               />
               <CardBody className="flex flex-col gap-4">

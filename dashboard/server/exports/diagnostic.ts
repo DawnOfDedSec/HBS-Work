@@ -1,6 +1,6 @@
 // Super-admin diagnostic download (Task 57, spec §6.6).
 //
-// Reuses `reports.ts` `buildDiagnosticBundle` — IDs, counts, timings, enum
+// Reuses `reports.ts` `buildDiagnosticBundle` - IDs, counts, timings, enum
 // values, and redacted rejection reasons only. It NEVER contains `report_json`,
 // `envelope`, evidence blocks, evidence strings, justifications, or secrets.
 // On top of the shared builder we run a recursive sanitizer that strips any

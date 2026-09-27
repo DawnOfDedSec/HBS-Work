@@ -258,7 +258,7 @@ fn run_once(args: &Args, allow_elevation: bool) -> Result<(), ScanFailure> {
             format!("elevated (full depth, {} admin-only checks included)", admin_only_count)
         } else {
             format!(
-                "unprivileged (default) — {admin_only_count} admin-only checks will be skipped; rerun with --elevate for full depth"
+                "unprivileged (default) - {admin_only_count} admin-only checks will be skipped; rerun with --elevate for full depth"
             )
         }
         .as_str(),
@@ -321,7 +321,7 @@ fn run_once(args: &Args, allow_elevation: bool) -> Result<(), ScanFailure> {
     .map_err(|e| fail(3, format!("sealing failed: {e}")))?;
 
     // Default output: alongside the extractor binary itself (its own
-    // directory), never the current working directory — operators run it from
+    // directory), never the current working directory - operators run it from
     // arbitrary places, and the report should land where the tool lives.
     let path = args.out.clone().unwrap_or_else(|| {
         let stamp = chrono_like_stamp();

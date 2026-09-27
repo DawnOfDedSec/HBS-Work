@@ -277,9 +277,9 @@ function NetworkFindingModal({ finding, reportId, canEdit, onChanged, onClose }:
               {history.map((entry) => (
                 <li key={entry.id} className="text-2xs text-ink-muted">
                   <span className="tabular-nums">{new Date(entry.changedAt).toLocaleString()}</span> ·{" "}
-                  {sanitizeText(entry.actor) || "system"}: {sanitizeText(entry.fromState ?? "—")} →{" "}
+                  {sanitizeText(entry.actor) || "system"}: {sanitizeText(entry.fromState ?? "-")} →{" "}
                   <span className="text-ink">{sanitizeText(entry.toState)}</span>
-                  {entry.justification ? ` — “${sanitizeText(entry.justification)}”` : ""}
+                  {entry.justification ? ` - “${sanitizeText(entry.justification)}”` : ""}
                 </li>
               ))}
             </ol>

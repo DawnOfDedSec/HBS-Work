@@ -107,7 +107,7 @@ export function Audit({ role: providedRole }: { role?: AdminRole | null } = {}) 
       header: "Actor",
       render: (entry) => (
         <div className="flex flex-col gap-0.5">
-          <span className="text-ink">{sanitizeText(entry.actor) || "—"}</span>
+          <span className="text-ink">{sanitizeText(entry.actor) || "-"}</span>
           {entry.actorIp ? <span className="text-2xs text-ink-subtle">{sanitizeText(entry.actorIp)}</span> : null}
         </div>
       ),
@@ -121,14 +121,14 @@ export function Audit({ role: providedRole }: { role?: AdminRole | null } = {}) 
       key: "resource",
       header: "Resource",
       render: (entry) => (
-        <span className="break-all font-mono text-2xs text-ink-muted">{sanitizeText(entry.resource) || "—"}</span>
+        <span className="break-all font-mono text-2xs text-ink-muted">{sanitizeText(entry.resource) || "-"}</span>
       ),
     },
     {
       key: "details",
       header: "Details",
       render: (entry) => (
-        <span className="break-words font-mono text-2xs text-ink-subtle">{sanitizeText(entry.details) || "—"}</span>
+        <span className="break-words font-mono text-2xs text-ink-subtle">{sanitizeText(entry.details) || "-"}</span>
       ),
     },
   ];

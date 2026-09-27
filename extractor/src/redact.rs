@@ -1,5 +1,5 @@
 //! Extractor-side secret redaction. Applied to every evidence string
-//! and evidence-block line BEFORE anything enters the sealed report —
+//! and evidence-block line BEFORE anything enters the sealed report -
 //! secrets must not exist even inside encrypted reports, because
 //! reports later export to PDF/DOCX that get shared widely.
 
@@ -94,7 +94,7 @@ fn value_byte(c: u8) -> bool {
 }
 
 /// Mask "key = value", "key=value:", quoted variants, and "key: value".
-/// Single pass — already-masked output is never rescanned.
+/// Single pass - already-masked output is never rescanned.
 fn mask_spaced_assignments(line: &str) -> String {
     let bytes = line.as_bytes();
     let mut out = String::with_capacity(line.len());
@@ -168,7 +168,7 @@ fn classify(w: &str) -> String {
         return mask(w);
     }
     // private key bodies / long base64 or hex runs. Words containing
-    // '/' are NOT masked — they are almost always paths.
+    // '/' are NOT masked - they are almost always paths.
     if w.len() >= 20 && !w.contains('/') && !w.contains('.') {
         let hexish = w.chars().all(|c| c.is_ascii_hexdigit());
         let b64ish = w

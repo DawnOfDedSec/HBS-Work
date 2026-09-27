@@ -1,7 +1,7 @@
 // Tiny in-process SSE event bus (Task 48).
 //
 // The ingest pipeline emits `report-arrived` only after a report transaction
-// has committed. Payloads carry IDs and route links only — never evidence,
+// has committed. Payloads carry IDs and route links only - never evidence,
 // never decrypted findings, never credentials.
 
 export type SseEvent = {

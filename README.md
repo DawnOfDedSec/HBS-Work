@@ -15,7 +15,7 @@
 
 [![Typing SVG](https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=20&pause=1200&color=8B5CF6&center=true&vCenter=true&width=800&lines=Offline-first+host+baseline+security+reviews;Strictly+read-only+scans+%C2%B7+sealed+reports;368+hardening+testcases+across+Linux+%26+Windows;Executive+one-pagers+to+raw+evidence+pivots)](https://github.com/PotenFYR-Studios/HBS-Tool)
 
-**HBS** — an offline-first, strictly read-only configuration-security review platform for enterprise servers, with a sealed-report security model.
+**HBS** - an offline-first, strictly read-only configuration-security review platform for enterprise servers, with a sealed-report security model.
 
 [Docs](https://hbs-tool.docs.potenfyr.in) · [Getting started](https://hbs-tool.docs.potenfyr.in/docs/getting-started) · [Releases](https://github.com/PotenFYR-Studios/HBS-Tool/releases) · [Issues](https://github.com/PotenFYR-Studios/HBS-Tool/issues)
 
@@ -27,10 +27,10 @@
 
 Auditing a fleet of enterprise servers with screen shots, spreadsheets and SSH one-liners is slow, inconsistent and leaks data at every step. HBS does it in two sealed halves:
 
-- **Extractor** (Rust, single static binary) — runs on a target host, evaluates
+- **Extractor** (Rust, single static binary) - runs on a target host, evaluates
   **368 hardening testcases**, and writes a **sealed report** (`.hbs`, `HBS2` v2)
   that only the issuing dashboard can decrypt. It is air-gapped by default.
-- **Dashboard** (Bun + Hono + React) — issues one patched extractor per
+- **Dashboard** (Bun + Hono + React) - issues one patched extractor per
   campaign/location, receives sealed reports by file **upload** or optional
   **`--push`**, decrypts/verifies them, routes hosts automatically, and presents
   findings, remediation, telemetry, standards, and exports.
@@ -50,7 +50,7 @@ reporting and printable deliverables).
 
 1. [Architecture](#architecture)
 2. [Platform support](#platform-support)
-3. [Quick start](#quick-start)
+3. [Getting started](#getting-started)
 4. [Extractor reference](#extractor-reference)
 5. [Dashboard reference](#dashboard-reference)
 6. [Report format & security model](#report-format--security-model)
@@ -102,7 +102,7 @@ identically in Rust and TypeScript: the **sealed-report envelope** and the
 | `armv7-unknown-linux-musleabihf` | 32-bit armv7 Linux | Stretch |
 
 - **Linux families:** Debian/Ubuntu, RHEL/CentOS/Rocky/Alma, SUSE, Arch, Alpine,
-  Amazon Linux — kernel ≥ 3.10. Tested across 13 distro versions.
+  Amazon Linux - kernel ≥ 3.10. Tested across 13 distro versions.
 - **Windows:** 10/11 and Server 2016–2025. Tested on Windows 11 natively and
   Server Core LTSC 2019/2022/2025 in containers.
 - **Environments:** bare metal, VM, container, and WSL are detected; controls
@@ -114,19 +114,40 @@ identically in Rust and TypeScript: the **sealed-report envelope** and the
 
 ---
 
-## Quick start
+## Getting started
 
-### 1. Dashboard (hosted on your machine)
+Everything below uses the web console. A normal user only needs the two install
+commands, a browser, and the extractor binary the dashboard hands them. No
+command-line knowledge is required beyond copy-paste.
+
+### 1. Install and open the dashboard
+
+The dashboard runs on the machine you manage scans from (your workstation or a
+server). It stores all data locally; nothing leaves your network.
 
 ```bash
-# Linux / macOS
+# Linux / macOS (installs Bun if missing, then the dashboard as a service)
 curl -fsSL https://raw.githubusercontent.com/PotenFYR-Studios/HBS-Tool/main/scripts/install.sh | bash
 
-# Windows (PowerShell)
+# Windows (PowerShell: installs Bun if missing, the dashboard, and a tray icon)
 irm https://raw.githubusercontent.com/PotenFYR-Studios/HBS-Tool/main/scripts/install.ps1 | iex
 ```
 
-Or straight from a clone:
+Both scripts print the console address when done. By default it is:
+
+- **http://127.0.0.1:3000** on the machine running the dashboard. To reach it
+  from your laptop instead of the server console, start it with `--host` (or
+  set `HOST`) and open `http://<dashboard-ip>:3000` from any browser on the
+  same network. Add TLS with `--tls-cert` / `--tls-key` for anything beyond
+  your LAN.
+
+**First sign-in:** on the very first launch the server creates a superuser
+account and prints its username and password **once** in the terminal (or the
+service log). Open the console, sign in with those, and change the password
+under **Admin → Users**. That account can then invite `auditor` and `viewer`
+users; you never need the terminal again.
+
+Prefer not to install anything yet? From a source clone:
 
 ```bash
 cd dashboard
@@ -135,22 +156,33 @@ bun run build                 # emits dist/ (the API server serves the SPA too)
 bun server/index.ts           # http://127.0.0.1:3000
 ```
 
-On first launch (no users) the server **prints superuser credentials once** in
-the CLI. Sign in and change the password.
+### 2. Create a campaign and generate an extractor
 
-### 2. Create campaign → location → issuance
+Think of it as three levels: **Campaign** (the review, e.g. "Acme Q3") →
+**Location** (a site, e.g. "DC-East") → **Issuance** (one extractor binary,
+locked to that campaign/location and expiring on its own).
 
-In the UI: **Campaigns → New campaign** (adds the first location), then
-**Locations → Generate extractor**. Or via API:
+1. Sign in and open **Campaigns**.
+2. Click **New campaign**, give it a name, and add your first location.
+3. Open the campaign, go to **Locations & Hosts**, and click
+   **Generate extractor**.
+4. Pick the platform of the machines you will scan (`linux-amd64` or
+   `windows-amd64` cover most fleets) and download the file. The dashboard
+   locks the binary to this issuance automatically: it carries its own
+   encryption key, so reports can only be opened by this dashboard.
+
+The same steps are available via the REST API if you want automation:
 
 ```bash
-# after signing in, the browser holds the session cookie
 POST /api/campaigns                         { "name":"Acme Q3", "locations":[{"name":"DC-East"}] }
 POST /api/campaigns/:id/locations/:loc/issuances   { "platform":"linux-amd64" }
 GET  /api/issuances/:id/download?token=<downloadToken>
 ```
 
-### 3. Run the extractor on the target (offline)
+### 3. Scan a server (offline, read-only)
+
+Copy the downloaded extractor to the target server any way you already use
+(SCP, USB stick, network share). Then run it there:
 
 ```bash
 # Linux (amd64), unprivileged; report lands beside the binary
@@ -160,23 +192,57 @@ GET  /api/issuances/:id/download?token=<downloadToken>
 hbs-extractor.exe --no-elevate --quiet
 ```
 
-### 4. Deliver the report — pick one
+That's the whole scan: strictly read-only, no internet access, and exactly one
+file written (`hbs-report-*.hbs`). On Windows you can also just double-click
+the `.exe`: it runs the scan in a console window and waits at the end so you
+can read the summary. Admin-only checks are skipped unless you run
+`hbs-extractor.exe --elevate` from a terminal and accept the one UAC prompt
+(declining is safe: those checks degrade gracefully).
 
-```bash
-# (A) Upload in the dashboard
-#     Campaign → Locations & Hosts → drag the .hbs into the drop zone
+### 4. Get the report into the dashboard
 
-# (B) Optional push from the extractor (only then does it use the network)
-HBS_PUSH_TOKEN=<campaignPushToken> ./hbs-extractor \
-  --no-elevate --quiet --push https://dashboard.example/api/ingest
-# or, without an env var:
-./hbs-extractor --push https://dashboard.example/api/ingest \
-  --push-token-file /etc/hbs/push.token
-```
+Pick whichever fits your network rules:
 
-The dashboard derives **campaign and location solely from the issuance**, keys
-the host by machine ID, and (for a subsequent scan) auto-resolves previously
-open findings that now pass.
+- **Manual upload (default):** copy the `.hbs` file back, then in the console
+  open **Campaigns → your campaign → Locations & Hosts** and drag the file
+  into the drop zone. Batch uploads (up to 32 files) are supported.
+- **Direct push (optional):** let the extractor deliver it itself. This is the
+  only situation in which the extractor touches the network. Copy the push
+  token from the issuance page in the console, then:
+
+  ```bash
+  HBS_PUSH_TOKEN=<token-from-console> ./hbs-extractor \
+    --no-elevate --quiet --push https://<dashboard-host>:3000/api/ingest
+  ```
+
+The host appears in the dashboard immediately (live notification, no refresh
+needed). Campaign and location are derived from the issuance, so nothing needs
+to be typed or matched by hand. Scanning the same server again auto-resolves
+findings that now pass.
+
+### 5. Read the results
+
+Where to look, by role:
+
+| You are... | Open... | You get... |
+|---|---|---|
+| Management | **Executive Summary** | One-page risk overview, plain-language narrative, print/PDF for the board |
+| Sysadmin | **Remediation** | Every failing check grouped into fix actions with copyable commands |
+| Analyst | **Findings** | Filter/pivot by host or check, open evidence, diff hosts against each other |
+| Auditor | **Standards** | CIS / NIST 800-53 / ISO 27001 / PCI-DSS coverage matrix, **Treatment** board for accepted risks |
+
+Every page supports light/dark theme, CSV/Excel/PDF/Word export, and the
+`Ctrl/⌘-K` command palette for jumping anywhere. Full details for each page:
+[Dashboard reference](#dashboard-reference).
+
+### 6. Keeping it running
+
+The installers register a background service (systemd user unit on Linux,
+LaunchAgent on macOS, tray icon + startup shortcut on Windows), so the console
+comes back after reboot. To update later, re-run the same install command: it
+refreshes the app in place and keeps all data. Uninstall with `--uninstall`
+(`--purge` to also wipe data). Manual start/stop: `hbs start`, `hbs stop`,
+`hbs status` (Linux/macOS) or the tray icon menu (Windows).
 
 ---
 
@@ -235,7 +301,7 @@ keyslot.
   default, or to `--out`. It is the only file written on the target.
 - `0` success · `2` unissued/placeholder or expired keyslot · `3` no checks
   matched the filters, sealing/write failure, or push-token configuration error.
-  A **network push failure does not fail the scan** — the local report is kept
+  A **network push failure does not fail the scan** - the local report is kept
   and the summary shows a push-failed status.
 
 ### Scenario guide
@@ -301,9 +367,9 @@ bun run build && bun server/index.ts
 | `--host` | `HOST` | Bare `--host` binds **all interfaces** (`0.0.0.0`) and prints reachable URLs; `--host <addr>` binds one; default `127.0.0.1` |
 | `--port <n>` | `PORT` | Listen port (default `3000`) |
 | `--tls-cert <p>` / `--tls-key <p>` | `HBS_TLS_CERT` / `HBS_TLS_KEY` | Enable TLS (fingerprint printed at startup) |
-| `--help` | — | Usage |
-| — | `HBS_DB_PATH` | SQLite path (default `server/data/hbs.sqlite`) |
-| — | `HBS_DATA_ROOT` | Keys/artifacts root (default `server/data`) |
+| `--help` | - | Usage |
+| - | `HBS_DB_PATH` | SQLite path (default `server/data/hbs.sqlite`) |
+| - | `HBS_DATA_ROOT` | Keys/artifacts root (default `server/data`) |
 
 CLI flags take precedence over env. Binding to a non-loopback address prints the
 interface URLs and a warning when TLS is not configured.
@@ -311,18 +377,18 @@ interface URLs and a warning when TLS is not configured.
 ### Workflow
 
 1. **Campaign + location** (creation can include the first location atomically).
-2. **Issuance** — a unique random `extractor_id` and independent X25519 keypair;
+2. **Issuance** - a unique random `extractor_id` and independent X25519 keypair;
    the dashboard patches the binary and stores the immutable artifact + SHA-256.
-3. **Download** — token or session authenticated; streams the exact stored bytes
+3. **Download** - token or session authenticated; streams the exact stored bytes
    and verifies the hash. Revoked/expired issuances are refused.
-4. **Scan** — air-gapped by default, or `--push`.
-5. **Ingest** — unified pipeline: bounds → issuance resolution → token auth →
+4. **Scan** - air-gapped by default, or `--push`.
+5. **Ingest** - unified pipeline: bounds → issuance resolution → token auth →
    AEAD decrypt + bounded decompress → schema/identity cross-binding →
    dedupe `(extractor_id, scan_id)` → server-authoritative metrics → one
    transaction → SSE `report-arrived`.
-6. **Triage** — treatment workflow with audit history; owners, due dates,
+6. **Triage** - treatment workflow with audit history; owners, due dates,
    justifications.
-7. **Export** — Excel, CSV, PDF (executive + technical), Word, diagnostic bundle.
+7. **Export** - Excel, CSV, PDF (executive + technical), Word, diagnostic bundle.
 
 ### Console pages
 
@@ -402,13 +468,13 @@ or key, and `issued_at >= expiry`. **The checksum detects corruption, not trust.
 
 The single sealed file carries **both results and logs**:
 
-- `results[]` — status, severity, evidence, location, repro, impact,
+- `results[]` - status, severity, evidence, location, repro, impact,
   recommendation, references, `fallbackLog`, `evidenceBlocks`, `runContext`.
-- `selfAudit.attempts[]` — every file read / command / registry / API query with
+- `selfAudit.attempts[]` - every file read / command / registry / API query with
   `kind`, redacted `source`, `status` (`ok|missing|denied|timeout|rejected|
   nonzero|malformed|cached|error`), `exitCode`, `bytes`, `durationMs`,
   `cached`, and `evidenceRef` linking a finding to the log line that produced it.
-- `diagnostics` — environment/hypervisor, catalog fingerprint, privilege, peak
+- `diagnostics` - environment/hypervisor, catalog fingerprint, privilege, peak
   RSS, phase durations, `missingData` (per degraded/NA/error check with
   exhausted sources), metadata attempts, and a bounded human-readable `log`.
 
@@ -418,7 +484,7 @@ All strings are redacted and size-bounded before sealing.
 
 ## Testcase catalog
 
-**368 testcases** — Linux `LIN-*` (165), Windows `WIN-*` (153), and shared
+**368 testcases** - Linux `LIN-*` (165), Windows `WIN-*` (153), and shared
 `GEN-*` (50). Checks are applicability-gated, not duplicated: a Linux host runs
 ~215, a Windows host ~200; the union is 368.
 
@@ -509,15 +575,15 @@ cd dashboard && bun run ../scripts/e2e-loop.ts
 ## CI/CD & releases
 
 - **`.github/workflows/validate.yml`** (push/PR/manual)
-  - Linux: `ubuntu-22.04`, `ubuntu-24.04` — build, tests, sealed smoke scan, artifacts.
-  - Windows: `windows-2022`, `windows-2025` (+ `windows-2019`, `windows-11-arm` tolerated) — build, tests, sealed scan.
+  - Linux: `ubuntu-22.04`, `ubuntu-24.04` - build, tests, sealed smoke scan, artifacts.
+  - Windows: `windows-2022`, `windows-2025` (+ `windows-2019`, `windows-11-arm` tolerated) - build, tests, sealed scan.
   - Dashboard: `bun test`, `tsc`, `vite build`.
 - **`.github/workflows/release.yml`** (runs only after `validate` succeeds on main)
   - Builds all targets + the dashboard bundle, emits `SHA256SUMS` and `manifest.json`.
   - Publishes a release tagged `v<version>` from `extractor/Cargo.toml`:
     - **new version** → creates the release with the changelog (commits since the previous tag);
     - **same version** → overwrites the assets and **appends** the new changelog to the existing notes.
-- **`.github/workflows/docs-pages.yml`** — builds `docs/` and publishes it to
+- **`.github/workflows/docs-pages.yml`** - builds `docs/` and publishes it to
   GitHub Pages at **[hbs-tool.docs.potenfyr.in](https://hbs-tool.docs.potenfyr.in)**.
 
 ---
@@ -568,14 +634,14 @@ the API server serves the SPA. In development use `bun run dev`.
 **`unissued or placeholder keyslot` (exit 2).** The binary was not issued by a
 dashboard. Download it from an issuance, or (debug only) use `--dev-insecure-key`.
 
-**`extractor expired` (exit 2).** The issuance passed its expiry — create a new
+**`extractor expired` (exit 2).** The issuance passed its expiry - create a new
 issuance.
 
 **Push fails but the scan succeeded.** The local report is kept; upload it
 manually. Tokens come only from `HBS_PUSH_TOKEN` or `--push-token-file`.
 
 **A check shows `DegradedPartial`.** Every fallback was unavailable/denied. The
-report's `missingData` lists the exhausted sources — that is expected on hosts
+report's `missingData` lists the exhausted sources - that is expected on hosts
 missing a tool or in containers where a control cannot exist (which instead
 reports `NotApplicable`).
 
@@ -583,7 +649,7 @@ reports `NotApplicable`).
 
 **Windows containers.** Docker Desktop must be a machine-wide install with the
 `Containers`/Hyper-V features enabled; then
-`DockerCli.exe -SwitchWindowsEngine`. `nanoserver` is too minimal — use
+`DockerCli.exe -SwitchWindowsEngine`. `nanoserver` is too minimal - use
 `servercore`.
 
 ---
@@ -618,9 +684,9 @@ docs/                Documentation site (GitHub Pages, hbs-tool.docs.potenfyr.in
 ## Docs & links
 
 - [Documentation site](https://hbs-tool.docs.potenfyr.in) (this repo's `docs/`, deployed via GitHub Pages)
-- [Releases](https://github.com/PotenFYR-Studios/HBS-Tool/releases) — installers, extractor binaries, `SHA256SUMS`, `manifest.json`
+- [Releases](https://github.com/PotenFYR-Studios/HBS-Tool/releases) - installers, extractor binaries, `SHA256SUMS`, `manifest.json`
 - [Issues](https://github.com/PotenFYR-Studios/HBS-Tool/issues)
-- [License](LICENSE) — Apache-2.0 with the Commons Clause · [Notice](NOTICE.md)
+- [License](LICENSE) - Apache-2.0 with the Commons Clause · [Notice](NOTICE.md)
 - [PotenFYR Studios](https://github.com/PotenFYR-Studios) | [Website](https://potenfyr.in) | [Discord](https://discord.com/invite/zUaN2FPBec)
 
 ## License

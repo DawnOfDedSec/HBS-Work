@@ -2,8 +2,8 @@
 
 HBS Tool is developed and maintained by PotenFYR Studios.
 
-The hardening testcase catalog references industry standards — CIS
-Benchmarks, NIST SP 800-53, ISO/IEC 27001 and PCI-DSS — for control
+The hardening testcase catalog references industry standards - CIS
+Benchmarks, NIST SP 800-53, ISO/IEC 27001 and PCI-DSS - for control
 traceability only. Those standards are the property of their respective
 publishers; HBS does not redistribute their text.
 

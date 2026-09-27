@@ -116,7 +116,7 @@ const TREATMENT_ORDER: Array<keyof Omit<RemediationTreatmentSummary, "assignees"
 ];
 
 function formatDate(iso: string | null | undefined): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   const date = new Date(iso);
   return Number.isFinite(date.getTime())
     ? date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
@@ -376,7 +376,7 @@ export function Executive({ onDrilldown }: ExecutiveProps) {
   }, [hostsReviewed, hostsTotal, coverage, topRisks]);
 
   const copySummary = () => {
-    const text = `${metaName} — security posture summary (${formatDate(metaDate)})\n\n${plainSummary}\n\nRisk score: ${riskScore.toFixed(1)}/100 · Coverage: ${coverage.toFixed(1)}%`;
+    const text = `${metaName} - security posture summary (${formatDate(metaDate)})\n\n${plainSummary}\n\nRisk score: ${riskScore.toFixed(1)}/100 · Coverage: ${coverage.toFixed(1)}%`;
     if (typeof navigator === "undefined" || !navigator.clipboard) {
       toast.error("Clipboard unavailable");
       return;

@@ -58,7 +58,7 @@ const STATUS_TONE: Record<"active" | "expired" | "revoked", "compliant" | "high"
 };
 
 function formatBytes(bytes: number | null): string {
-  if (bytes === null || !Number.isFinite(bytes) || bytes <= 0) return "—";
+  if (bytes === null || !Number.isFinite(bytes) || bytes <= 0) return "-";
   if (bytes < 1024) return `${bytes} B`;
   const units = ["KiB", "MiB", "GiB"];
   let size = bytes / 1024;
@@ -202,7 +202,7 @@ export function Keys({ role: providedRole }: { role?: AdminRole | null } = {}) {
       key: "expiresAt",
       header: "Expires",
       sortable: true,
-      render: (issuance) => <span className="text-xs text-ink-muted">{sanitizeText(issuance.expiresAt) || "—"}</span>,
+      render: (issuance) => <span className="text-xs text-ink-muted">{sanitizeText(issuance.expiresAt) || "-"}</span>,
     },
     {
       key: "actions",
