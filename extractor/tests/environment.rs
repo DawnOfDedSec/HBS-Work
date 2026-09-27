@@ -47,7 +47,11 @@ fn detect_virt(value: Option<&'static str>) -> CmdInjector {
 #[test]
 fn container_detected_from_multiple_signals() {
     let root = temp_root("container");
-    put(&root, "proc/1/cgroup", "12:cpuset:/docker/abc123\n11:memory:/containerd\n");
+    put(
+        &root,
+        "proc/1/cgroup",
+        "12:cpuset:/docker/abc123\n11:memory:/containerd\n",
+    );
     put(&root, ".dockerenv", "");
     put(
         &root,
@@ -66,7 +70,9 @@ fn container_detected_from_multiple_signals() {
         env.signals
     );
     assert!(
-        env.signals.iter().any(|s| s.contains("/proc/1/cgroup: docker")),
+        env.signals
+            .iter()
+            .any(|s| s.contains("/proc/1/cgroup: docker")),
         "signals: {:?}",
         env.signals
     );
@@ -76,12 +82,18 @@ fn container_detected_from_multiple_signals() {
         env.signals
     );
     assert!(
-        env.signals.iter().any(|s| s.contains("systemd-detect-virt: docker")),
+        env.signals
+            .iter()
+            .any(|s| s.contains("systemd-detect-virt: docker")),
         "signals: {:?}",
         env.signals
     );
     // Multiple independent signals, never a single probe.
-    assert!(env.signals.len() >= 3, "expected several signals: {:?}", env.signals);
+    assert!(
+        env.signals.len() >= 3,
+        "expected several signals: {:?}",
+        env.signals
+    );
 
     let _ = std::fs::remove_dir_all(&root);
 }
@@ -90,7 +102,11 @@ fn container_detected_from_multiple_signals() {
 fn virtual_machine_detected_from_dmi_and_detect_virt() {
     let root = temp_root("vm");
     put(&root, "sys/class/dmi/id/sys_vendor", "VMware, Inc.\n");
-    put(&root, "sys/class/dmi/id/product_name", "VMware Virtual Platform\n");
+    put(
+        &root,
+        "sys/class/dmi/id/product_name",
+        "VMware Virtual Platform\n",
+    );
 
     let mut ctx = linux_ctx(&root, detect_virt(Some("vmware")));
     let env = ctx.refresh_environment();
@@ -104,7 +120,9 @@ fn virtual_machine_detected_from_dmi_and_detect_virt() {
         env.signals
     );
     assert!(
-        env.signals.iter().any(|s| s.contains("systemd-detect-virt: vmware")),
+        env.signals
+            .iter()
+            .any(|s| s.contains("systemd-detect-virt: vmware")),
         "signals: {:?}",
         env.signals
     );
@@ -125,7 +143,9 @@ fn bare_metal_when_no_virtualization_marker() {
     assert!(!ctx.is_container());
     assert!(!ctx.is_vm());
     assert!(
-        env.signals.iter().any(|s| s.contains("systemd-detect-virt: none")),
+        env.signals
+            .iter()
+            .any(|s| s.contains("systemd-detect-virt: none")),
         "signals: {:?}",
         env.signals
     );
@@ -165,7 +185,9 @@ fn unknown_when_no_signal_is_observable() {
     assert_eq!(env.kind, Environment::Unknown);
     assert!(env.hypervisor.is_none());
     assert!(
-        env.signals.iter().any(|s| s.contains("no environment signals")),
+        env.signals
+            .iter()
+            .any(|s| s.contains("no environment signals")),
         "signals: {:?}",
         env.signals
     );

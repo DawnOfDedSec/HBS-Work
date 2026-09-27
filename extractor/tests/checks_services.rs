@@ -8,7 +8,9 @@ fn ctx_with(injector: hbs_extractor::evidence::CmdInjector) -> ScanContext {
     let mut p = detect();
     p.os = Os::Linux;
     p.family = DistroFamily::Debian;
-    ScanContext::new(p, false).with_root_prefix("tests/fixtures/empty-root").with_injector(injector)
+    ScanContext::new(p, false)
+        .with_root_prefix("tests/fixtures/empty-root")
+        .with_injector(injector)
 }
 
 fn run_one(ctx: &mut ScanContext, id: &str) -> hbs_extractor::model::CheckResult {
@@ -77,7 +79,9 @@ fn unknown_distro_degrades_not_errors() {
     let mut p = detect();
     p.os = Os::Linux;
     p.family = DistroFamily::Unknown;
-    let mut ctx = ScanContext::new(p, false).with_root_prefix("tests/fixtures/empty-root").with_injector(Box::new(|_, _| None));
+    let mut ctx = ScanContext::new(p, false)
+        .with_root_prefix("tests/fixtures/empty-root")
+        .with_injector(Box::new(|_, _| None));
     let r = run_one(&mut ctx, "LIN-SV-005");
     assert_eq!(r.status, Status::DegradedPartial);
 }

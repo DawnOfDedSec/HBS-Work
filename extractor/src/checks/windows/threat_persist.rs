@@ -5,8 +5,8 @@
 //! configuration, dsregcmd, local-group enumeration, and the hosts file.
 //! Missing or blocked evidence degrades; it never becomes Error.
 
-use super::services::parse_sc_qc;
 use super::native_reg::{native_reg_enum_subkeys, native_reg_sz};
+use super::services::parse_sc_qc;
 use super::{hosts_file, reg_query_dword_with_log, startup_dir, QueryResult};
 use crate::checks::{degraded, nok, ok};
 use crate::context::ScanContext;

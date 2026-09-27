@@ -1,6 +1,6 @@
 use hbs_extractor::keyslot::{
-    check_expiry, hex_id, locate, locate_unique, parse, placeholder_bytes, read_own_slot,
-    SLOT_MAGIC, SLOT_LEN,
+    check_expiry, hex_id, locate, locate_unique, parse, placeholder_bytes, read_own_slot, SLOT_LEN,
+    SLOT_MAGIC,
 };
 
 fn sha256(bytes: &[u8]) -> [u8; 32] {
@@ -135,7 +135,10 @@ fn nil_identities_and_key_rejected() {
 
 #[test]
 fn issued_at_must_precede_expiry() {
-    for (issued_at, expiry) in [(1_700_000_000u64, 1_700_000_000u64), (1_700_000_001, 1_700_000_000)] {
+    for (issued_at, expiry) in [
+        (1_700_000_000u64, 1_700_000_000u64),
+        (1_700_000_001, 1_700_000_000),
+    ] {
         let buf = slot_bytes(issued_at, expiry);
         let err = parse(&buf).unwrap_err();
         assert!(err.to_string().contains("before expiry"), "got: {err}");
@@ -144,7 +147,10 @@ fn issued_at_must_precede_expiry() {
 
 #[test]
 fn locate_unique_requires_exactly_one_slot() {
-    assert!(locate_unique(&[0u8; 128]).unwrap_err().to_string().contains("not found"));
+    assert!(locate_unique(&[0u8; 128])
+        .unwrap_err()
+        .to_string()
+        .contains("not found"));
 
     let one = {
         let mut bin = vec![0u8; 256];
@@ -159,7 +165,10 @@ fn locate_unique_requires_exactly_one_slot() {
         bin.extend_from_slice(&valid_slot(4_102_444_800));
         bin
     };
-    assert!(locate_unique(&two).unwrap_err().to_string().contains("multiple"));
+    assert!(locate_unique(&two)
+        .unwrap_err()
+        .to_string()
+        .contains("multiple"));
 }
 
 #[test]
@@ -181,6 +190,8 @@ fn own_test_binary_has_no_slot() {
 
 #[test]
 fn hex_id_formats_uuid_style() {
-    let id = [0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 1, 2, 3, 4, 5, 6, 7, 8];
+    let id = [
+        0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 1, 2, 3, 4, 5, 6, 7, 8,
+    ];
     assert_eq!(hex_id(&id), "12345678-9abc-def0-0102-030405060708");
 }

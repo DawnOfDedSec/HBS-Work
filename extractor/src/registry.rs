@@ -12,7 +12,9 @@
 #[macro_export]
 macro_rules! check {
     ($reg:expr, $id:literal, $title:literal, $desc:literal, $impact:literal, $rec:literal, $sev:ident, $cat:literal, $refs:expr, $applies:expr, $run:expr) => {
-        $crate::check_admin!($reg, $id, $title, $desc, $impact, $rec, $sev, $cat, $refs, false, $applies, $run);
+        $crate::check_admin!(
+            $reg, $id, $title, $desc, $impact, $rec, $sev, $cat, $refs, false, $applies, $run
+        );
     };
 }
 
@@ -22,7 +24,9 @@ macro_rules! check {
 #[macro_export]
 macro_rules! check_admin {
     ($reg:expr, $id:literal, $title:literal, $desc:literal, $impact:literal, $rec:literal, $sev:ident, $cat:literal, $refs:expr, $applies:expr, $run:expr) => {
-        $crate::check_admin!($reg, $id, $title, $desc, $impact, $rec, $sev, $cat, $refs, true, $applies, $run);
+        $crate::check_admin!(
+            $reg, $id, $title, $desc, $impact, $rec, $sev, $cat, $refs, true, $applies, $run
+        );
     };
     ($reg:expr, $id:literal, $title:literal, $desc:literal, $impact:literal, $rec:literal, $sev:ident, $cat:literal, $refs:expr, $admin:literal, $applies:expr, $run:expr) => {
         $reg.push($crate::model::RegisteredCheck {

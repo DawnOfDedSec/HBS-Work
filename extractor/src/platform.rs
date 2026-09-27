@@ -169,18 +169,20 @@ pub fn parse_os_release(content: &str) -> (Option<String>, DistroFamily) {
 
 fn detect_linux() -> PlatformInfo {
     let mut audit = SelfAudit::default();
-    let (distro, version, family) = match evidence::read_file_capped(std::path::Path::new("/etc/os-release"), &mut audit) {
-        Some(c) => {
-            let (n, f) = parse_os_release(&c);
-            let ver = c
-                .lines()
-                .find_map(|l| l.strip_prefix("VERSION_ID="))
-                .map(|v| v.trim().trim_matches('"').to_string());
-            (n, ver, f)
-        }
-        None => (None, None, DistroFamily::Unknown),
-    };
-    let kernel = evidence::run_command("uname", &["-r"], 5000, &mut audit, &None).unwrap_or_default();
+    let (distro, version, family) =
+        match evidence::read_file_capped(std::path::Path::new("/etc/os-release"), &mut audit) {
+            Some(c) => {
+                let (n, f) = parse_os_release(&c);
+                let ver = c
+                    .lines()
+                    .find_map(|l| l.strip_prefix("VERSION_ID="))
+                    .map(|v| v.trim().trim_matches('"').to_string());
+                (n, ver, f)
+            }
+            None => (None, None, DistroFamily::Unknown),
+        };
+    let kernel =
+        evidence::run_command("uname", &["-r"], 5000, &mut audit, &None).unwrap_or_default();
     let virt = evidence::run_command("systemd-detect-virt", &[], 5000, &mut audit, &None)
         .filter(|v| v != "none");
     let environment = host_environment();
@@ -201,11 +203,15 @@ fn detect_windows() -> PlatformInfo {
     // SAFETY: RtlGetVersion writes into a correctly-sized struct whose
     // dwOSVersionInfoSize we set; no pointers beyond the struct itself.
     unsafe {
-        let mut info: windows_sys::Win32::System::SystemInformation::OSVERSIONINFOW = std::mem::zeroed();
+        let mut info: windows_sys::Win32::System::SystemInformation::OSVERSIONINFOW =
+            std::mem::zeroed();
         info.dwOSVersionInfoSize = std::mem::size_of_val(&info) as u32;
         let ok = windows_sys::Wdk::System::SystemServices::RtlGetVersion(&mut info);
         let kernel = if ok == 0 {
-            format!("{}.{}.{}", info.dwMajorVersion, info.dwMinorVersion, info.dwBuildNumber)
+            format!(
+                "{}.{}.{}",
+                info.dwMajorVersion, info.dwMinorVersion, info.dwBuildNumber
+            )
         } else {
             std::env::var("OS").unwrap_or_default()
         };
@@ -296,11 +302,21 @@ pub fn detect_environment(probe: &mut impl EnvProbe) -> EnvironmentInfo {
     }
 }
 
-const CONTAINER_MARKERS: &[&str] = &["docker", "kubepods", "containerd", "lxc", "podman", "libpod"];
+const CONTAINER_MARKERS: &[&str] = &[
+    "docker",
+    "kubepods",
+    "containerd",
+    "lxc",
+    "podman",
+    "libpod",
+];
 
 fn container_marker(text: &str) -> Option<&'static str> {
     let lower = text.to_ascii_lowercase();
-    CONTAINER_MARKERS.iter().copied().find(|m| lower.contains(m))
+    CONTAINER_MARKERS
+        .iter()
+        .copied()
+        .find(|m| lower.contains(m))
 }
 
 fn is_container_virt(v: &str) -> bool {

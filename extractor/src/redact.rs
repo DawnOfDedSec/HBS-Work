@@ -18,7 +18,14 @@ fn mask(token: &str) -> String {
 }
 
 fn is_word_byte(c: u8) -> bool {
-    c.is_ascii_alphanumeric() || c == b'_' || c == b'-' || c == b'.' || c == b'$' || c == b'/' || c == b'+' || c == b'='
+    c.is_ascii_alphanumeric()
+        || c == b'_'
+        || c == b'-'
+        || c == b'.'
+        || c == b'$'
+        || c == b'/'
+        || c == b'+'
+        || c == b'='
 }
 
 /// Split a line into (word, byte-range) candidates for masking.
@@ -151,7 +158,9 @@ fn classify(w: &str) -> String {
         return mask(w);
     }
     // GitHub / common token prefixes
-    if (w.starts_with("ghp_") || w.starts_with("gho_") || w.starts_with("github_pat_")) && w.len() > 10 {
+    if (w.starts_with("ghp_") || w.starts_with("gho_") || w.starts_with("github_pat_"))
+        && w.len() > 10
+    {
         return mask(w);
     }
     // JWTs
@@ -162,7 +171,9 @@ fn classify(w: &str) -> String {
     // '/' are NOT masked — they are almost always paths.
     if w.len() >= 20 && !w.contains('/') && !w.contains('.') {
         let hexish = w.chars().all(|c| c.is_ascii_hexdigit());
-        let b64ish = w.chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '=' || c == '_');
+        let b64ish = w
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '=' || c == '_');
         if hexish || b64ish {
             return mask(w);
         }

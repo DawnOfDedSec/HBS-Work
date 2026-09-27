@@ -20,7 +20,11 @@ fn sample_result() -> CheckResult {
         degraded_reason: None,
         fallback_log: vec![],
         evidence_blocks: vec![],
-        run_context: hbs_extractor::model::RunContext { user: "test".into(), uid: Some(1000), elevated: false },
+        run_context: hbs_extractor::model::RunContext {
+            user: "test".into(),
+            uid: Some(1000),
+            elevated: false,
+        },
         duration_ms: 1,
     }
 }
@@ -49,7 +53,10 @@ fn report_carries_scan_block_and_schema() {
         "0.1.0-test",
     );
     assert_eq!(r.schema_version, 1);
-    assert_eq!(r.scan["extractor_id"], "12345678-1234-1234-1234-123456789abc");
+    assert_eq!(
+        r.scan["extractor_id"],
+        "12345678-1234-1234-1234-123456789abc"
+    );
     assert_eq!(r.scan["hostname"], "web01");
     assert_eq!(r.scan["extractorVersion"], "0.1.0-test");
     assert_eq!(r.scan["privilege"], "degraded");
@@ -67,6 +74,14 @@ fn report_carries_scan_block_and_schema() {
 fn report_elevated_privilege_flag() {
     let mut scan_extra = json!({});
     scan_extra["privileged"] = json!(true);
-    let r = build(scan_extra, json!({}), vec![], SelfAudit::default(), UNIX_EPOCH, 0, "v");
+    let r = build(
+        scan_extra,
+        json!({}),
+        vec![],
+        SelfAudit::default(),
+        UNIX_EPOCH,
+        0,
+        "v",
+    );
     assert_eq!(r.scan["privilege"], "elevated");
 }

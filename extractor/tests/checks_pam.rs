@@ -8,7 +8,9 @@ fn ctx_with(root: &str) -> ScanContext {
     let mut p = detect();
     p.os = Os::Linux;
     p.family = DistroFamily::Debian;
-    ScanContext::new(p, false).with_root_prefix(root).with_injector(Box::new(|_, _| None))
+    ScanContext::new(p, false)
+        .with_root_prefix(root)
+        .with_injector(Box::new(|_, _| None))
 }
 
 fn run_one(ctx: &mut ScanContext, id: &str) -> hbs_extractor::model::CheckResult {
@@ -21,7 +23,13 @@ fn run_one(ctx: &mut ScanContext, id: &str) -> hbs_extractor::model::CheckResult
 #[test]
 fn hardened_pam_passes() {
     let mut ctx = ctx_with("tests/fixtures/pam-hardened");
-    for id in ["LIN-PAM-001", "LIN-PAM-002", "LIN-PAM-004", "LIN-PAM-005", "LIN-PAM-008"] {
+    for id in [
+        "LIN-PAM-001",
+        "LIN-PAM-002",
+        "LIN-PAM-004",
+        "LIN-PAM-005",
+        "LIN-PAM-008",
+    ] {
         let r = run_one(&mut ctx, id);
         assert_eq!(r.status, Status::Compliant, "{id}: {}", r.evidence);
     }
@@ -30,8 +38,14 @@ fn hardened_pam_passes() {
 #[test]
 fn weak_pam_fails() {
     let mut ctx = ctx_with("tests/fixtures/pam-weak");
-    assert_eq!(run_one(&mut ctx, "LIN-PAM-001").status, Status::NonCompliant);
-    assert_eq!(run_one(&mut ctx, "LIN-PAM-005").status, Status::NonCompliant);
+    assert_eq!(
+        run_one(&mut ctx, "LIN-PAM-001").status,
+        Status::NonCompliant
+    );
+    assert_eq!(
+        run_one(&mut ctx, "LIN-PAM-005").status,
+        Status::NonCompliant
+    );
     let r = run_one(&mut ctx, "LIN-PAM-004");
     assert_eq!(r.status, Status::NonCompliant, "{}", r.evidence);
 }

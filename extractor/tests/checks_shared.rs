@@ -88,7 +88,10 @@ fn gen_inv_002_windows_chain_records_every_attempt() {
     let r = run_one(&mut ctx, "GEN-INV-002");
     assert_eq!(r.status, Status::DegradedPartial, "{}", r.evidence);
     let sources: Vec<&str> = r.fallback_log.iter().map(|a| a.source.as_str()).collect();
-    assert!(sources.contains(&"Get-Package".to_string().as_str()) || sources.contains(&"powershell Get-Package"));
+    assert!(
+        sources.contains(&"Get-Package".to_string().as_str())
+            || sources.contains(&"powershell Get-Package")
+    );
     assert!(sources.contains(&"Get-CimInstance Win32_Product"));
     assert!(sources.contains(&"native registry Uninstall keys"));
     assert!(r.evidence.contains("native registry") || r.evidence.contains("Uninstall"));
@@ -99,7 +102,11 @@ fn gen_inv_007_reads_dpkg_log() {
     let mut ctx = linux_ctx("tests/fixtures/shared-root", Some(Box::new(|_, _| None)));
     let r = run_one(&mut ctx, "GEN-INV-007");
     assert_eq!(r.status, Status::Compliant);
-    assert!(r.evidence.contains("2026-09-01"), "evidence: {}", r.evidence);
+    assert!(
+        r.evidence.contains("2026-09-01"),
+        "evidence: {}",
+        r.evidence
+    );
 }
 
 #[test]

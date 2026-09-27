@@ -17,7 +17,8 @@ use crate::platform::Os;
 
 const WU_POLICY_PATH: &str = r"HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU";
 const DEFENDER_POLICY_PATH: &str = r"HKLM\SOFTWARE\Policies\Microsoft\Windows Defender";
-const DEFENDER_RTP_PATH: &str = r"HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection";
+const DEFENDER_RTP_PATH: &str =
+    r"HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection";
 const DEFENDER_FEATURES_PATH: &str = r"HKLM\SOFTWARE\Microsoft\Windows Defender\Features";
 const STATUS_CMD: &str = "Get-MpComputerStatus | Select-Object AMServiceEnabled, AntivirusEnabled, RealTimeProtectionEnabled, BehaviorMonitorEnabled, IsTamperProtected, AntivirusSignatureAge | ConvertTo-Json";
 const PREFERENCE_CMD: &str = "Get-MpPreference | Select-Object DisableScriptScanning, PUAProtection, AttackSurfaceReductionRules_Ids, AttackSurfaceReductionRules_Actions | ConvertTo-Json";
@@ -66,7 +67,11 @@ fn registry_flag_fallback(
     with_attempts(outcome, attempts)
 }
 
-fn run_ps_json(ctx: &mut ScanContext, script: &str, source: &str) -> (Option<serde_json::Value>, Vec<FallbackAttempt>) {
+fn run_ps_json(
+    ctx: &mut ScanContext,
+    script: &str,
+    source: &str,
+) -> (Option<serde_json::Value>, Vec<FallbackAttempt>) {
     let mut attempts = Vec::new();
     let Some(raw) = ctx.cmd(
         "powershell",
@@ -134,9 +139,13 @@ fn status_registry_fallback(
             true,
             attempts,
         ),
-        "AntivirusEnabled" => {
-            registry_flag_fallback(ctx, DEFENDER_POLICY_PATH, "DisableAntiSpyware", true, attempts)
-        }
+        "AntivirusEnabled" => registry_flag_fallback(
+            ctx,
+            DEFENDER_POLICY_PATH,
+            "DisableAntiSpyware",
+            true,
+            attempts,
+        ),
         "IsTamperProtected" => registry_flag_fallback(
             ctx,
             DEFENDER_FEATURES_PATH,
@@ -474,22 +483,10 @@ fn script_scanning(ctx: &mut ScanContext) -> CheckOutcome {
 fn pua_protection(ctx: &mut ScanContext) -> CheckOutcome {
     let (pref, attempts) = fetch_preference(ctx);
     let Some(pref) = pref else {
-        return registry_flag_fallback(
-            ctx,
-            DEFENDER_POLICY_PATH,
-            "PUAProtection",
-            false,
-            attempts,
-        );
+        return registry_flag_fallback(ctx, DEFENDER_POLICY_PATH, "PUAProtection", false, attempts);
     };
     let Some(pua) = number_field(&pref, "PUAProtection") else {
-        return registry_flag_fallback(
-            ctx,
-            DEFENDER_POLICY_PATH,
-            "PUAProtection",
-            false,
-            attempts,
-        );
+        return registry_flag_fallback(ctx, DEFENDER_POLICY_PATH, "PUAProtection", false, attempts);
     };
     let mut outcome = if pua >= 1.0 {
         ok(
@@ -518,7 +515,8 @@ fn signature_age(ctx: &mut ScanContext) -> CheckOutcome {
         return outcome;
     };
     let Some(age) = number_field(&status, "AntivirusSignatureAge") else {
-        let mut outcome = degraded("AntivirusSignatureAge missing from Get-MpComputerStatus output");
+        let mut outcome =
+            degraded("AntivirusSignatureAge missing from Get-MpComputerStatus output");
         outcome.fallback_log = attempts;
         return outcome;
     };

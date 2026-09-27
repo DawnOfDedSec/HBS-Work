@@ -196,15 +196,15 @@ fn try_source(ctx: &mut ScanContext, src: &Source) -> (String, Option<String>, S
             };
             let outcome = match &value {
                 Some(_) => "read".to_string(),
-                None if !crate::evidence::allowed(prog, args) => {
-                    "refused by allowlist".to_string()
-                }
+                None if !crate::evidence::allowed(prog, args) => "refused by allowlist".to_string(),
                 None => "unavailable".to_string(),
             };
             (label, value, outcome)
         }
         Source::Native(label, f) => {
-            let value = f(ctx).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+            let value = f(ctx)
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
             let outcome = match &value {
                 Some(_) => "read".to_string(),
                 None => "unavailable".to_string(),
@@ -215,7 +215,9 @@ fn try_source(ctx: &mut ScanContext, src: &Source) -> (String, Option<String>, S
 }
 
 fn read_trimmed(ctx: &mut ScanContext, path: &str) -> Option<String> {
-    ctx.read(path).map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+    ctx.read(path)
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
 }
 
 /// Read a (possibly formatted) file and record the attempt. Used for
@@ -304,7 +306,9 @@ fn fqdn_from_files(ctx: &mut ScanContext) -> Option<String> {
     if host.contains('.') {
         return Some(host);
     }
-    let domain = ctx.read("/etc/resolv.conf").and_then(|c| parse_search_domain(&c));
+    let domain = ctx
+        .read("/etc/resolv.conf")
+        .and_then(|c| parse_search_domain(&c));
     Some(match domain {
         Some(d) => format!("{host}.{d}"),
         None => host,
@@ -456,8 +460,12 @@ fn parse_cpu(raw: &str) -> CpuInfo {
         c.vendor = field("vendor_id");
         c.microcode = field("microcode");
         c.cache = field("cache size");
-        c.cores = Some(raw.lines().filter(|l| l.trim_start().starts_with("processor")).count() as u64)
-            .filter(|n| *n > 0);
+        c.cores = Some(
+            raw.lines()
+                .filter(|l| l.trim_start().starts_with("processor"))
+                .count() as u64,
+        )
+        .filter(|n| *n > 0);
         c.flags = field("flags").map(|f| f.split_whitespace().count() as u64);
         return c;
     }
@@ -488,7 +496,11 @@ fn list_dir(ctx: &ScanContext, abs_path: &str) -> Vec<String> {
     let mut names: Vec<String> = std::fs::read_dir(ctx.path(abs_path))
         .map(|rd| {
             rd.filter_map(|e| e.ok())
-                .filter(|e| e.file_type().map(|t| t.is_dir() || t.is_symlink()).unwrap_or(false))
+                .filter(|e| {
+                    e.file_type()
+                        .map(|t| t.is_dir() || t.is_symlink())
+                        .unwrap_or(false)
+                })
                 .filter_map(|e| e.file_name().into_string().ok())
                 .collect()
         })
@@ -545,7 +557,11 @@ fn non_empty_lines(raw: &str) -> Vec<String> {
     names
 }
 
-fn collect_linux(ctx: &mut ScanContext, m: &mut Map<String, Value>, a: &mut Vec<CollectionAttempt>) {
+fn collect_linux(
+    ctx: &mut ScanContext,
+    m: &mut Map<String, Value>,
+    a: &mut Vec<CollectionAttempt>,
+) {
     // hostname ------------------------------------------------------------
     let hostname = first_of(
         ctx,
@@ -644,7 +660,11 @@ fn collect_linux(ctx: &mut ScanContext, m: &mut Map<String, Value>, a: &mut Vec<
         )),
     );
     set(m, "distro", json!(platform_distro(ctx)));
-    set(m, "distro_family", json!(format!("{:?}", ctx.platform.family)));
+    set(
+        m,
+        "distro_family",
+        json!(format!("{:?}", ctx.platform.family)),
+    );
     set(m, "distro_version", json!(platform_distro_version(ctx)));
     set(m, "virtualization", json!(ctx.platform.virtualized.clone()));
 
@@ -761,12 +781,18 @@ fn collect_linux(ctx: &mut ScanContext, m: &mut Map<String, Value>, a: &mut Vec<
     a.push(att(
         "gpu",
         "lspci -mm",
-        if lspci.is_some() { "read" } else { "unavailable" },
+        if lspci.is_some() {
+            "read"
+        } else {
+            "unavailable"
+        },
     ));
     if let Some(pci) = &lspci {
         for line in pci.lines() {
             let low = line.to_lowercase();
-            if low.contains("vga") || low.contains("3d controller") || low.contains("display controller")
+            if low.contains("vga")
+                || low.contains("3d controller")
+                || low.contains("display controller")
             {
                 let name = match line.split_once(": ") {
                     Some((_, rest)) => rest.to_string(),
@@ -778,7 +804,10 @@ fn collect_linux(ctx: &mut ScanContext, m: &mut Map<String, Value>, a: &mut Vec<
     }
     if gpus.is_empty() {
         let drm = list_dir(ctx, "/sys/class/drm");
-        let cards = drm.iter().filter(|d| d.starts_with("card") && !d.contains('-')).count();
+        let cards = drm
+            .iter()
+            .filter(|d| d.starts_with("card") && !d.contains('-'))
+            .count();
         a.push(att("gpu", "/sys/class/drm", format!("{cards} DRM card(s)")));
         if cards > 0 {
             gpus.push(json!({"name": format!("{cards} DRM card(s) (names need lspci)"), "source": "/sys/class/drm"}));
@@ -789,7 +818,12 @@ fn collect_linux(ctx: &mut ScanContext, m: &mut Map<String, Value>, a: &mut Vec<
     // storage -------------------------------------------------------------
     let mut storage = Vec::new();
     for dev in list_dir(ctx, "/sys/block") {
-        let model = file_field(ctx, a, "storage.model", &format!("/sys/block/{dev}/device/model"));
+        let model = file_field(
+            ctx,
+            a,
+            "storage.model",
+            &format!("/sys/block/{dev}/device/model"),
+        );
         let size_sectors = file_field(ctx, a, "storage.size", &format!("/sys/block/{dev}/size"))
             .and_then(|s| s.parse::<u64>().ok());
         let ro = file_field(ctx, a, "storage.ro", &format!("/sys/block/{dev}/ro"));
@@ -805,22 +839,32 @@ fn collect_linux(ctx: &mut ScanContext, m: &mut Map<String, Value>, a: &mut Vec<
     // network -------------------------------------------------------------
     let mut interfaces = Vec::new();
     for n in list_dir(ctx, "/sys/class/net") {
-        let mac = file_field(ctx, a, "network.mac", &format!("/sys/class/net/{n}/address"));
-        let state = file_field(ctx, a, "network.state", &format!("/sys/class/net/{n}/operstate"));
+        let mac = file_field(
+            ctx,
+            a,
+            "network.mac",
+            &format!("/sys/class/net/{n}/address"),
+        );
+        let state = file_field(
+            ctx,
+            a,
+            "network.state",
+            &format!("/sys/class/net/{n}/operstate"),
+        );
         interfaces.push(json!({"name": n, "mac": mac, "state": state}));
     }
-    let dns_servers: Vec<String> = first_of(
-        ctx,
-        a,
-        "network.dns",
-        &[Source::File("/etc/resolv.conf")],
-    )
-    .map(|s| {
-        s.lines()
-            .filter_map(|l| l.strip_prefix("nameserver ").map(str::trim).map(str::to_string))
-            .collect()
-    })
-    .unwrap_or_default();
+    let dns_servers: Vec<String> =
+        first_of(ctx, a, "network.dns", &[Source::File("/etc/resolv.conf")])
+            .map(|s| {
+                s.lines()
+                    .filter_map(|l| {
+                        l.strip_prefix("nameserver ")
+                            .map(str::trim)
+                            .map(str::to_string)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
     set(
         m,
         "network",
@@ -839,7 +883,11 @@ fn collect_linux(ctx: &mut ScanContext, m: &mut Map<String, Value>, a: &mut Vec<
     a.push(att(
         "kernel_info.modules",
         "/proc/modules",
-        if modules_count.is_some() { "read" } else { "missing or unreadable" },
+        if modules_count.is_some() {
+            "read"
+        } else {
+            "missing or unreadable"
+        },
     ));
     let taint = file_field(ctx, a, "kernel_info.tainted", "/proc/sys/kernel/tainted");
     let cmdline = file_field(ctx, a, "kernel_info.cmdline", "/proc/cmdline");
@@ -857,23 +905,36 @@ fn collect_linux(ctx: &mut ScanContext, m: &mut Map<String, Value>, a: &mut Vec<
 
     // system activity -----------------------------------------------------
     let processes = ctx.read("/proc/stat").and_then(|s| {
-        s.lines()
-            .find_map(|l| l.strip_prefix("processes ").and_then(|v| v.trim().parse::<u64>().ok()))
+        s.lines().find_map(|l| {
+            l.strip_prefix("processes ")
+                .and_then(|v| v.trim().parse::<u64>().ok())
+        })
     });
     a.push(att(
         "processes",
         "/proc/stat processes",
-        if processes.is_some() { "read" } else { "missing or unreadable" },
+        if processes.is_some() {
+            "read"
+        } else {
+            "missing or unreadable"
+        },
     ));
     set(m, "processes", json!(processes));
 
     let services_count = ctx
-        .cmd("systemctl", &["list-units", "--type=service", "--state=running"])
+        .cmd(
+            "systemctl",
+            &["list-units", "--type=service", "--state=running"],
+        )
         .map(|o| o.lines().filter(|l| l.contains("running")).count() as u64);
     a.push(att(
         "services_count",
         "systemctl list-units --type=service --state=running",
-        if services_count.is_some() { "read" } else { "unavailable" },
+        if services_count.is_some() {
+            "read"
+        } else {
+            "unavailable"
+        },
     ));
     set(m, "services_count", json!(services_count));
 
@@ -882,7 +943,10 @@ fn collect_linux(ctx: &mut ScanContext, m: &mut Map<String, Value>, a: &mut Vec<
         ctx,
         a,
         "disks",
-        &[Source::File("/proc/mounts"), Source::Cmd("findmnt", &["-rn"])],
+        &[
+            Source::File("/proc/mounts"),
+            Source::Cmd("findmnt", &["-rn"]),
+        ],
     );
     let mut disks = Vec::new();
     if let Some(mounts) = &mounts {
@@ -892,7 +956,10 @@ fn collect_linux(ctx: &mut ScanContext, m: &mut Map<String, Value>, a: &mut Vec<
                 continue;
             }
             let (dev, mount, fs) = (parts[0], parts[1], parts[2]);
-            if !matches!(fs, "ext2" | "ext3" | "ext4" | "xfs" | "btrfs" | "zfs" | "f2fs" | "vfat") {
+            if !matches!(
+                fs,
+                "ext2" | "ext3" | "ext4" | "xfs" | "btrfs" | "zfs" | "f2fs" | "vfat"
+            ) {
                 continue;
             }
             if dev == "none" || dev.starts_with("tmpfs") || dev == "overlay" {
@@ -908,7 +975,10 @@ fn collect_linux(ctx: &mut ScanContext, m: &mut Map<String, Value>, a: &mut Vec<
         ctx,
         a,
         "users",
-        &[Source::File("/etc/passwd"), Source::Cmd("getent", &["passwd"])],
+        &[
+            Source::File("/etc/passwd"),
+            Source::Cmd("getent", &["passwd"]),
+        ],
     );
     let users: Vec<Value> = passwd
         .as_deref()
@@ -930,7 +1000,11 @@ fn collect_linux(ctx: &mut ScanContext, m: &mut Map<String, Value>, a: &mut Vec<
         .as_deref()
         .and_then(|s| s.lines().next())
         .and_then(|l| l.split_whitespace().next().map(str::to_string));
-    set(m, "patch_level", json!({"last_update": last_update, "hotfix_count": null}));
+    set(
+        m,
+        "patch_level",
+        json!({"last_update": last_update, "hotfix_count": null}),
+    );
     a.push(att(
         "registered_owner",
         "platform",
@@ -1111,8 +1185,7 @@ fn env_computername(ctx: &mut ScanContext) -> Option<String> {
 
 fn fqdn_windows_env(ctx: &mut ScanContext) -> Option<String> {
     let host = host_env(ctx, "COMPUTERNAME").filter(|s| !s.trim().is_empty());
-    let domain = host_env(ctx, "USERDNSDOMAIN")
-        .filter(|s| !s.trim().is_empty());
+    let domain = host_env(ctx, "USERDNSDOMAIN").filter(|s| !s.trim().is_empty());
     match (host, domain) {
         (Some(h), Some(d)) => Some(format!("{}.{}", h.trim(), d.trim())),
         (Some(h), None) => Some(h.trim().to_string()),
@@ -1148,7 +1221,10 @@ fn parse_windows_memory(sysinfo: Option<&str>, cim: Option<&Value>) -> MemInfo {
     if let Some(v) = cim {
         let kb = |key: &str| -> Option<u64> {
             v.get(key)
-                .and_then(|x| x.as_u64().or_else(|| x.as_str().and_then(|s| s.parse::<u64>().ok())))
+                .and_then(|x| {
+                    x.as_u64()
+                        .or_else(|| x.as_str().and_then(|s| s.parse::<u64>().ok()))
+                })
                 .map(|kb| kb / 1024)
         };
         m.total = m.total.or_else(|| kb("TotalVisibleMemorySize"));
@@ -1215,7 +1291,11 @@ fn parse_hotfix_json(raw: &str) -> Option<Vec<Value>> {
     serde_json::from_str::<Vec<Value>>(raw).ok()
 }
 
-fn collect_windows(ctx: &mut ScanContext, m: &mut Map<String, Value>, a: &mut Vec<CollectionAttempt>) {
+fn collect_windows(
+    ctx: &mut ScanContext,
+    m: &mut Map<String, Value>,
+    a: &mut Vec<CollectionAttempt>,
+) {
     // hostname / fqdn -----------------------------------------------------
     let hostname = first_of(
         ctx,
@@ -1245,12 +1325,27 @@ fn collect_windows(ctx: &mut ScanContext, m: &mut Map<String, Value>, a: &mut Ve
     set(m, "machine_id", json!(machine_id));
 
     // OS / kernel / arch --------------------------------------------------
-    let os_name = reg_sz_field(ctx, a, "os_name", WIN_CURRENT_VERSION, "ProductName")
-        .or_else(|| first_of(ctx, a, "os_name", &[Source::Native("default", default_windows)]));
+    let os_name =
+        reg_sz_field(ctx, a, "os_name", WIN_CURRENT_VERSION, "ProductName").or_else(|| {
+            first_of(
+                ctx,
+                a,
+                "os_name",
+                &[Source::Native("default", default_windows)],
+            )
+        });
     set(m, "os_name", json!(os_name));
     let os_version = reg_sz_field(ctx, a, "os_version", WIN_CURRENT_VERSION, "DisplayVersion")
         .or_else(|| reg_sz_field(ctx, a, "os_version", WIN_CURRENT_VERSION, "ReleaseId"))
-        .or_else(|| reg_sz_field(ctx, a, "os_version", WIN_CURRENT_VERSION, "CurrentBuildNumber"))
+        .or_else(|| {
+            reg_sz_field(
+                ctx,
+                a,
+                "os_version",
+                WIN_CURRENT_VERSION,
+                "CurrentBuildNumber",
+            )
+        })
         .or_else(|| {
             first_of(
                 ctx,
@@ -1343,11 +1438,17 @@ fn collect_windows(ctx: &mut ScanContext, m: &mut Map<String, Value>, a: &mut Ve
         .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
         .and_then(|v| {
             let obj = v.as_array().and_then(|x| x.first()).cloned().unwrap_or(v);
-            obj.get("NumberOfLogicalProcessors")
-                .and_then(|n| n.as_u64().or_else(|| n.as_str().and_then(|s| s.parse().ok())))
+            obj.get("NumberOfLogicalProcessors").and_then(|n| {
+                n.as_u64()
+                    .or_else(|| n.as_str().and_then(|s| s.parse().ok()))
+            })
         })
         .or_else(|| {
-            info("processor(s)").and_then(|v| v.split_whitespace().next().and_then(|n| n.parse::<u64>().ok()))
+            info("processor(s)").and_then(|v| {
+                v.split_whitespace()
+                    .next()
+                    .and_then(|n| n.parse::<u64>().ok())
+            })
         });
     set(m, "cpu_cores", json!(cpu_cores));
     set(
@@ -1410,7 +1511,10 @@ fn collect_windows(ctx: &mut ScanContext, m: &mut Map<String, Value>, a: &mut Ve
         for item in value_array(&v) {
             let size_gb = item
                 .get("Size")
-                .and_then(|x| x.as_u64().or_else(|| x.as_str().and_then(|s| s.parse().ok())))
+                .and_then(|x| {
+                    x.as_u64()
+                        .or_else(|| x.as_str().and_then(|s| s.parse().ok()))
+                })
                 .map(|b| b / (1024 * 1024 * 1024));
             storage.push(json!({
                 "device": null,
@@ -1432,7 +1536,11 @@ fn collect_windows(ctx: &mut ScanContext, m: &mut Map<String, Value>, a: &mut Ve
     .map(|s| {
         s.lines()
             .map(str::trim)
-            .filter(|l| l.starts_with("DNS Servers") || l.chars().all(|c| c.is_ascii_hexdigit() || c == ':' || c == '.'))
+            .filter(|l| {
+                l.starts_with("DNS Servers")
+                    || l.chars()
+                        .all(|c| c.is_ascii_hexdigit() || c == ':' || c == '.')
+            })
             .filter(|l| !l.is_empty())
             .map(str::to_string)
             .collect()
@@ -1460,11 +1568,21 @@ fn collect_windows(ctx: &mut ScanContext, m: &mut Map<String, Value>, a: &mut Ve
     );
 
     // system activity -----------------------------------------------------
-    let processes = first_of(ctx, a, "processes", &[Source::Cmd("powershell", PS_PROCESS_COUNT)])
-        .and_then(|s| s.trim().parse::<u64>().ok());
+    let processes = first_of(
+        ctx,
+        a,
+        "processes",
+        &[Source::Cmd("powershell", PS_PROCESS_COUNT)],
+    )
+    .and_then(|s| s.trim().parse::<u64>().ok());
     set(m, "processes", json!(processes));
-    let services_count = first_of(ctx, a, "services_count", &[Source::Cmd("powershell", PS_SERVICE_COUNT)])
-        .and_then(|s| s.trim().parse::<u64>().ok());
+    let services_count = first_of(
+        ctx,
+        a,
+        "services_count",
+        &[Source::Cmd("powershell", PS_SERVICE_COUNT)],
+    )
+    .and_then(|s| s.trim().parse::<u64>().ok());
     set(m, "services_count", json!(services_count));
 
     // disks ---------------------------------------------------------------
@@ -1473,11 +1591,17 @@ fn collect_windows(ctx: &mut ScanContext, m: &mut Map<String, Value>, a: &mut Ve
         for item in value_array(&v) {
             let total = item
                 .get("Size")
-                .and_then(|x| x.as_u64().or_else(|| x.as_str().and_then(|s| s.parse().ok())))
+                .and_then(|x| {
+                    x.as_u64()
+                        .or_else(|| x.as_str().and_then(|s| s.parse().ok()))
+                })
                 .map(|b| b / (1024 * 1024 * 1024));
             let free = item
                 .get("FreeSpace")
-                .and_then(|x| x.as_u64().or_else(|| x.as_str().and_then(|s| s.parse().ok())))
+                .and_then(|x| {
+                    x.as_u64()
+                        .or_else(|| x.as_str().and_then(|s| s.parse().ok()))
+                })
                 .map(|b| b / (1024 * 1024 * 1024));
             disks.push(json!({
                 "mount": item.get("DeviceID").and_then(|x| x.as_str()),
@@ -1496,46 +1620,78 @@ fn collect_windows(ctx: &mut ScanContext, m: &mut Map<String, Value>, a: &mut Ve
         if ctx.native_fallbacks_enabled() {
             match crate::checks::windows::native_accounts::native_enum_local_users() {
                 Some(names) => {
-                    a.push(att("users", "native NetUserEnum", format!("{} users", names.len())));
+                    a.push(att(
+                        "users",
+                        "native NetUserEnum",
+                        format!("{} users", names.len()),
+                    ));
                     users = names.into_iter().map(user_row_windows).collect();
                 }
                 None => a.push(att("users", "native NetUserEnum", "unavailable or empty")),
             }
         } else {
-            a.push(att("users", "native NetUserEnum", "skipped (injected context)"));
+            a.push(att(
+                "users",
+                "native NetUserEnum",
+                "skipped (injected context)",
+            ));
         }
     }
     if users.is_empty() {
         if let Some(raw) = first_of(ctx, a, "users", &[Source::Cmd("powershell", PS_LOCALUSER)]) {
-            users = non_empty_lines(&raw).into_iter().map(user_row_windows).collect();
+            users = non_empty_lines(&raw)
+                .into_iter()
+                .map(user_row_windows)
+                .collect();
         }
     }
     set(m, "users", Value::Array(users));
 
     // patch level ---------------------------------------------------------
-    let hotfix_raw = first_of(ctx, a, "patch_level", &[Source::Cmd("powershell", PS_HOTFIX)]);
+    let hotfix_raw = first_of(
+        ctx,
+        a,
+        "patch_level",
+        &[Source::Cmd("powershell", PS_HOTFIX)],
+    );
     let (count, newest) = match hotfix_raw.as_deref().and_then(parse_hotfix_json) {
         Some(list) => {
             let newest = list
                 .iter()
-                .filter_map(|h| h.get("InstalledOn").and_then(|x| x.as_str()).map(str::to_string))
+                .filter_map(|h| {
+                    h.get("InstalledOn")
+                        .and_then(|x| x.as_str())
+                        .map(str::to_string)
+                })
                 .max();
             (Some(list.len() as u64), newest)
         }
         None => {
-            let count = first_of(ctx, a, "patch_level", &[Source::Cmd("wmic", &["qfe"])])
-                .map(|out| {
+            let count =
+                first_of(ctx, a, "patch_level", &[Source::Cmd("wmic", &["qfe"])]).map(|out| {
                     out.lines()
-                        .filter(|l| !l.trim().is_empty() && !l.to_lowercase().starts_with("description"))
+                        .filter(|l| {
+                            !l.trim().is_empty() && !l.to_lowercase().starts_with("description")
+                        })
                         .count() as u64
                 });
             (count, None)
         }
     };
-    set(m, "patch_level", json!({"hotfix_count": count, "newest_hotfix_date": newest}));
+    set(
+        m,
+        "patch_level",
+        json!({"hotfix_count": count, "newest_hotfix_date": newest}),
+    );
 
     // owner / timezone / locale -------------------------------------------
-    let owner = reg_sz_field(ctx, a, "registered_owner", WIN_CURRENT_VERSION, "RegisteredOwner");
+    let owner = reg_sz_field(
+        ctx,
+        a,
+        "registered_owner",
+        WIN_CURRENT_VERSION,
+        "RegisteredOwner",
+    );
     set(m, "registered_owner", json!(owner));
     let tz = first_of(ctx, a, "timezone", &[Source::Cmd("tzutil", &["/g"])])
         .or_else(|| reg_sz_field(ctx, a, "timezone", WIN_TZ, "TimeZoneKeyName"));

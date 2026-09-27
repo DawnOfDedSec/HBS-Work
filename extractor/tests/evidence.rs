@@ -23,7 +23,11 @@ fn read_is_capped_to_1mb() {
 #[test]
 fn missing_file_returns_none() {
     let mut audit = SelfAudit::default();
-    assert!(read_file_capped(PathBuf::from("/definitely/not/here/x").as_path(), &mut audit).is_none());
+    assert!(read_file_capped(
+        PathBuf::from("/definitely/not/here/x").as_path(),
+        &mut audit
+    )
+    .is_none());
     assert!(audit.files_read.is_empty());
 }
 
@@ -31,7 +35,9 @@ fn missing_file_returns_none() {
 fn evil_program_is_rejected_without_spawn() {
     let mut audit = SelfAudit::default();
     let injector: Option<Box<dyn Fn(&str, &[&str]) -> Option<String>>> =
-        Some(Box::new(|prog, _| panic!("injector must not be consulted for blocked programs: {prog}")));
+        Some(Box::new(|prog, _| {
+            panic!("injector must not be consulted for blocked programs: {prog}")
+        }));
     let out = run_command("evil", &["-x"], 1000, &mut audit, &injector);
     assert!(out.is_none());
     assert!(audit.commands.is_empty());
@@ -72,12 +78,29 @@ fn evidence_allowlist_blocks_export_and_state_changes() {
         ("net", &["use", "Z:", r"\\server\\share"][..]),
         ("net", &["accounts", "/minpwlen:7"][..]),
         ("net", &["user", "attacker", "Pass123!", "/add"][..]),
-        ("netsh", &["advfirewall", "set", "allprofiles", "state", "off"][..]),
-        ("netsh", &["interface", "ip", "set", "dns", "name=Ethernet", "static", "1.1.1.1"][..]),
+        (
+            "netsh",
+            &["advfirewall", "set", "allprofiles", "state", "off"][..],
+        ),
+        (
+            "netsh",
+            &[
+                "interface",
+                "ip",
+                "set",
+                "dns",
+                "name=Ethernet",
+                "static",
+                "1.1.1.1",
+            ][..],
+        ),
         ("nslookup", &["example.com"][..]),
     ] {
-        assert!(run_command(program, args, 1000, &mut audit, &injector).is_none(),
-            "state-changing/network command passed allowlist: {program} {}", args.join(" "));
+        assert!(
+            run_command(program, args, 1000, &mut audit, &injector).is_none(),
+            "state-changing/network command passed allowlist: {program} {}",
+            args.join(" ")
+        );
     }
     for script in [
         "secedit /export /cfg $env:TEMP\\policy.inf",
@@ -94,9 +117,17 @@ fn evidence_allowlist_blocks_export_and_state_changes() {
         "Start-Service -Name Spooler",
         "Get-Process; Remove-Item C:\\evidence.txt",
     ] {
-        assert!(run_command("powershell", &["-NoProfile", "-NonInteractive", "-Command", script],
-            1000, &mut audit, &injector).is_none(),
-            "write/network-capable PowerShell passed allowlist: {script}");
+        assert!(
+            run_command(
+                "powershell",
+                &["-NoProfile", "-NonInteractive", "-Command", script],
+                1000,
+                &mut audit,
+                &injector
+            )
+            .is_none(),
+            "write/network-capable PowerShell passed allowlist: {script}"
+        );
     }
     assert_eq!(audit.commands, ["reg query HKLM\\X"]);
 }
@@ -126,7 +157,18 @@ fn legitimate_query_commands_pass_allowlist() {
 
 #[test]
 fn allowlist_contains_required_programs() {
-    for p in ["uname", "ss", "systemctl", "auditpol", "reg", "wevtutil", "powershell", "docker", "sc", "net"] {
+    for p in [
+        "uname",
+        "ss",
+        "systemctl",
+        "auditpol",
+        "reg",
+        "wevtutil",
+        "powershell",
+        "docker",
+        "sc",
+        "net",
+    ] {
         assert!(COMMAND_ALLOWLIST.contains(&p), "missing {p}");
     }
     assert!(!COMMAND_ALLOWLIST.contains(&"secedit"));

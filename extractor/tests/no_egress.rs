@@ -66,12 +66,15 @@ fn remote_targets_are_refused_before_spawn() {
     assert!(!allowed("arp", &["-an", "-ComputerName", "host"]));
     assert!(!allowed("arp", &["-an", "-Session", "1"]));
     assert!(!allowed("arp", &["-an", "-Credential", "x"]));
-    assert!(!allowed("powershell", &[
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        "Get-CimInstance -CimSession x -ClassName Win32_BIOS",
-    ]));
+    assert!(!allowed(
+        "powershell",
+        &[
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Get-CimInstance -CimSession x -ClassName Win32_BIOS",
+        ]
+    ));
 }
 
 #[test]
@@ -93,8 +96,14 @@ fn netsh_verbs_are_local_query_contexts() {
     assert!(allowed("netsh", &["http", "show", "urlacl"]));
     assert!(allowed("netsh", &["wlan", "show", "profiles"]));
     assert!(!allowed("netsh", &["interface", "portproxy", "show"]));
-    assert!(!allowed("netsh", &["advfirewall", "set", "allprofiles", "state", "off"]));
-    assert!(!allowed("netsh", &["interface", "ip", "set", "dns", "name=Ethernet"]));
+    assert!(!allowed(
+        "netsh",
+        &["advfirewall", "set", "allprofiles", "state", "off"]
+    ));
+    assert!(!allowed(
+        "netsh",
+        &["interface", "ip", "set", "dns", "name=Ethernet"]
+    ));
 }
 
 #[test]
@@ -118,8 +127,12 @@ fn powershell_rejects_remote_capable_scripts() {
         );
     }
     // Local queries are still fine.
-    assert!(validate_powershell_script("Get-WmiObject -Class Win32_BIOS"));
-    assert!(validate_powershell_script("Get-CimInstance Win32_OperatingSystem"));
+    assert!(validate_powershell_script(
+        "Get-WmiObject -Class Win32_BIOS"
+    ));
+    assert!(validate_powershell_script(
+        "Get-CimInstance Win32_OperatingSystem"
+    ));
 }
 
 #[test]

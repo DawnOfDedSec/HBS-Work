@@ -130,7 +130,13 @@ fn main() {
         let mut reg: Vec<RegisteredCheck> = Vec::new();
         register_all(&mut reg);
         for rc in &reg {
-            println!("{:<14} {:<14} {:<14} {}", rc.tc.id, rc.tc.severity.as_str(), rc.tc.category, rc.tc.title);
+            println!(
+                "{:<14} {:<14} {:<14} {}",
+                rc.tc.id,
+                rc.tc.severity.as_str(),
+                rc.tc.category,
+                rc.tc.title
+            );
         }
         return;
     }
@@ -156,7 +162,10 @@ fn main() {
             if iteration == 0 {
                 std::process::exit(failure.code);
             }
-            eprintln!("hbs-extractor: scan {} failed; the loop continues", iteration + 1);
+            eprintln!(
+                "hbs-extractor: scan {} failed; the loop continues",
+                iteration + 1
+            );
         }
     }
 
@@ -199,8 +208,17 @@ fn run_once(args: &Args, allow_elevation: bool) -> Result<(), ScanFailure> {
     let reg: Vec<RegisteredCheck> = reg
         .into_iter()
         .filter(|rc| args.only.is_empty() || args.only.iter().any(|id| id == rc.tc.id))
-        .filter(|rc| args.category.as_deref().map(|c| rc.tc.category == c).unwrap_or(true))
-        .filter(|rc| min_rank.map(|r| severity_rank(rc.tc.severity) >= r).unwrap_or(true))
+        .filter(|rc| {
+            args.category
+                .as_deref()
+                .map(|c| rc.tc.category == c)
+                .unwrap_or(true)
+        })
+        .filter(|rc| {
+            min_rank
+                .map(|r| severity_rank(rc.tc.severity) >= r)
+                .unwrap_or(true)
+        })
         .collect();
     if reg.is_empty() {
         return Err(fail(3, "no testcases match the given filters".into()));
@@ -221,10 +239,17 @@ fn run_once(args: &Args, allow_elevation: bool) -> Result<(), ScanFailure> {
         .to_string();
     let os_line = format!(
         "{} {}",
-        meta.get("os_name").and_then(|v| v.as_str()).unwrap_or("unknown OS"),
-        meta.get("os_version").and_then(|v| v.as_str()).unwrap_or("")
+        meta.get("os_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown OS"),
+        meta.get("os_version")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
     );
-    let admin_only_count = reg.iter().filter(|rc| rc.admin && (rc.applies)(&pinfo)).count();
+    let admin_only_count = reg
+        .iter()
+        .filter(|rc| rc.admin && (rc.applies)(&pinfo))
+        .count();
     ui.banner(
         VERSION,
         &host_display,
@@ -245,8 +270,16 @@ fn run_once(args: &Args, allow_elevation: bool) -> Result<(), ScanFailure> {
     let audit = std::mem::take(&mut ctx.audit);
 
     // 5. Report + seal.
-    let hostname = meta.get("hostname").and_then(|v| v.as_str()).unwrap_or("host").to_string();
-    let machine_id = meta.get("machine_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let hostname = meta
+        .get("hostname")
+        .and_then(|v| v.as_str())
+        .unwrap_or("host")
+        .to_string();
+    let machine_id = meta
+        .get("machine_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
     let scan_extra = json!({
         "peakRssKb": peak_rss_kb(),
         "extractorId": keyslot::hex_id(&slot.extractor_id),
@@ -285,7 +318,7 @@ fn run_once(args: &Args, allow_elevation: bool) -> Result<(), ScanFailure> {
         &slot.extractor_id,
         crypto::SUITE_CHACHA20POLY1305,
     )
-        .map_err(|e| fail(3, format!("sealing failed: {e}")))?;
+    .map_err(|e| fail(3, format!("sealing failed: {e}")))?;
 
     // Default output: alongside the extractor binary itself (its own
     // directory), never the current working directory — operators run it from
@@ -358,7 +391,9 @@ fn resolve_slot(args: &Args) -> Result<SlotData, String> {
 #[cfg(debug_assertions)]
 fn dev_slot(hexkey: &str) -> Result<SlotData, String> {
     let bytes = hex::decode(hexkey).map_err(|e| format!("--dev-insecure-key: {e}"))?;
-    let priv_key: [u8; 32] = bytes.try_into().map_err(|_| "--dev-insecure-key: need 64 hex chars (a PRIVATE key)".to_string())?;
+    let priv_key: [u8; 32] = bytes
+        .try_into()
+        .map_err(|_| "--dev-insecure-key: need 64 hex chars (a PRIVATE key)".to_string())?;
     Ok(SlotData {
         key_id: 1,
         campaign_id: [0x11; 16],
@@ -377,15 +412,19 @@ fn peak_rss_kb() -> u64 {
         std::fs::read_to_string("/proc/self/status")
             .ok()
             .and_then(|s| {
-                s.lines()
-                    .find(|l| l.starts_with("VmHWM:"))
-                    .and_then(|l| l.split_whitespace().nth(1).and_then(|v| v.parse::<u64>().ok()))
+                s.lines().find(|l| l.starts_with("VmHWM:")).and_then(|l| {
+                    l.split_whitespace()
+                        .nth(1)
+                        .and_then(|v| v.parse::<u64>().ok())
+                })
             })
             .unwrap_or(0)
     }
     #[cfg(windows)]
     {
-        use windows_sys::Win32::System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
+        use windows_sys::Win32::System::ProcessStatus::{
+            GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
+        };
         // SAFETY: correctly-sized struct; GetProcessMemoryInfo only writes.
         unsafe {
             let mut pmc: PROCESS_MEMORY_COUNTERS = std::mem::zeroed();
@@ -414,7 +453,12 @@ fn chrono_like_stamp() -> String {
     let days = now / 86400;
     let secs = now % 86400;
     let (y, m, d) = civil_from_days(days as i64);
-    format!("{y:04}{m:02}{d:02}T{:02}{:02}{:02}", secs / 3600, (secs % 3600) / 60, secs % 60)
+    format!(
+        "{y:04}{m:02}{d:02}T{:02}{:02}{:02}",
+        secs / 3600,
+        (secs % 3600) / 60,
+        secs % 60
+    )
 }
 
 fn civil_from_days(z: i64) -> (i64, u32, u32) {

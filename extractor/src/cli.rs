@@ -65,7 +65,8 @@ impl Progress {
             println!("hbs-extractor {version} — {host} ({privilege})");
             return;
         }
-        let box_line = |label: &str, pad: usize| format!("│ {label:<pad$} │", label = label, pad = pad);
+        let box_line =
+            |label: &str, pad: usize| format!("│ {label:<pad$} │", label = label, pad = pad);
         let panel = format!(
             "\n╭──────────────────────────────────────────────╮\n{}\n{}\n{}\n{}\n╰──────────────────────────────────────────────╯",
             box_line(&format!("hbs-extractor {version}  ·  read-only scanner"), 44),
@@ -78,10 +79,7 @@ impl Progress {
 
     pub fn metadata_done(&self, fields: usize) {
         if !self.quiet {
-            println!(
-                "{} system metadata collected ({fields} fields)",
-                '\u{2713}'
-            );
+            println!("{} system metadata collected ({fields} fields)", '\u{2713}');
         }
     }
 

@@ -51,13 +51,26 @@ fn seal(
         0 => {
             let cipher = ChaCha20Poly1305::new(chacha20poly1305::Key::from_slice(&key));
             cipher
-                .encrypt(nonce.into(), Payload { msg: &compressed, aad: &[] })
+                .encrypt(
+                    nonce.into(),
+                    Payload {
+                        msg: &compressed,
+                        aad: &[],
+                    },
+                )
                 .expect("chacha encrypt")
         }
         1 => {
-            let cipher = aes_gcm::Aes256Gcm::new(aes_gcm::Key::<aes_gcm::Aes256Gcm>::from_slice(&key));
+            let cipher =
+                aes_gcm::Aes256Gcm::new(aes_gcm::Key::<aes_gcm::Aes256Gcm>::from_slice(&key));
             cipher
-                .encrypt(nonce.into(), Payload { msg: &compressed, aad: &[] })
+                .encrypt(
+                    nonce.into(),
+                    Payload {
+                        msg: &compressed,
+                        aad: &[],
+                    },
+                )
                 .expect("aes encrypt")
         }
         other => panic!("unknown suite {other}"),
@@ -92,9 +105,14 @@ fn main() {
     }))
     .expect("report json");
 
-    let entries: [( &str, u8, u16, Vec<u8>); 2] = [
+    let entries: [(&str, u8, u16, Vec<u8>); 2] = [
         ("v1-suite0-legacy", 0, 5, report),
-        ("v1-suite1-unicode", 1, 9, "legacy ✓ ünïcode report".as_bytes().to_vec()),
+        (
+            "v1-suite1-unicode",
+            1,
+            9,
+            "legacy ✓ ünïcode report".as_bytes().to_vec(),
+        ),
     ];
 
     let vectors: Vec<serde_json::Value> = entries
@@ -122,8 +140,16 @@ fn main() {
         })
         .collect();
 
-    let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/legacy-v1-vectors.json");
-    std::fs::write(&out, format!("{}\n", serde_json::to_string_pretty(&vectors).unwrap()))
-        .expect("write fixtures");
-    println!("wrote {} legacy v1 vectors to {}", vectors.len(), out.display());
+    let out =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/legacy-v1-vectors.json");
+    std::fs::write(
+        &out,
+        format!("{}\n", serde_json::to_string_pretty(&vectors).unwrap()),
+    )
+    .expect("write fixtures");
+    println!(
+        "wrote {} legacy v1 vectors to {}",
+        vectors.len(),
+        out.display()
+    );
 }

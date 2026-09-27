@@ -9,7 +9,9 @@ fn linux_ctx(root: &str) -> ScanContext {
     p.os = Os::Linux;
     p.family = DistroFamily::Debian;
     p.environment = EnvironmentInfo::default();
-    ScanContext::new(p, false).with_root_prefix(root).with_injector(Box::new(|_, _| None))
+    ScanContext::new(p, false)
+        .with_root_prefix(root)
+        .with_injector(Box::new(|_, _| None))
 }
 
 fn run_one(ctx: &mut ScanContext, id: &str) -> hbs_extractor::model::CheckResult {
@@ -25,7 +27,13 @@ fn hardened_mounts_pass() {
     let mut ctx = linux_ctx("tests/fixtures/fs-hardened");
     for id in ["LIN-FS-001", "LIN-FS-002", "LIN-FS-003", "LIN-FS-005"] {
         let r = run_one(&mut ctx, id);
-        assert_eq!(r.status, Status::Compliant, "{id}: {:?} — {}", r.status, r.evidence);
+        assert_eq!(
+            r.status,
+            Status::Compliant,
+            "{id}: {:?} — {}",
+            r.status,
+            r.evidence
+        );
     }
 }
 
@@ -51,7 +59,11 @@ fn missing_proc_mounts_degrades() {
     let mut ctx = linux_ctx("tests/fixtures/empty-root");
     let r = run_one(&mut ctx, "LIN-FS-001");
     assert_eq!(r.status, Status::DegradedPartial, "{}", r.evidence);
-    assert!(r.degraded_reason.as_deref().unwrap().contains("/proc/mounts"));
+    assert!(r
+        .degraded_reason
+        .as_deref()
+        .unwrap()
+        .contains("/proc/mounts"));
 }
 
 #[test]

@@ -34,7 +34,9 @@ pub fn run_all(registry: &[RegisteredCheck], ctx: &mut ScanContext) -> Vec<Check
             (
                 CheckOutcome {
                     status: Status::DegradedPartial,
-                    evidence: "requires elevation — rerun with --elevate for this check's full depth".into(),
+                    evidence:
+                        "requires elevation — rerun with --elevate for this check's full depth"
+                            .into(),
                     location: String::new(),
                     repro: String::new(),
                     recommendation_override: None,
@@ -134,12 +136,20 @@ fn current_run_context(elevated: bool) -> crate::model::RunContext {
                 })
             })
             .unwrap_or_else(|| format!("uid:{uid}"));
-        crate::model::RunContext { user, uid: Some(uid), elevated }
+        crate::model::RunContext {
+            user,
+            uid: Some(uid),
+            elevated,
+        }
     }
     #[cfg(not(unix))]
     {
         let user = std::env::var("USERNAME").unwrap_or_else(|_| "unknown".into());
-        crate::model::RunContext { user, uid: None, elevated }
+        crate::model::RunContext {
+            user,
+            uid: None,
+            elevated,
+        }
     }
 }
 

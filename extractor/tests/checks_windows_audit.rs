@@ -150,13 +150,26 @@ fn non_get_auditpol_commands_rejected_by_evidence_allowlist() {
     let mut ctx = windows_ctx(Box::new(|_, _| Some("stub".into())));
 
     // /get is allowed
-    assert!(ctx.cmd("auditpol", &["/get", "/category:*", "/r"]).is_some());
-    assert!(ctx.cmd("auditpol", &["/get", "/subcategory:Logon", "/r"]).is_some());
+    assert!(ctx
+        .cmd("auditpol", &["/get", "/category:*", "/r"])
+        .is_some());
+    assert!(ctx
+        .cmd("auditpol", &["/get", "/subcategory:Logon", "/r"])
+        .is_some());
 
     // Mutation or non-query verbs must be rejected
-    assert!(ctx.cmd("auditpol", &["/set", "/subcategory:Logon", "/success:enable"]).is_none());
-    assert!(ctx.cmd("auditpol", &["/backup", "/file:audit.csv"]).is_none());
-    assert!(ctx.cmd("auditpol", &["/restore", "/file:audit.csv"]).is_none());
+    assert!(ctx
+        .cmd(
+            "auditpol",
+            &["/set", "/subcategory:Logon", "/success:enable"]
+        )
+        .is_none());
+    assert!(ctx
+        .cmd("auditpol", &["/backup", "/file:audit.csv"])
+        .is_none());
+    assert!(ctx
+        .cmd("auditpol", &["/restore", "/file:audit.csv"])
+        .is_none());
     assert!(ctx.cmd("auditpol", &["/clear"]).is_none());
     assert!(ctx.cmd("auditpol", &["/remove", "/user:Alice"]).is_none());
 }
@@ -173,8 +186,16 @@ MYMACHINE,System,Logoff,{0CCE9216-69AE-11D9-BED3-505054503030},Success,No Auditi
     let mut ctx = windows_ctx(audit_injector(Some(MIXED_CSV)));
 
     let logon = run_one(&mut ctx, "WIN-AU-001");
-    assert_eq!(logon.status, Status::NonCompliant, "WIN-AU-001 requires Success and Failure");
+    assert_eq!(
+        logon.status,
+        Status::NonCompliant,
+        "WIN-AU-001 requires Success and Failure"
+    );
 
     let logoff = run_one(&mut ctx, "WIN-AU-002");
-    assert_eq!(logoff.status, Status::Compliant, "WIN-AU-002 only requires Success");
+    assert_eq!(
+        logoff.status,
+        Status::Compliant,
+        "WIN-AU-002 only requires Success"
+    );
 }

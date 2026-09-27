@@ -16,18 +16,41 @@ use hbs_extractor::model::{CheckResult, RegisteredCheck, Status};
 use hbs_extractor::platform::{detect, DistroFamily, EnvironmentInfo, Os, PlatformInfo};
 
 const ALL_IDS: &[&str] = &[
-    "GEN-SRV-001", "GEN-SRV-002", "GEN-SRV-003", "GEN-SRV-004", "GEN-SRV-005",
-    "GEN-SRV-006", "GEN-SRV-007", "GEN-SRV-008", "GEN-SRV-009", "GEN-SRV-010",
-    "GEN-SRV-011", "GEN-SRV-012", "GEN-SRV-013", "GEN-SRV-014", "GEN-SRV-015",
-    "GEN-SRV-016", "GEN-SRV-017", "GEN-SRV-018", "GEN-SRV-019", "GEN-SRV-020",
-    "GEN-SRV-021", "GEN-SRV-022", "GEN-SRV-023", "GEN-SRV-024",
+    "GEN-SRV-001",
+    "GEN-SRV-002",
+    "GEN-SRV-003",
+    "GEN-SRV-004",
+    "GEN-SRV-005",
+    "GEN-SRV-006",
+    "GEN-SRV-007",
+    "GEN-SRV-008",
+    "GEN-SRV-009",
+    "GEN-SRV-010",
+    "GEN-SRV-011",
+    "GEN-SRV-012",
+    "GEN-SRV-013",
+    "GEN-SRV-014",
+    "GEN-SRV-015",
+    "GEN-SRV-016",
+    "GEN-SRV-017",
+    "GEN-SRV-018",
+    "GEN-SRV-019",
+    "GEN-SRV-020",
+    "GEN-SRV-021",
+    "GEN-SRV-022",
+    "GEN-SRV-023",
+    "GEN-SRV-024",
 ];
 
 fn platform(os: Os) -> PlatformInfo {
     let mut p = detect();
     p.os = os;
     p.arch = "x86_64".into();
-    p.family = if os == Os::Linux { DistroFamily::Debian } else { DistroFamily::Unknown };
+    p.family = if os == Os::Linux {
+        DistroFamily::Debian
+    } else {
+        DistroFamily::Unknown
+    };
     // Pin the environment so these tests never inherit the build host's
     // bare-metal/VM classification.
     p.environment = EnvironmentInfo::default();
@@ -54,7 +77,11 @@ fn run_one(ctx: &mut ScanContext, id: &str) -> CheckResult {
     let mut reg: Vec<RegisteredCheck> = Vec::new();
     register_all(&mut reg);
     let subset: Vec<RegisteredCheck> = reg.into_iter().filter(|c| c.tc.id == id).collect();
-    assert_eq!(subset.len(), 1, "check {id} must be registered exactly once");
+    assert_eq!(
+        subset.len(),
+        1,
+        "check {id} must be registered exactly once"
+    );
     run_all(&subset, ctx).remove(0)
 }
 
@@ -85,20 +112,30 @@ fn all_checks_degrade_when_evidence_unavailable() {
             run_one(&mut linux_ctx("tests/fixtures/empty-root", none()), id)
         };
         if r.status != Status::DegradedPartial {
-            problems.push(format!("{id}: expected DegradedPartial, got {:?} ({})", r.status, r.evidence));
+            problems.push(format!(
+                "{id}: expected DegradedPartial, got {:?} ({})",
+                r.status, r.evidence
+            ));
         }
         if r.status == Status::Error {
             problems.push(format!("{id}: must never be Error"));
         }
     }
-    assert!(problems.is_empty(), "degradation invariants:\n{}", problems.join("\n"));
+    assert!(
+        problems.is_empty(),
+        "degradation invariants:\n{}",
+        problems.join("\n")
+    );
 }
 
 #[test]
 fn every_registered_id_is_unique_and_well_formed() {
     let mut reg: Vec<RegisteredCheck> = Vec::new();
     register_all(&mut reg);
-    let srv: Vec<&RegisteredCheck> = reg.iter().filter(|c| c.tc.id.starts_with("GEN-SRV-")).collect();
+    let srv: Vec<&RegisteredCheck> = reg
+        .iter()
+        .filter(|c| c.tc.id.starts_with("GEN-SRV-"))
+        .collect();
     assert_eq!(srv.len(), 24, "expected 24 GEN-SRV checks");
     for c in &srv {
         let parts: Vec<&str> = c.tc.id.split('-').collect();
@@ -115,10 +152,16 @@ fn every_registered_id_is_unique_and_well_formed() {
 
 #[test]
 fn time_sync_source_compliant_and_noncompliant_with_block() {
-    let r = run_one(&mut linux_ctx("tests/fixtures/srv-good", none()), "GEN-SRV-001");
+    let r = run_one(
+        &mut linux_ctx("tests/fixtures/srv-good", none()),
+        "GEN-SRV-001",
+    );
     assert_eq!(r.status, Status::Compliant, "{}", r.evidence);
 
-    let r = run_one(&mut linux_ctx("tests/fixtures/srv-bad", none()), "GEN-SRV-001");
+    let r = run_one(
+        &mut linux_ctx("tests/fixtures/srv-bad", none()),
+        "GEN-SRV-001",
+    );
     assert_eq!(r.status, Status::NonCompliant, "{}", r.evidence);
     assert_eq!(r.evidence_blocks.len(), 1);
     assert!(r.evidence_blocks[0].path.ends_with("chrony.conf"));
@@ -144,9 +187,20 @@ fn time_sync_source_falls_back_to_timedatectl_and_logs_order() {
     let mut ctx = linux_ctx("tests/fixtures/empty-root", none());
     let r = run_one(&mut ctx, "GEN-SRV-001");
     assert_eq!(r.status, Status::DegradedPartial);
-    let pos_cfg = r.fallback_log.iter().position(|f| f.source == "/etc/chrony.conf").unwrap();
-    let pos_cmd = r.fallback_log.iter().position(|f| f.source.starts_with("timedatectl")).unwrap();
-    assert!(pos_cfg < pos_cmd, "primary must be attempted before fallback");
+    let pos_cfg = r
+        .fallback_log
+        .iter()
+        .position(|f| f.source == "/etc/chrony.conf")
+        .unwrap();
+    let pos_cmd = r
+        .fallback_log
+        .iter()
+        .position(|f| f.source.starts_with("timedatectl"))
+        .unwrap();
+    assert!(
+        pos_cfg < pos_cmd,
+        "primary must be attempted before fallback"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -162,16 +216,33 @@ fn clock_drift_bounds_offset() {
             None
         }
     });
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-002").status, Status::Compliant);
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-002"
+        )
+        .status,
+        Status::Compliant
+    );
 
     let inj: CmdInjector = Box::new(|prog, _| {
         if prog == "chronyc" {
-            Some("System time     : 5.500000000 seconds fast of NTP time\nLeap status     : Normal".into())
+            Some(
+                "System time     : 5.500000000 seconds fast of NTP time\nLeap status     : Normal"
+                    .into(),
+            )
         } else {
             None
         }
     });
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-002").status, Status::NonCompliant);
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-002"
+        )
+        .status,
+        Status::NonCompliant
+    );
 }
 
 #[test]
@@ -183,7 +254,14 @@ fn clock_drift_falls_back_to_timedatectl() {
             None
         }
     });
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-002").status, Status::Compliant);
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-002"
+        )
+        .status,
+        Status::Compliant
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -192,22 +270,49 @@ fn clock_drift_falls_back_to_timedatectl() {
 
 #[test]
 fn dns_redundancy_compliant_noncompliant_and_fallback() {
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/srv-good", none()), "GEN-SRV-003").status, Status::Compliant);
-    let bad = run_one(&mut linux_ctx("tests/fixtures/srv-bad", none()), "GEN-SRV-003");
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/srv-good", none()),
+            "GEN-SRV-003"
+        )
+        .status,
+        Status::Compliant
+    );
+    let bad = run_one(
+        &mut linux_ctx("tests/fixtures/srv-bad", none()),
+        "GEN-SRV-003",
+    );
     assert_eq!(bad.status, Status::NonCompliant);
     assert_eq!(bad.evidence_blocks.len(), 1);
 
     let root = temp_root("dns-resolved");
-    put(&root, "etc/systemd/resolved.conf", "[Resolve]\nDNS=10.0.0.53 10.0.0.54\n");
-    let r = run_one(&mut linux_ctx(&root.to_string_lossy(), none()), "GEN-SRV-003");
+    put(
+        &root,
+        "etc/systemd/resolved.conf",
+        "[Resolve]\nDNS=10.0.0.53 10.0.0.54\n",
+    );
+    let r = run_one(
+        &mut linux_ctx(&root.to_string_lossy(), none()),
+        "GEN-SRV-003",
+    );
     assert_eq!(r.status, Status::Compliant, "{}", r.evidence);
     let _ = std::fs::remove_dir_all(&root);
 }
 
 #[test]
 fn dns_not_public_only_flags_public_only() {
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/srv-good", none()), "GEN-SRV-004").status, Status::Compliant);
-    let bad = run_one(&mut linux_ctx("tests/fixtures/srv-bad", none()), "GEN-SRV-004");
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/srv-good", none()),
+            "GEN-SRV-004"
+        )
+        .status,
+        Status::Compliant
+    );
+    let bad = run_one(
+        &mut linux_ctx("tests/fixtures/srv-bad", none()),
+        "GEN-SRV-004",
+    );
     assert_eq!(bad.status, Status::NonCompliant);
     assert_eq!(bad.evidence_blocks.len(), 1);
 }
@@ -221,7 +326,14 @@ fn dns_redundancy_windows_netsh() {
             None
         }
     });
-    assert_eq!(run_one(&mut windows_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-003").status, Status::Compliant);
+    assert_eq!(
+        run_one(
+            &mut windows_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-003"
+        )
+        .status,
+        Status::Compliant
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -230,7 +342,14 @@ fn dns_redundancy_windows_netsh() {
 
 #[test]
 fn default_route_compliant_and_fallback() {
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/srv-good", none()), "GEN-SRV-005").status, Status::Compliant);
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/srv-good", none()),
+            "GEN-SRV-005"
+        )
+        .status,
+        Status::Compliant
+    );
     let inj: CmdInjector = Box::new(|prog, _| {
         if prog == "ip" {
             Some("default via 10.0.0.1 dev eth0".into())
@@ -238,7 +357,14 @@ fn default_route_compliant_and_fallback() {
             None
         }
     });
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-005").status, Status::Compliant);
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-005"
+        )
+        .status,
+        Status::Compliant
+    );
 }
 
 #[test]
@@ -250,7 +376,14 @@ fn default_route_windows_noncompliant() {
             None
         }
     });
-    assert_eq!(run_one(&mut windows_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-005").status, Status::NonCompliant);
+    assert_eq!(
+        run_one(
+            &mut windows_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-005"
+        )
+        .status,
+        Status::NonCompliant
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -259,8 +392,18 @@ fn default_route_windows_noncompliant() {
 
 #[test]
 fn pending_reboot_compliant_and_noncompliant_with_block() {
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/srv-good", none()), "GEN-SRV-006").status, Status::Compliant);
-    let bad = run_one(&mut linux_ctx("tests/fixtures/srv-bad", none()), "GEN-SRV-006");
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/srv-good", none()),
+            "GEN-SRV-006"
+        )
+        .status,
+        Status::Compliant
+    );
+    let bad = run_one(
+        &mut linux_ctx("tests/fixtures/srv-bad", none()),
+        "GEN-SRV-006",
+    );
     assert_eq!(bad.status, Status::NonCompliant, "{}", bad.evidence);
     assert_eq!(bad.evidence_blocks.len(), 1);
 }
@@ -274,7 +417,14 @@ fn pending_reboot_windows_fallback_test_path() {
             None
         }
     });
-    assert_eq!(run_one(&mut windows_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-006").status, Status::Compliant);
+    assert_eq!(
+        run_one(
+            &mut windows_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-006"
+        )
+        .status,
+        Status::Compliant
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -296,7 +446,14 @@ fn os_build_support_reads_build_number() {
             None
         }
     });
-    assert_eq!(run_one(&mut windows_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-007").status, Status::Compliant);
+    assert_eq!(
+        run_one(
+            &mut windows_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-007"
+        )
+        .status,
+        Status::Compliant
+    );
 
     let inj: CmdInjector = Box::new(|prog, args| {
         if prog == "reg" && args.iter().any(|a| a.contains("CurrentBuildNumber")) {
@@ -305,19 +462,36 @@ fn os_build_support_reads_build_number() {
             None
         }
     });
-    assert_eq!(run_one(&mut windows_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-007").status, Status::NonCompliant);
+    assert_eq!(
+        run_one(
+            &mut windows_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-007"
+        )
+        .status,
+        Status::NonCompliant
+    );
 }
 
 #[test]
 fn os_build_support_falls_back_to_systeminfo() {
     let inj: CmdInjector = Box::new(|prog, _| {
         if prog == "systeminfo" {
-            Some("OS Name: Microsoft Windows Server 2019\nOS Version: 10.0.17763 N/A Build 17763".into())
+            Some(
+                "OS Name: Microsoft Windows Server 2019\nOS Version: 10.0.17763 N/A Build 17763"
+                    .into(),
+            )
         } else {
             None
         }
     });
-    assert_eq!(run_one(&mut windows_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-007").status, Status::Compliant);
+    assert_eq!(
+        run_one(
+            &mut windows_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-007"
+        )
+        .status,
+        Status::Compliant
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -326,8 +500,18 @@ fn os_build_support_falls_back_to_systeminfo() {
 
 #[test]
 fn auto_updates_compliant_noncompliant_and_fallback() {
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/srv-good", none()), "GEN-SRV-008").status, Status::Compliant);
-    let bad = run_one(&mut linux_ctx("tests/fixtures/srv-bad", none()), "GEN-SRV-008");
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/srv-good", none()),
+            "GEN-SRV-008"
+        )
+        .status,
+        Status::Compliant
+    );
+    let bad = run_one(
+        &mut linux_ctx("tests/fixtures/srv-bad", none()),
+        "GEN-SRV-008",
+    );
     assert_eq!(bad.status, Status::NonCompliant);
     assert_eq!(bad.evidence_blocks.len(), 1);
 
@@ -338,7 +522,14 @@ fn auto_updates_compliant_noncompliant_and_fallback() {
             None
         }
     });
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-008").status, Status::Compliant);
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-008"
+        )
+        .status,
+        Status::Compliant
+    );
 }
 
 #[test]
@@ -350,7 +541,14 @@ fn auto_updates_windows_policy() {
             None
         }
     });
-    assert_eq!(run_one(&mut windows_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-008").status, Status::NonCompliant);
+    assert_eq!(
+        run_one(
+            &mut windows_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-008"
+        )
+        .status,
+        Status::NonCompliant
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -359,14 +557,31 @@ fn auto_updates_windows_policy() {
 
 #[test]
 fn tls_legacy_compliant_noncompliant_and_crypto_policy_fallback() {
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/srv-good", none()), "GEN-SRV-009").status, Status::Compliant);
-    let bad = run_one(&mut linux_ctx("tests/fixtures/srv-bad", none()), "GEN-SRV-009");
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/srv-good", none()),
+            "GEN-SRV-009"
+        )
+        .status,
+        Status::Compliant
+    );
+    let bad = run_one(
+        &mut linux_ctx("tests/fixtures/srv-bad", none()),
+        "GEN-SRV-009",
+    );
     assert_eq!(bad.status, Status::NonCompliant);
     assert_eq!(bad.evidence_blocks.len(), 1);
 
     let root = temp_root("crypto-policy");
     put(&root, "etc/crypto-policies/config", "DEFAULT\n");
-    assert_eq!(run_one(&mut linux_ctx(&root.to_string_lossy(), none()), "GEN-SRV-009").status, Status::Compliant);
+    assert_eq!(
+        run_one(
+            &mut linux_ctx(&root.to_string_lossy(), none()),
+            "GEN-SRV-009"
+        )
+        .status,
+        Status::Compliant
+    );
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -385,7 +600,14 @@ fn tls_legacy_windows_schannel() {
             Some("Enabled    REG_DWORD    0x0".into())
         }
     });
-    assert_eq!(run_one(&mut windows_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-009").status, Status::NonCompliant);
+    assert_eq!(
+        run_one(
+            &mut windows_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-009"
+        )
+        .status,
+        Status::NonCompliant
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -394,7 +616,10 @@ fn tls_legacy_windows_schannel() {
 
 #[test]
 fn cert_inventory_stale_bundle_fails() {
-    let fresh = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let fresh = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
     let inj: CmdInjector = Box::new(move |prog, args| {
         if prog == "stat" && args.iter().any(|a| a.contains("ca-certificates.crt")) {
             Some(format!("{fresh}"))
@@ -402,7 +627,14 @@ fn cert_inventory_stale_bundle_fails() {
             None
         }
     });
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-010").status, Status::Compliant);
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-010"
+        )
+        .status,
+        Status::Compliant
+    );
 
     let inj: CmdInjector = Box::new(|prog, args| {
         if prog == "stat" && args.iter().any(|a| a.contains("ca-certificates.crt")) {
@@ -411,12 +643,22 @@ fn cert_inventory_stale_bundle_fails() {
             None
         }
     });
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-010").status, Status::NonCompliant);
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-010"
+        )
+        .status,
+        Status::NonCompliant
+    );
 }
 
 #[test]
 fn cert_inventory_falls_back_to_rhel_bundle() {
-    let fresh = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let fresh = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
     let inj: CmdInjector = Box::new(move |prog, args| {
         if prog == "stat" && args.iter().any(|a| a.contains("ca-bundle.crt")) {
             Some(format!("{fresh}"))
@@ -424,7 +666,14 @@ fn cert_inventory_falls_back_to_rhel_bundle() {
             None
         }
     });
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-010").status, Status::Compliant);
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-010"
+        )
+        .status,
+        Status::Compliant
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -433,7 +682,14 @@ fn cert_inventory_falls_back_to_rhel_bundle() {
 
 #[test]
 fn backup_agent_compliant_and_fallback() {
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/srv-good", none()), "GEN-SRV-011").status, Status::Compliant);
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/srv-good", none()),
+            "GEN-SRV-011"
+        )
+        .status,
+        Status::Compliant
+    );
     let inj: CmdInjector = Box::new(|prog, args| {
         if prog == "systemctl" && args.contains(&"bacula-fd") {
             Some("active".into())
@@ -441,7 +697,14 @@ fn backup_agent_compliant_and_fallback() {
             None
         }
     });
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-011").status, Status::Compliant);
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-011"
+        )
+        .status,
+        Status::Compliant
+    );
 }
 
 #[test]
@@ -453,7 +716,14 @@ fn backup_agent_windows_stopped_fails() {
             None
         }
     });
-    assert_eq!(run_one(&mut windows_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-011").status, Status::NonCompliant);
+    assert_eq!(
+        run_one(
+            &mut windows_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-011"
+        )
+        .status,
+        Status::NonCompliant
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -462,14 +732,35 @@ fn backup_agent_windows_stopped_fails() {
 
 #[test]
 fn log_retention_compliant_noncompliant_and_journald_fallback() {
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/srv-good", none()), "GEN-SRV-012").status, Status::Compliant);
-    let bad = run_one(&mut linux_ctx("tests/fixtures/srv-bad", none()), "GEN-SRV-012");
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/srv-good", none()),
+            "GEN-SRV-012"
+        )
+        .status,
+        Status::Compliant
+    );
+    let bad = run_one(
+        &mut linux_ctx("tests/fixtures/srv-bad", none()),
+        "GEN-SRV-012",
+    );
     assert_eq!(bad.status, Status::NonCompliant);
     assert_eq!(bad.evidence_blocks.len(), 1);
 
     let root = temp_root("journald-retention");
-    put(&root, "etc/systemd/journald.conf", "[Journal]\nMaxRetentionSec=90day\n");
-    assert_eq!(run_one(&mut linux_ctx(&root.to_string_lossy(), none()), "GEN-SRV-012").status, Status::Compliant);
+    put(
+        &root,
+        "etc/systemd/journald.conf",
+        "[Journal]\nMaxRetentionSec=90day\n",
+    );
+    assert_eq!(
+        run_one(
+            &mut linux_ctx(&root.to_string_lossy(), none()),
+            "GEN-SRV-012"
+        )
+        .status,
+        Status::Compliant
+    );
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -482,7 +773,14 @@ fn log_retention_windows_maxsize() {
             None
         }
     });
-    assert_eq!(run_one(&mut windows_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-012").status, Status::NonCompliant);
+    assert_eq!(
+        run_one(
+            &mut windows_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-012"
+        )
+        .status,
+        Status::NonCompliant
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -491,12 +789,37 @@ fn log_retention_windows_maxsize() {
 
 #[test]
 fn remote_log_forwarding_compliant_noncompliant_and_syslogng_fallback() {
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/srv-good", none()), "GEN-SRV-013").status, Status::Compliant);
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/srv-bad", none()), "GEN-SRV-013").status, Status::NonCompliant);
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/srv-good", none()),
+            "GEN-SRV-013"
+        )
+        .status,
+        Status::Compliant
+    );
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/srv-bad", none()),
+            "GEN-SRV-013"
+        )
+        .status,
+        Status::NonCompliant
+    );
 
     let root = temp_root("syslog-ng");
-    put(&root, "etc/syslog-ng/syslog-ng.conf", "destination d_remote { network(\"10.0.0.9\" port(514)); };\n");
-    assert_eq!(run_one(&mut linux_ctx(&root.to_string_lossy(), none()), "GEN-SRV-013").status, Status::Compliant);
+    put(
+        &root,
+        "etc/syslog-ng/syslog-ng.conf",
+        "destination d_remote { network(\"10.0.0.9\" port(514)); };\n",
+    );
+    assert_eq!(
+        run_one(
+            &mut linux_ctx(&root.to_string_lossy(), none()),
+            "GEN-SRV-013"
+        )
+        .status,
+        Status::Compliant
+    );
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -509,7 +832,14 @@ fn remote_log_forwarding_windows_wecsvc() {
             None
         }
     });
-    assert_eq!(run_one(&mut windows_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-013").status, Status::Compliant);
+    assert_eq!(
+        run_one(
+            &mut windows_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-013"
+        )
+        .status,
+        Status::Compliant
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -525,7 +855,14 @@ fn firewall_default_deny_compliant_and_fallback() {
             None
         }
     });
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-014").status, Status::Compliant);
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-014"
+        )
+        .status,
+        Status::Compliant
+    );
 
     let inj: CmdInjector = Box::new(|prog, _| {
         if prog == "firewall-cmd" {
@@ -534,7 +871,14 @@ fn firewall_default_deny_compliant_and_fallback() {
             None
         }
     });
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-014").status, Status::Compliant);
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-014"
+        )
+        .status,
+        Status::Compliant
+    );
 }
 
 #[test]
@@ -546,7 +890,14 @@ fn firewall_default_deny_windows_off_fails() {
             None
         }
     });
-    assert_eq!(run_one(&mut windows_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-014").status, Status::NonCompliant);
+    assert_eq!(
+        run_one(
+            &mut windows_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-014"
+        )
+        .status,
+        Status::NonCompliant
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -555,8 +906,18 @@ fn firewall_default_deny_windows_off_fails() {
 
 #[test]
 fn mgmt_listener_binding_compliant_noncompliant_and_sshd_t_fallback() {
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/srv-good", none()), "GEN-SRV-015").status, Status::Compliant);
-    let bad = run_one(&mut linux_ctx("tests/fixtures/srv-bad", none()), "GEN-SRV-015");
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/srv-good", none()),
+            "GEN-SRV-015"
+        )
+        .status,
+        Status::Compliant
+    );
+    let bad = run_one(
+        &mut linux_ctx("tests/fixtures/srv-bad", none()),
+        "GEN-SRV-015",
+    );
     assert_eq!(bad.status, Status::NonCompliant);
     assert_eq!(bad.evidence_blocks.len(), 1);
 
@@ -567,7 +928,14 @@ fn mgmt_listener_binding_compliant_noncompliant_and_sshd_t_fallback() {
             None
         }
     });
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-015").status, Status::Compliant);
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-015"
+        )
+        .status,
+        Status::Compliant
+    );
 }
 
 #[test]
@@ -579,7 +947,14 @@ fn mgmt_listener_binding_windows_wildcard_fails() {
             None
         }
     });
-    assert_eq!(run_one(&mut windows_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-015").status, Status::NonCompliant);
+    assert_eq!(
+        run_one(
+            &mut windows_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-015"
+        )
+        .status,
+        Status::NonCompliant
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -588,8 +963,18 @@ fn mgmt_listener_binding_windows_wildcard_fails() {
 
 #[test]
 fn service_account_privilege_compliant_noncompliant_and_getent_fallback() {
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/srv-good", none()), "GEN-SRV-016").status, Status::Compliant);
-    let bad = run_one(&mut linux_ctx("tests/fixtures/srv-bad", none()), "GEN-SRV-016");
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/srv-good", none()),
+            "GEN-SRV-016"
+        )
+        .status,
+        Status::Compliant
+    );
+    let bad = run_one(
+        &mut linux_ctx("tests/fixtures/srv-bad", none()),
+        "GEN-SRV-016",
+    );
     assert_eq!(bad.status, Status::NonCompliant);
     assert_eq!(bad.evidence_blocks.len(), 1);
 
@@ -600,7 +985,14 @@ fn service_account_privilege_compliant_noncompliant_and_getent_fallback() {
             None
         }
     });
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-016").status, Status::NonCompliant);
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-016"
+        )
+        .status,
+        Status::NonCompliant
+    );
 }
 
 #[test]
@@ -612,7 +1004,14 @@ fn service_account_privilege_windows_admins() {
             None
         }
     });
-    assert_eq!(run_one(&mut windows_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-016").status, Status::NonCompliant);
+    assert_eq!(
+        run_one(
+            &mut windows_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-016"
+        )
+        .status,
+        Status::NonCompliant
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -621,15 +1020,36 @@ fn service_account_privilege_windows_admins() {
 
 #[test]
 fn password_lockout_compliant_noncompliant_and_pam_fallback() {
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/srv-good", none()), "GEN-SRV-017").status, Status::Compliant);
-    let bad = run_one(&mut linux_ctx("tests/fixtures/srv-bad", none()), "GEN-SRV-017");
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/srv-good", none()),
+            "GEN-SRV-017"
+        )
+        .status,
+        Status::Compliant
+    );
+    let bad = run_one(
+        &mut linux_ctx("tests/fixtures/srv-bad", none()),
+        "GEN-SRV-017",
+    );
     assert_eq!(bad.status, Status::NonCompliant);
     assert_eq!(bad.evidence_blocks.len(), 1);
 
     let root = temp_root("pam-faillock");
     put(&root, "etc/security/pwquality.conf", "minlen = 12\n");
-    put(&root, "etc/pam.d/common-auth", "auth required pam_faillock.so deny=5\n");
-    assert_eq!(run_one(&mut linux_ctx(&root.to_string_lossy(), none()), "GEN-SRV-017").status, Status::Compliant);
+    put(
+        &root,
+        "etc/pam.d/common-auth",
+        "auth required pam_faillock.so deny=5\n",
+    );
+    assert_eq!(
+        run_one(
+            &mut linux_ctx(&root.to_string_lossy(), none()),
+            "GEN-SRV-017"
+        )
+        .status,
+        Status::Compliant
+    );
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -642,7 +1062,14 @@ fn password_lockout_windows_weak_fails() {
             None
         }
     });
-    assert_eq!(run_one(&mut windows_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-017").status, Status::NonCompliant);
+    assert_eq!(
+        run_one(
+            &mut windows_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-017"
+        )
+        .status,
+        Status::NonCompliant
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -651,14 +1078,35 @@ fn password_lockout_windows_weak_fails() {
 
 #[test]
 fn sudo_uac_compliant_noncompliant_and_pam_su_fallback() {
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/srv-good", none()), "GEN-SRV-018").status, Status::Compliant);
-    let bad = run_one(&mut linux_ctx("tests/fixtures/srv-bad", none()), "GEN-SRV-018");
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/srv-good", none()),
+            "GEN-SRV-018"
+        )
+        .status,
+        Status::Compliant
+    );
+    let bad = run_one(
+        &mut linux_ctx("tests/fixtures/srv-bad", none()),
+        "GEN-SRV-018",
+    );
     assert_eq!(bad.status, Status::NonCompliant);
     assert_eq!(bad.evidence_blocks.len(), 1);
 
     let root = temp_root("pam-su");
-    put(&root, "etc/pam.d/su", "auth required pam_wheel.so use_uid\n");
-    assert_eq!(run_one(&mut linux_ctx(&root.to_string_lossy(), none()), "GEN-SRV-018").status, Status::Compliant);
+    put(
+        &root,
+        "etc/pam.d/su",
+        "auth required pam_wheel.so use_uid\n",
+    );
+    assert_eq!(
+        run_one(
+            &mut linux_ctx(&root.to_string_lossy(), none()),
+            "GEN-SRV-018"
+        )
+        .status,
+        Status::Compliant
+    );
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -671,7 +1119,14 @@ fn sudo_uac_windows_lua_disabled_fails() {
             None
         }
     });
-    assert_eq!(run_one(&mut windows_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-018").status, Status::NonCompliant);
+    assert_eq!(
+        run_one(
+            &mut windows_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-018"
+        )
+        .status,
+        Status::NonCompliant
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -687,7 +1142,10 @@ fn secureboot_tpm_compliant_and_tpm_missing_fails() {
             None
         }
     });
-    let r = run_one(&mut linux_ctx("tests/fixtures/srv-good", inj), "GEN-SRV-019");
+    let r = run_one(
+        &mut linux_ctx("tests/fixtures/srv-good", inj),
+        "GEN-SRV-019",
+    );
     assert_eq!(r.status, Status::Compliant, "{}", r.evidence);
 
     let root = temp_root("no-tpm");
@@ -713,7 +1171,14 @@ fn secureboot_tpm_windows_disabled_fails() {
             None
         }
     });
-    assert_eq!(run_one(&mut windows_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-019").status, Status::NonCompliant);
+    assert_eq!(
+        run_one(
+            &mut windows_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-019"
+        )
+        .status,
+        Status::NonCompliant
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -722,7 +1187,14 @@ fn secureboot_tpm_windows_disabled_fails() {
 
 #[test]
 fn kernel_link_protection_compliant_noncompliant_and_sysctl_fallback() {
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/srv-good", none()), "GEN-SRV-020").status, Status::Compliant);
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/srv-good", none()),
+            "GEN-SRV-020"
+        )
+        .status,
+        Status::Compliant
+    );
 
     let inj: CmdInjector = Box::new(|prog, args| {
         if prog == "sysctl" {
@@ -735,7 +1207,10 @@ fn kernel_link_protection_compliant_noncompliant_and_sysctl_fallback() {
             None
         }
     });
-    let r = run_one(&mut linux_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-020");
+    let r = run_one(
+        &mut linux_ctx("tests/fixtures/empty-root", inj),
+        "GEN-SRV-020",
+    );
     assert_eq!(r.status, Status::NonCompliant, "{}", r.evidence);
 }
 
@@ -752,7 +1227,14 @@ fn disk_free_compliant_noncompliant_and_stat_fallback() {
             None
         }
     });
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-021").status, Status::Compliant);
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-021"
+        )
+        .status,
+        Status::Compliant
+    );
 
     let inj: CmdInjector = Box::new(|prog, _| {
         if prog == "findmnt" {
@@ -761,7 +1243,14 @@ fn disk_free_compliant_noncompliant_and_stat_fallback() {
             None
         }
     });
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-021").status, Status::NonCompliant);
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-021"
+        )
+        .status,
+        Status::NonCompliant
+    );
 
     // stat -f fallback: %a free blocks, %S block size, %b total blocks.
     let inj: CmdInjector = Box::new(|prog, _| {
@@ -771,7 +1260,14 @@ fn disk_free_compliant_noncompliant_and_stat_fallback() {
             None
         }
     });
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-021").status, Status::Compliant);
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-021"
+        )
+        .status,
+        Status::Compliant
+    );
 }
 
 #[test]
@@ -783,7 +1279,14 @@ fn disk_free_windows_near_full_fails() {
             None
         }
     });
-    assert_eq!(run_one(&mut windows_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-021").status, Status::NonCompliant);
+    assert_eq!(
+        run_one(
+            &mut windows_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-021"
+        )
+        .status,
+        Status::NonCompliant
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -792,16 +1295,41 @@ fn disk_free_windows_near_full_fails() {
 
 #[test]
 fn swap_pagefile_compliant_noncompliant_and_fstab_fallback() {
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/srv-good", none()), "GEN-SRV-022").status, Status::Compliant);
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/srv-good", none()),
+            "GEN-SRV-022"
+        )
+        .status,
+        Status::Compliant
+    );
 
     let root = temp_root("swap-fstab");
     put(&root, "etc/fstab", "/dev/sda2 none swap sw 0 0\n");
-    assert_eq!(run_one(&mut linux_ctx(&root.to_string_lossy(), none()), "GEN-SRV-022").status, Status::Compliant);
+    assert_eq!(
+        run_one(
+            &mut linux_ctx(&root.to_string_lossy(), none()),
+            "GEN-SRV-022"
+        )
+        .status,
+        Status::Compliant
+    );
     let _ = std::fs::remove_dir_all(&root);
 
     let root = temp_root("swap-none");
-    put(&root, "proc/swaps", "Filename\t\t\t\tType\t\tSize\tUsed\tPriority\n");
-    assert_eq!(run_one(&mut linux_ctx(&root.to_string_lossy(), none()), "GEN-SRV-022").status, Status::NonCompliant);
+    put(
+        &root,
+        "proc/swaps",
+        "Filename\t\t\t\tType\t\tSize\tUsed\tPriority\n",
+    );
+    assert_eq!(
+        run_one(
+            &mut linux_ctx(&root.to_string_lossy(), none()),
+            "GEN-SRV-022"
+        )
+        .status,
+        Status::NonCompliant
+    );
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -816,7 +1344,14 @@ fn swap_pagefile_windows_empty_fails() {
             None
         }
     });
-    assert_eq!(run_one(&mut windows_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-022").status, Status::NonCompliant);
+    assert_eq!(
+        run_one(
+            &mut windows_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-022"
+        )
+        .status,
+        Status::NonCompliant
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -832,7 +1367,14 @@ fn core_services_compliant_and_noncompliant() {
             None
         }
     });
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-023").status, Status::Compliant);
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-023"
+        )
+        .status,
+        Status::Compliant
+    );
 
     let inj: CmdInjector = Box::new(|prog, args| {
         if prog == "systemctl" && args.contains(&"auditd") {
@@ -843,7 +1385,14 @@ fn core_services_compliant_and_noncompliant() {
             None
         }
     });
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-023").status, Status::NonCompliant);
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-023"
+        )
+        .status,
+        Status::NonCompliant
+    );
 }
 
 #[test]
@@ -857,7 +1406,14 @@ fn core_services_windows_stopped_fails() {
             None
         }
     });
-    assert_eq!(run_one(&mut windows_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-023").status, Status::NonCompliant);
+    assert_eq!(
+        run_one(
+            &mut windows_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-023"
+        )
+        .status,
+        Status::NonCompliant
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -866,8 +1422,18 @@ fn core_services_windows_stopped_fails() {
 
 #[test]
 fn ldap_kerberos_compliant_noncompliant_and_realm_fallback() {
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/srv-good", none()), "GEN-SRV-024").status, Status::Compliant);
-    let bad = run_one(&mut linux_ctx("tests/fixtures/srv-bad", none()), "GEN-SRV-024");
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/srv-good", none()),
+            "GEN-SRV-024"
+        )
+        .status,
+        Status::Compliant
+    );
+    let bad = run_one(
+        &mut linux_ctx("tests/fixtures/srv-bad", none()),
+        "GEN-SRV-024",
+    );
     assert_eq!(bad.status, Status::NonCompliant);
     assert_eq!(bad.evidence_blocks.len(), 1);
 
@@ -878,7 +1444,14 @@ fn ldap_kerberos_compliant_noncompliant_and_realm_fallback() {
             None
         }
     });
-    assert_eq!(run_one(&mut linux_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-024").status, Status::Compliant);
+    assert_eq!(
+        run_one(
+            &mut linux_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-024"
+        )
+        .status,
+        Status::Compliant
+    );
 }
 
 #[test]
@@ -890,5 +1463,12 @@ fn ldap_kerberos_windows_joined() {
             None
         }
     });
-    assert_eq!(run_one(&mut windows_ctx("tests/fixtures/empty-root", inj), "GEN-SRV-024").status, Status::Compliant);
+    assert_eq!(
+        run_one(
+            &mut windows_ctx("tests/fixtures/empty-root", inj),
+            "GEN-SRV-024"
+        )
+        .status,
+        Status::Compliant
+    );
 }

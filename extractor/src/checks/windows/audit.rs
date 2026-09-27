@@ -384,7 +384,9 @@ pub fn parse_auditpol_csv(raw: &str) -> Vec<AuditPolicyRecord> {
         .position(|h| h.eq_ignore_ascii_case("Inclusion Setting") || h.contains("Setting"));
 
     // Check if first line was actually a data line (no recognizable header words)
-    let is_header = subcat_idx.is_some() || guid_idx.is_some() || incl_idx.is_some()
+    let is_header = subcat_idx.is_some()
+        || guid_idx.is_some()
+        || incl_idx.is_some()
         || first_line.to_ascii_lowercase().contains("machine")
         || first_line.to_ascii_lowercase().contains("computer");
 

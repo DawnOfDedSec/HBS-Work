@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 
+use hbs_extractor::checks::windows;
 use hbs_extractor::checks::windows::user_rights::{
     evaluate_user_right, SidAccount, UserRightMap, USER_RIGHT_CHECKS,
 };
-use hbs_extractor::checks::windows;
 use hbs_extractor::model::Status;
 
 const ADMINISTRATORS: &str = "S-1-5-32-544";
@@ -22,22 +22,49 @@ fn account(sid: &str, name: &str) -> SidAccount {
 
 fn good_rights() -> UserRightMap {
     BTreeMap::from([
-        ("SeDebugPrivilege".into(), vec![account(ADMINISTRATORS, "BUILTIN\\Administrators")]),
+        (
+            "SeDebugPrivilege".into(),
+            vec![account(ADMINISTRATORS, "BUILTIN\\Administrators")],
+        ),
         ("SeTcbPrivilege".into(), vec![]),
         (
             "SeAssignPrimaryTokenPrivilege".into(),
-            vec![account(ADMINISTRATORS, "BUILTIN\\Administrators"), account(SYSTEM, "NT AUTHORITY\\SYSTEM")],
+            vec![
+                account(ADMINISTRATORS, "BUILTIN\\Administrators"),
+                account(SYSTEM, "NT AUTHORITY\\SYSTEM"),
+            ],
         ),
         (
             "SeIncreaseQuotaPrivilege".into(),
-            vec![account(ADMINISTRATORS, "BUILTIN\\Administrators"), account(SYSTEM, "NT AUTHORITY\\SYSTEM")],
+            vec![
+                account(ADMINISTRATORS, "BUILTIN\\Administrators"),
+                account(SYSTEM, "NT AUTHORITY\\SYSTEM"),
+            ],
         ),
-        ("SeRemoteShutdownPrivilege".into(), vec![account(ADMINISTRATORS, "BUILTIN\\Administrators")]),
-        ("SeNetworkLogonRight".into(), vec![account(ADMINISTRATORS, "BUILTIN\\Administrators")]),
-        ("SeInteractiveLogonRight".into(), vec![account(ADMINISTRATORS, "BUILTIN\\Administrators")]),
-        ("SeDenyNetworkLogonRight".into(), vec![account(GUESTS, "BUILTIN\\Guests")]),
-        ("SeDenyInteractiveLogonRight".into(), vec![account(GUESTS, "BUILTIN\\Guests")]),
-        ("SeCreatePagefilePrivilege".into(), vec![account(ADMINISTRATORS, "BUILTIN\\Administrators")]),
+        (
+            "SeRemoteShutdownPrivilege".into(),
+            vec![account(ADMINISTRATORS, "BUILTIN\\Administrators")],
+        ),
+        (
+            "SeNetworkLogonRight".into(),
+            vec![account(ADMINISTRATORS, "BUILTIN\\Administrators")],
+        ),
+        (
+            "SeInteractiveLogonRight".into(),
+            vec![account(ADMINISTRATORS, "BUILTIN\\Administrators")],
+        ),
+        (
+            "SeDenyNetworkLogonRight".into(),
+            vec![account(GUESTS, "BUILTIN\\Guests")],
+        ),
+        (
+            "SeDenyInteractiveLogonRight".into(),
+            vec![account(GUESTS, "BUILTIN\\Guests")],
+        ),
+        (
+            "SeCreatePagefilePrivilege".into(),
+            vec![account(ADMINISTRATORS, "BUILTIN\\Administrators")],
+        ),
         ("SeLockMemoryPrivilege".into(), vec![]),
         (
             "SeCreateGlobalPrivilege".into(),
@@ -48,7 +75,10 @@ fn good_rights() -> UserRightMap {
                 account(NETWORK_SERVICE, "NT AUTHORITY\\NETWORK SERVICE"),
             ],
         ),
-        ("SeProfileSingleProcessPrivilege".into(), vec![account(ADMINISTRATORS, "BUILTIN\\Administrators")]),
+        (
+            "SeProfileSingleProcessPrivilege".into(),
+            vec![account(ADMINISTRATORS, "BUILTIN\\Administrators")],
+        ),
         ("SeMachineAccountPrivilege".into(), vec![]),
         ("SeSyncAgentPrivilege".into(), vec![]),
         ("SeEnableDelegationPrivilege".into(), vec![]),
@@ -73,7 +103,13 @@ fn portable_sid_map_passes_all_sixteen_requirements() {
     for def in USER_RIGHT_CHECKS {
         let accounts = rights.get(def.right).expect("fixture covers every right");
         let outcome = evaluate_user_right(def, Ok(accounts));
-        assert_eq!(outcome.status, Status::Compliant, "{}: {}", def.id, outcome.evidence);
+        assert_eq!(
+            outcome.status,
+            Status::Compliant,
+            "{}: {}",
+            def.id,
+            outcome.evidence
+        );
     }
 }
 
@@ -86,7 +122,13 @@ fn unexpected_or_missing_assignments_fail_each_requirement_kind() {
             _ => vec![bad.clone()],
         };
         let outcome = evaluate_user_right(def, Ok(&accounts));
-        assert_eq!(outcome.status, Status::NonCompliant, "{}: {}", def.id, outcome.evidence);
+        assert_eq!(
+            outcome.status,
+            Status::NonCompliant,
+            "{}: {}",
+            def.id,
+            outcome.evidence
+        );
     }
 }
 

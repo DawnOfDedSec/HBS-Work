@@ -233,13 +233,19 @@ fn native_conversion_seconds_to_units_handles_forever_and_standard_values() {
     assert_eq!(convert_min_password_age_seconds(7 * 86_400), 7);
 
     // Lockout duration: TIMEQ_FOREVER means admin unlock required -> TIMEQ_FOREVER (compliant)
-    assert_eq!(convert_lockout_duration_seconds(TIMEQ_FOREVER), TIMEQ_FOREVER);
+    assert_eq!(
+        convert_lockout_duration_seconds(TIMEQ_FOREVER),
+        TIMEQ_FOREVER
+    );
     assert_eq!(convert_lockout_duration_seconds(15 * 60), 15);
     assert_eq!(convert_lockout_duration_seconds(30 * 60), 30);
     assert_eq!(convert_lockout_duration_seconds(10 * 60), 10);
 
     // Observation window: TIMEQ_FOREVER preserved
-    assert_eq!(convert_observation_window_seconds(TIMEQ_FOREVER), TIMEQ_FOREVER);
+    assert_eq!(
+        convert_observation_window_seconds(TIMEQ_FOREVER),
+        TIMEQ_FOREVER
+    );
     assert_eq!(convert_observation_window_seconds(15 * 60), 15);
     assert_eq!(convert_observation_window_seconds(5 * 60), 5);
 }
@@ -358,7 +364,11 @@ fn registry_backed_checks_handle_good_bad_and_missing_values() {
                         .iter()
                         .map(|attempt| attempt.source.as_str())
                         .collect::<Vec<_>>(),
-                    ["reg query", "PowerShell Get-ItemProperty", "native registry"]
+                    [
+                        "reg query",
+                        "PowerShell Get-ItemProperty",
+                        "native registry"
+                    ]
                 );
             }
         }
@@ -408,7 +418,11 @@ fn win_acc_012_restrict_anonymous_sam_explicit() {
             .iter()
             .map(|a| a.source.as_str())
             .collect::<Vec<_>>(),
-        ["reg query", "PowerShell Get-ItemProperty", "native registry"]
+        [
+            "reg query",
+            "PowerShell Get-ItemProperty",
+            "native registry"
+        ]
     );
 }
 
@@ -427,7 +441,12 @@ fn password_complexity_and_reversible_encryption_rsop() {
             }
         }));
         let res_pass = run_one(&mut ctx_pass, id);
-        assert_eq!(res_pass.status, Status::Compliant, "{id}: {}", res_pass.evidence);
+        assert_eq!(
+            res_pass.status,
+            Status::Compliant,
+            "{id}: {}",
+            res_pass.evidence
+        );
 
         // Test NonCompliant
         let mut ctx_fail = windows_ctx(Box::new(move |program, args| {
@@ -438,12 +457,22 @@ fn password_complexity_and_reversible_encryption_rsop() {
             }
         }));
         let res_fail = run_one(&mut ctx_fail, id);
-        assert_eq!(res_fail.status, Status::NonCompliant, "{id}: {}", res_fail.evidence);
+        assert_eq!(
+            res_fail.status,
+            Status::NonCompliant,
+            "{id}: {}",
+            res_fail.evidence
+        );
 
         // Test Degraded
         let mut ctx_deg = windows_ctx(Box::new(|_, _| None));
         let res_deg = run_one(&mut ctx_deg, id);
-        assert_eq!(res_deg.status, Status::DegradedPartial, "{id}: {}", res_deg.evidence);
+        assert_eq!(
+            res_deg.status,
+            Status::DegradedPartial,
+            "{id}: {}",
+            res_deg.evidence
+        );
         assert_eq!(
             res_deg
                 .fallback_log

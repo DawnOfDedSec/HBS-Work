@@ -48,8 +48,9 @@ pub fn native_local_group_members(group: &str) -> Option<Vec<String>> {
 mod imp {
     use std::ffi::c_void;
     use windows_sys::Win32::NetworkManagement::NetManagement::{
-        NetApiBufferFree, NetLocalGroupEnum, NetLocalGroupGetMembers, NetUserEnum, FILTER_NORMAL_ACCOUNT,
-        LOCALGROUP_INFO_0, LOCALGROUP_MEMBERS_INFO_2, MAX_PREFERRED_LENGTH, USER_INFO_0,
+        NetApiBufferFree, NetLocalGroupEnum, NetLocalGroupGetMembers, NetUserEnum,
+        FILTER_NORMAL_ACCOUNT, LOCALGROUP_INFO_0, LOCALGROUP_MEMBERS_INFO_2, MAX_PREFERRED_LENGTH,
+        USER_INFO_0,
     };
 
     /// Owns a NetAPI-allocated buffer and frees it exactly once.

@@ -36,7 +36,10 @@ fn panicking_check_yields_error_not_abort() {
     let out = run_all(&reg, &mut ctx);
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].status, Status::Error);
-    assert!(out[0].fallback_log.iter().any(|f| f.outcome.contains("panicked")));
+    assert!(out[0]
+        .fallback_log
+        .iter()
+        .any(|f| f.outcome.contains("panicked")));
     assert_eq!(out[0].id, "T-1");
 }
 
@@ -68,7 +71,11 @@ fn admin_only_check_skipped_with_reason_when_unprivileged() {
     let mut ctx = test_ctx(); // elevated = false
     let out = run_all(&reg, &mut ctx);
     assert_eq!(out[0].status, Status::DegradedPartial);
-    assert!(out[0].degraded_reason.as_deref().unwrap().contains("requires elevation"));
+    assert!(out[0]
+        .degraded_reason
+        .as_deref()
+        .unwrap()
+        .contains("requires elevation"));
     assert!(out[0].evidence.contains("--elevate"));
 }
 
@@ -87,7 +94,12 @@ fn admin_only_check_runs_when_elevated() {
         }
     }
     let mut reg: Vec<RegisteredCheck> = Vec::new();
-    reg.push(RegisteredCheck { tc: toy_tc("T-ADMIN2"), applies: |_| true, admin: true, run: always_ok });
+    reg.push(RegisteredCheck {
+        tc: toy_tc("T-ADMIN2"),
+        applies: |_| true,
+        admin: true,
+        run: always_ok,
+    });
     let mut p = detect();
     p.os = Os::Linux;
     let mut ctx = ScanContext::new(p, true); // elevated
@@ -99,16 +111,33 @@ fn admin_only_check_runs_when_elevated() {
 fn missing_paths_degrade_with_fallback_log() {
     let check = |ctx: &mut ScanContext| {
         let mut log: Vec<FallbackAttempt> = Vec::new();
-        for (src, path) in [("file:/etc/nope/x", "/etc/nope/x"), ("file:/etc/nope/y", "/etc/nope/y")] {
+        for (src, path) in [
+            ("file:/etc/nope/x", "/etc/nope/x"),
+            ("file:/etc/nope/y", "/etc/nope/y"),
+        ] {
             match ctx.read(path) {
-                Some(_) => log.push(FallbackAttempt { source: src.into(), outcome: "read".into() }),
-                None => log.push(FallbackAttempt { source: src.into(), outcome: "missing or unreadable".into() }),
+                Some(_) => log.push(FallbackAttempt {
+                    source: src.into(),
+                    outcome: "read".into(),
+                }),
+                None => log.push(FallbackAttempt {
+                    source: src.into(),
+                    outcome: "missing or unreadable".into(),
+                }),
             }
         }
-        hbs_extractor::checks::degraded_from_attempts(log, "all candidate paths missing or unreadable")
+        hbs_extractor::checks::degraded_from_attempts(
+            log,
+            "all candidate paths missing or unreadable",
+        )
     };
     let mut reg: Vec<RegisteredCheck> = Vec::new();
-    reg.push(RegisteredCheck { tc: toy_tc("T-3"), applies: |_| true, admin: false, run: check });
+    reg.push(RegisteredCheck {
+        tc: toy_tc("T-3"),
+        applies: |_| true,
+        admin: false,
+        run: check,
+    });
     let mut ctx = test_ctx();
     let out = run_all(&reg, &mut ctx);
     assert_eq!(out[0].status, Status::DegradedPartial);
@@ -133,8 +162,18 @@ fn ok_check(_: &mut ScanContext) -> CheckOutcome {
 #[test]
 fn result_carries_testcase_texts_and_summarize_counts() {
     let mut reg: Vec<RegisteredCheck> = Vec::new();
-    reg.push(RegisteredCheck { tc: toy_tc("T-4"), applies: |_| true, admin: false, run: ok_check });
-    reg.push(RegisteredCheck { tc: toy_tc("T-5"), applies: |_| false, admin: false, run: ok_check });
+    reg.push(RegisteredCheck {
+        tc: toy_tc("T-4"),
+        applies: |_| true,
+        admin: false,
+        run: ok_check,
+    });
+    reg.push(RegisteredCheck {
+        tc: toy_tc("T-5"),
+        applies: |_| false,
+        admin: false,
+        run: ok_check,
+    });
     let mut ctx = test_ctx();
     let out = run_all(&reg, &mut ctx);
     assert_eq!(out[0].impact, "toy impact");

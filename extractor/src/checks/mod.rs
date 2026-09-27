@@ -171,9 +171,7 @@ pub fn on_vm(ctx: &ScanContext) -> bool {
 
 /// Hypervisor label for evidence text (e.g. `VMware`), with a fallback.
 pub fn hypervisor_label(ctx: &ScanContext) -> String {
-    ctx.platform
-        .environment
-        .hypervisor_or("unknown hypervisor")
+    ctx.platform.environment.hypervisor_or("unknown hypervisor")
 }
 
 /// Every fallback for a check was tried and none produced authoritative

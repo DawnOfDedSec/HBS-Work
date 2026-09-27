@@ -103,19 +103,34 @@ fn configured_logs_pass_size_retention_and_acl_checks() {
     for i in 1..=6 {
         let id = format!("WIN-EVT-{i:03}");
         let result = run_one(&mut ctx, &id);
-        assert_eq!(result.status, Status::Compliant, "{id}: {}", result.evidence);
+        assert_eq!(
+            result.status,
+            Status::Compliant,
+            "{id}: {}",
+            result.evidence
+        );
     }
 }
 
 #[test]
 fn undersized_logs_are_non_compliant() {
     const SMALL: &str = "logging:\n  maxSize: 33554431\n";
-    let mut ctx = windows_ctx(event_log_injector(Some(SMALL), Some(SMALL), Some(SMALL), None));
+    let mut ctx = windows_ctx(event_log_injector(
+        Some(SMALL),
+        Some(SMALL),
+        Some(SMALL),
+        None,
+    ));
 
     for i in 1..=3 {
         let id = format!("WIN-EVT-{i:03}");
         let result = run_one(&mut ctx, &id);
-        assert_eq!(result.status, Status::NonCompliant, "{id}: {}", result.evidence);
+        assert_eq!(
+            result.status,
+            Status::NonCompliant,
+            "{id}: {}",
+            result.evidence
+        );
     }
 }
 
@@ -130,26 +145,45 @@ fn security_retention_passes_when_auto_backup_is_enabled() {
 fn disabled_retention_and_auto_backup_is_non_compliant() {
     const OVERWRITE: &str = "logging:\n  retention: false\n  autoBackup: false\n  maxSize: 33554432\nchannelAccess: O:BAG:SYD:(A;;0xf0007;;;SY)(A;;0x7;;;BA)\n";
     let mut ctx = windows_ctx(event_log_injector(None, Some(OVERWRITE), None, None));
-    assert_eq!(run_one(&mut ctx, "WIN-EVT-004").status, Status::NonCompliant);
+    assert_eq!(
+        run_one(&mut ctx, "WIN-EVT-004").status,
+        Status::NonCompliant
+    );
 }
 
 #[test]
 fn broad_security_log_acl_is_non_compliant() {
     const BROAD_ACL: &str = "logging:\n  retention: true\n  autoBackup: false\n  maxSize: 33554432\nchannelAccess: O:BAG:SYD:(A;;0xf0007;;;SY)(A;;0x7;;;BA)(A;;0x1;;;WD)\n";
     let mut ctx = windows_ctx(event_log_injector(None, Some(BROAD_ACL), None, None));
-    assert_eq!(run_one(&mut ctx, "WIN-EVT-005").status, Status::NonCompliant);
+    assert_eq!(
+        run_one(&mut ctx, "WIN-EVT-005").status,
+        Status::NonCompliant
+    );
 }
 
 #[test]
 fn unavailable_or_unknown_values_degrade_never_error() {
     const UNKNOWN: &str = "name: Security\nlogging:\n  maxSize: unknown\n  retention: unknown\n  autoBackup: unknown\n";
-    let mut ctx = windows_ctx(event_log_injector(Some(UNKNOWN), Some(UNKNOWN), Some(UNKNOWN), None));
+    let mut ctx = windows_ctx(event_log_injector(
+        Some(UNKNOWN),
+        Some(UNKNOWN),
+        Some(UNKNOWN),
+        None,
+    ));
 
     for i in 1..=6 {
         let id = format!("WIN-EVT-{i:03}");
         let result = run_one(&mut ctx, &id);
-        assert_eq!(result.status, Status::DegradedPartial, "{id}: {:?}", result.status);
-        assert!(!result.fallback_log.is_empty(), "{id} must record query attempt");
+        assert_eq!(
+            result.status,
+            Status::DegradedPartial,
+            "{id}: {:?}",
+            result.status
+        );
+        assert!(
+            !result.fallback_log.is_empty(),
+            "{id} must record query attempt"
+        );
     }
 }
 
@@ -167,12 +201,16 @@ fn event_log_checks_execute_only_wevtutil_queries() {
     }
 
     assert!(!ctx.audit.commands.is_empty());
-    assert!(ctx.audit.commands.iter().all(|command| {
-        command == "wevtutil el"
-            || command == "wevtutil gl Application"
-            || command == "wevtutil gl Security"
-            || command == "wevtutil gl System"
-    }), "unexpected command(s): {:?}", ctx.audit.commands);
+    assert!(
+        ctx.audit.commands.iter().all(|command| {
+            command == "wevtutil el"
+                || command == "wevtutil gl Application"
+                || command == "wevtutil gl Security"
+                || command == "wevtutil gl System"
+        }),
+        "unexpected command(s): {:?}",
+        ctx.audit.commands
+    );
 }
 
 #[test]
@@ -181,7 +219,9 @@ fn mutating_wevtutil_commands_are_rejected_by_evidence_allowlist() {
 
     assert!(ctx.cmd("wevtutil", &["gl", "Security"]).is_some());
     assert!(ctx.cmd("wevtutil", &["el"]).is_some());
-    assert!(ctx.cmd("wevtutil", &["sl", "Security", "/rt:true"]).is_none());
+    assert!(ctx
+        .cmd("wevtutil", &["sl", "Security", "/rt:true"])
+        .is_none());
     assert!(ctx.cmd("wevtutil", &["cl", "Security"]).is_none());
     assert!(ctx.cmd("wevtutil", &["im", "manifest.xml"]).is_none());
 }

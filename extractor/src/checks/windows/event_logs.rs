@@ -174,7 +174,8 @@ fn security_retention(ctx: &mut ScanContext) -> CheckOutcome {
         )
     } else {
         nok(
-            "Security log retention not configured (retention: false, autoBackup: false)".to_string(),
+            "Security log retention not configured (retention: false, autoBackup: false)"
+                .to_string(),
             "eventlog:Security".into(),
             "wevtutil gl Security".into(),
         )

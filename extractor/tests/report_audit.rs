@@ -4,9 +4,7 @@
 
 use hbs_extractor::context::ScanContext;
 use hbs_extractor::engine::run_all;
-use hbs_extractor::evidence::{
-    read_file_capped, run_command, CmdInjector,
-};
+use hbs_extractor::evidence::{read_file_capped, run_command, CmdInjector};
 use hbs_extractor::model::{
     AuditKind, AuditStatus, CheckOutcome, RegisteredCheck, SelfAudit, Severity, Testcase,
 };
@@ -66,8 +64,7 @@ fn rejected_command_is_never_spawned() {
     let mut audit = SelfAudit::default();
     // The injector panics if consulted: a denylisted command must be
     // refused before any spawn/injection.
-    let inj: Option<CmdInjector> =
-        Some(Box::new(|prog, _| panic!("must not spawn {prog}")));
+    let inj: Option<CmdInjector> = Some(Box::new(|prog, _| panic!("must not spawn {prog}")));
     assert!(run_command("net", &["start", "Spooler"], 1000, &mut audit, &inj).is_none());
     assert_eq!(audit.attempts.len(), 1);
     assert_eq!(audit.attempts[0].status, AuditStatus::Rejected);
@@ -88,10 +85,7 @@ fn cache_hit_records_cached_and_preserves_original() {
     assert!(!ctx.audit.attempts[0].cached);
     assert_eq!(ctx.audit.attempts[1].status, AuditStatus::Cached);
     assert!(ctx.audit.attempts[1].cached);
-    assert_eq!(
-        ctx.audit.attempts[0].source,
-        ctx.audit.attempts[1].source
-    );
+    assert_eq!(ctx.audit.attempts[0].source, ctx.audit.attempts[1].source);
 }
 
 fn toy_tc(id: &'static str) -> Testcase {
@@ -186,14 +180,21 @@ fn assembled_report_carries_attempts_missing_data_log_and_evidence() {
     // diagnostics.log is a bounded, CLI-style array.
     let log = v["diagnostics"]["log"].as_array().unwrap();
     assert!(log.len() >= 4, "{log:?}");
-    assert!(log.iter().any(|l| l.as_str().unwrap_or("").contains("scan duration")));
-    assert!(log.iter().any(|l| l.as_str().unwrap_or("").contains("TOY-DEGRADED")));
+    assert!(log
+        .iter()
+        .any(|l| l.as_str().unwrap_or("").contains("scan duration")));
+    assert!(log
+        .iter()
+        .any(|l| l.as_str().unwrap_or("").contains("TOY-DEGRADED")));
 
     // diagnostics environment/privilege/phase/timing metadata.
     assert_eq!(v["diagnostics"]["extractorVersion"], "0.1.0-test");
     assert_eq!(v["diagnostics"]["scanDurationMs"], 42);
     assert_eq!(v["diagnostics"]["peakRssKb"], 2048);
-    assert_eq!(v["diagnostics"]["catalogFingerprint"], "fnv1a64:deadbeefdeadbeef");
+    assert_eq!(
+        v["diagnostics"]["catalogFingerprint"],
+        "fnv1a64:deadbeefdeadbeef"
+    );
     assert_eq!(v["diagnostics"]["phaseDurationsMs"]["checks"], 29);
     assert_eq!(v["diagnostics"]["environment"]["kind"], "BareMetal");
 

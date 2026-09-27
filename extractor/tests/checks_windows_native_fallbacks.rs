@@ -33,8 +33,13 @@ fn run_one(ctx: &mut ScanContext, id: &str) -> CheckResult {
 fn registry_query_helpers_end_in_the_native_fallback() {
     let mut ctx = windows_ctx(true);
 
-    let dword = windows::reg_query_dword_with_log(&mut ctx, CURRENT_VERSION, "CurrentMajorVersionNumber");
-    assert!(dword.value.is_some(), "native DWORD read failed: {:?}", dword.attempts);
+    let dword =
+        windows::reg_query_dword_with_log(&mut ctx, CURRENT_VERSION, "CurrentMajorVersionNumber");
+    assert!(
+        dword.value.is_some(),
+        "native DWORD read failed: {:?}",
+        dword.attempts
+    );
     assert!(
         dword.attempts.iter().any(|a| a.source == "native registry"),
         "native attempt missing: {:?}",
@@ -42,9 +47,16 @@ fn registry_query_helpers_end_in_the_native_fallback() {
     );
 
     let string = windows::reg_query_sz_with_log(&mut ctx, CURRENT_VERSION, "ProductName");
-    assert!(string.value.is_some(), "native SZ read failed: {:?}", string.attempts);
     assert!(
-        string.attempts.iter().any(|a| a.source == "native registry"),
+        string.value.is_some(),
+        "native SZ read failed: {:?}",
+        string.attempts
+    );
+    assert!(
+        string
+            .attempts
+            .iter()
+            .any(|a| a.source == "native registry"),
         "native attempt missing: {:?}",
         string.attempts
     );
@@ -57,8 +69,7 @@ fn ifeo_packages_and_users_resolve_via_native_sources() {
     let ifeo = run_one(&mut ctx, "WIN-TH-015");
     assert_ne!(ifeo.status, Status::Error, "{}", ifeo.evidence);
     assert!(
-        ifeo
-            .fallback_log
+        ifeo.fallback_log
             .iter()
             .any(|a| a.source.contains("native registry IFEO")),
         "native IFEO attempt missing: {:?}",
@@ -94,7 +105,12 @@ fn injected_context_never_reaches_the_native_fallbacks() {
 
     for id in ["WIN-TH-015", "GEN-INV-002", "GEN-INV-003"] {
         let result = run_one(&mut ctx, id);
-        assert_eq!(result.status, Status::DegradedPartial, "{id}: {}", result.evidence);
+        assert_eq!(
+            result.status,
+            Status::DegradedPartial,
+            "{id}: {}",
+            result.evidence
+        );
         assert!(
             result
                 .fallback_log

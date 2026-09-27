@@ -4,8 +4,8 @@
 
 use hbs_extractor::checks::windows::native_accounts;
 use hbs_extractor::checks::windows::native_reg::{
-    native_reg_dword, native_reg_enum_subkeys, native_reg_enum_subkeys_view, native_reg_enum_values,
-    native_reg_sz, RegView,
+    native_reg_dword, native_reg_enum_subkeys, native_reg_enum_subkeys_view,
+    native_reg_enum_values, native_reg_sz, RegView,
 };
 
 const CURRENT_VERSION: &str = r"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion";
@@ -32,7 +32,9 @@ fn native_reg_dword_reads_stable_build_number() {
 fn native_reg_enum_subkeys_and_values_are_non_empty() {
     let subkeys = native_reg_enum_subkeys(CURRENT_VERSION).expect("enumerate subkeys");
     assert!(
-        subkeys.iter().any(|s| s.eq_ignore_ascii_case("ProfileList")),
+        subkeys
+            .iter()
+            .any(|s| s.eq_ignore_ascii_case("ProfileList")),
         "ProfileList expected among {subkeys:?}"
     );
 
@@ -82,5 +84,8 @@ fn native_accounts_enumerate_local_principals() {
     let users = native_accounts::native_enum_local_users();
     assert!(users.is_some(), "NetUserEnum must succeed on Windows");
     let groups = native_accounts::native_enum_local_groups();
-    assert!(groups.is_some(), "NetLocalGroupEnum must succeed on Windows");
+    assert!(
+        groups.is_some(),
+        "NetLocalGroupEnum must succeed on Windows"
+    );
 }

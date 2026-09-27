@@ -245,10 +245,7 @@ pub fn evaluate_user_right(
 ) -> CheckOutcome {
     let Ok(accounts) = holders else {
         let reason = holders.unwrap_err();
-        let mut outcome = degraded(&format!(
-            "{} not evaluated: {reason}",
-            def.right
-        ));
+        let mut outcome = degraded(&format!("{} not evaluated: {reason}", def.right));
         outcome.fallback_log = vec![FallbackAttempt {
             source: format!("LSA {}", def.right),
             outcome: reason.into(),
@@ -270,16 +267,11 @@ pub fn evaluate_user_right(
             let good = sids.is_empty();
             (
                 good,
-                format!(
-                    "{} holders: {} (expected none)",
-                    def.right,
-                    listing(&sids)
-                ),
+                format!("{} holders: {} (expected none)", def.right, listing(&sids)),
             )
         }
         Requirement::Only(allowed) => {
-            let good = !sids.is_empty()
-                && sids.iter().all(|sid| allowed.contains(sid));
+            let good = !sids.is_empty() && sids.iter().all(|sid| allowed.contains(sid));
             (
                 good,
                 format!(
@@ -364,9 +356,18 @@ fn query_right_holders(right: &str) -> Result<Vec<SidAccount>, String> {
     let mut attrs: LSA_OBJECT_ATTRIBUTES = unsafe { std::mem::zeroed() };
     let mut handle: isize = 0;
     // SAFETY: read-only POLICY_LOOKUP_NAMES handle; outputs are freed below.
-    let status = unsafe { LsaOpenPolicy(&mut sys_name, &mut attrs, POLICY_LOOKUP_NAMES as u32, &mut handle) };
+    let status = unsafe {
+        LsaOpenPolicy(
+            &mut sys_name,
+            &mut attrs,
+            POLICY_LOOKUP_NAMES as u32,
+            &mut handle,
+        )
+    };
     if status != 0 {
-        return Err(format!("LsaOpenPolicy: status 0x{status:08x} (access denied or unsupported)"));
+        return Err(format!(
+            "LsaOpenPolicy: status 0x{status:08x} (access denied or unsupported)"
+        ));
     }
     struct LsaHandle(isize);
     impl Drop for LsaHandle {
@@ -389,7 +390,9 @@ fn query_right_holders(right: &str) -> Result<Vec<SidAccount>, String> {
         if status == 0x00000103 {
             return Ok(Vec::new());
         }
-        return Err(format!("LsaEnumerateAccountsWithUserRight: status 0x{status:08x}"));
+        return Err(format!(
+            "LsaEnumerateAccountsWithUserRight: status 0x{status:08x}"
+        ));
     }
 
     let mut holders = Vec::new();
@@ -412,7 +415,17 @@ fn query_right_holders(right: &str) -> Result<Vec<SidAccount>, String> {
             let mut domain_size = 0u32;
             let mut use_type: i32 = 0;
             // SAFETY: size-query form; buffers are null and sizes updated.
-            unsafe { LookupAccountSidA(null(), sid, null_mut(), &mut name_size, null_mut(), &mut domain_size, &mut use_type) };
+            unsafe {
+                LookupAccountSidA(
+                    null(),
+                    sid,
+                    null_mut(),
+                    &mut name_size,
+                    null_mut(),
+                    &mut domain_size,
+                    &mut use_type,
+                )
+            };
             let mut name_buf = vec![0u8; name_size.max(1) as usize];
             let mut domain_buf = vec![0u8; domain_size.max(1) as usize];
             let mut name_len = name_size;
@@ -430,9 +443,15 @@ fn query_right_holders(right: &str) -> Result<Vec<SidAccount>, String> {
                 )
             };
             let name = if ok != 0 {
-                let nul = name_buf.iter().position(|b| *b == 0).unwrap_or(name_buf.len());
+                let nul = name_buf
+                    .iter()
+                    .position(|b| *b == 0)
+                    .unwrap_or(name_buf.len());
                 let name = String::from_utf8_lossy(&name_buf[..nul]).into_owned();
-                let dnul = domain_buf.iter().position(|b| *b == 0).unwrap_or(domain_buf.len());
+                let dnul = domain_buf
+                    .iter()
+                    .position(|b| *b == 0)
+                    .unwrap_or(domain_buf.len());
                 let domain = String::from_utf8_lossy(&domain_buf[..dnul]).into_owned();
                 if domain.is_empty() {
                     name

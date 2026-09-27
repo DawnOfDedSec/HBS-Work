@@ -40,10 +40,16 @@ pub fn build(
         .unwrap_or(false);
     scan.insert("schemaVersion".into(), json!(SCHEMA_VERSION));
     scan.insert("extractorVersion".into(), json!(version));
-    scan.insert("privilege".into(), json!(if elevated { "elevated" } else { "degraded" }));
+    scan.insert(
+        "privilege".into(),
+        json!(if elevated { "elevated" } else { "degraded" }),
+    );
     scan.insert(
         "startedUnix".into(),
-        json!(started.duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)),
+        json!(started
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)),
     );
     scan.insert("durationMs".into(), json!(duration_ms));
 
@@ -56,10 +62,14 @@ pub fn build(
     let requested = status_str == "requested" || status_str == "granted" || status_str == "refused";
     let granted = status_str == "granted";
     let refused = status_str == "refused";
-    scan.entry("elevationStatus").or_insert_with(|| json!(status_str));
-    scan.entry("privilegeRequested").or_insert_with(|| json!(requested));
-    scan.entry("privilegeGranted").or_insert_with(|| json!(granted));
-    scan.entry("privilegeRefused").or_insert_with(|| json!(refused));
+    scan.entry("elevationStatus")
+        .or_insert_with(|| json!(status_str));
+    scan.entry("privilegeRequested")
+        .or_insert_with(|| json!(requested));
+    scan.entry("privilegeGranted")
+        .or_insert_with(|| json!(granted));
+    scan.entry("privilegeRefused")
+        .or_insert_with(|| json!(refused));
 
     let summary = crate::engine::summarize(&results);
     let diagnostics = build_diagnostics(&scan, &metadata, &results, version, duration_ms);
@@ -238,9 +248,15 @@ fn build_log(
         .unwrap_or("not-needed");
     log.push(format!(
         "\u{2713} privilege: {elevation} (requested={} granted={} refused={})",
-        scan.get("privilegeRequested").and_then(Value::as_bool).unwrap_or(false),
-        scan.get("privilegeGranted").and_then(Value::as_bool).unwrap_or(false),
-        scan.get("privilegeRefused").and_then(Value::as_bool).unwrap_or(false),
+        scan.get("privilegeRequested")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        scan.get("privilegeGranted")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        scan.get("privilegeRefused")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
     ));
     if let Some(fp) = scan.get("catalogFingerprint").and_then(Value::as_str) {
         log.push(format!("\u{2713} catalog fingerprint: {fp}"));

@@ -5,11 +5,11 @@
 //! read-only; missing evidence degrades, never errors. Unquoted service
 //! paths come from the Win32_Service CIM inventory (query-only JSON).
 
+use super::{perf_logs_dir, program_files, startup_dir, system32_dir, system_root};
 use crate::checks::{degraded, nok, ok};
 use crate::context::ScanContext;
 use crate::model::{CheckOutcome, FallbackAttempt, RegisteredCheck};
 use crate::platform::Os;
-use super::{perf_logs_dir, program_files, startup_dir, system32_dir, system_root};
 
 /// SDDL trustees that must hold (or fail) an ACL.
 const ADMIN_ADMINS: &str = "BA"; // Built-in Administrators
@@ -102,7 +102,10 @@ fn is_world_trustee(t: &str) -> bool {
 /// read sets (RX, RC, R) do not count.
 fn grants_write(rights: &str) -> bool {
     let r = rights.to_ascii_uppercase();
-    r == "*" || ["W", "KA", "FA", "DC", "SD", "WD", "AD", "LC", "DE", "CC", "GW", "GR"]
+    r == "*"
+        || [
+            "W", "KA", "FA", "DC", "SD", "WD", "AD", "LC", "DE", "CC", "GW", "GR",
+        ]
         .iter()
         .any(|m| r.contains(m))
 }
@@ -116,8 +119,15 @@ enum AclMode {
     Directory,
 }
 
-fn ps_get_acl(ctx: &mut ScanContext, path: &str, attempts: &mut Vec<FallbackAttempt>) -> Option<String> {
-    let script = format!("Get-Acl -Path '{}' | Select-Object -ExpandProperty Sddl", path.replace('\'', "''"));
+fn ps_get_acl(
+    ctx: &mut ScanContext,
+    path: &str,
+    attempts: &mut Vec<FallbackAttempt>,
+) -> Option<String> {
+    let script = format!(
+        "Get-Acl -Path '{}' | Select-Object -ExpandProperty Sddl",
+        path.replace('\'', "''")
+    );
     match ctx.cmd(
         "powershell",
         &["-NoProfile", "-NonInteractive", "-Command", &script],
@@ -169,13 +179,17 @@ fn acl_check(ctx: &mut ScanContext, path: &str, label: &str, mode: AclMode) -> C
         return outcome;
     }
     if mode == AclMode::Hive {
-        let has_admins = acl.trustees.iter().any(|t| t == ADMIN_ADMINS || t == "S-1-5-32-544");
-        let has_system = acl.trustees.iter().any(|t| t == ADMIN_SYSTEM || t == "S-1-5-18");
+        let has_admins = acl
+            .trustees
+            .iter()
+            .any(|t| t == ADMIN_ADMINS || t == "S-1-5-32-544");
+        let has_system = acl
+            .trustees
+            .iter()
+            .any(|t| t == ADMIN_SYSTEM || t == "S-1-5-18");
         if !has_admins || !has_system || !acl.owner_is_admin_or_system {
             let mut outcome = nok(
-                format!(
-                    "{label} ACL not restricted to Administrators/SYSTEM (SDDL: {sddl})"
-                ),
+                format!("{label} ACL not restricted to Administrators/SYSTEM (SDDL: {sddl})"),
                 format!("acl:{path}"),
                 format!("Get-Acl -Path '{path}'"),
             );
@@ -226,7 +240,10 @@ fn run_inventory(ctx: &mut ScanContext) -> CheckOutcome {
         }
     }
     if attempts.iter().all(|a| a.outcome.contains("unavailable")) {
-        return degraded_outcome("Run/RunOnce keys unreadable through any read-only source", attempts);
+        return degraded_outcome(
+            "Run/RunOnce keys unreadable through any read-only source",
+            attempts,
+        );
     }
     let listing = if entries.is_empty() {
         "none".to_string()
@@ -234,7 +251,10 @@ fn run_inventory(ctx: &mut ScanContext) -> CheckOutcome {
         entries.join(", ")
     };
     let mut outcome = ok(
-        format!("Run/RunOnce auto-start entries ({}): {listing}", entries.len()),
+        format!(
+            "Run/RunOnce auto-start entries ({}): {listing}",
+            entries.len()
+        ),
         "registry:Run+RunOnce".into(),
         "reg query ...\\CurrentVersion\\Run".into(),
     );
@@ -259,10 +279,7 @@ fn startup_inventory(ctx: &mut ScanContext) -> CheckOutcome {
     let default_startup = startup_dir();
     let mut attempts = Vec::new();
     // Locate the all-users Startup folder via registry, else assume default.
-    let folder = match ctx.cmd(
-        "reg",
-        &["query", SHELL_FOLDERS, "/v", "Common Startup"],
-    ) {
+    let folder = match ctx.cmd("reg", &["query", SHELL_FOLDERS, "/v", "Common Startup"]) {
         Some(raw) => {
             let value = raw
                 .lines()
@@ -290,9 +307,7 @@ fn startup_inventory(ctx: &mut ScanContext) -> CheckOutcome {
     if let Some(sddl) = ps_get_acl(ctx, &folder, &mut attempts) {
         let world = parse_sddl(&sddl).map_or(false, |a| a.has_world_write);
         let mut outcome = ok(
-            format!(
-                "startup folder {folder}; world-writable: {world}; SDDL: {sddl}"
-            ),
+            format!("startup folder {folder}; world-writable: {world}; SDDL: {sddl}"),
             format!("folder:{folder}"),
             format!("Get-Acl -Path '{folder}'"),
         );
@@ -428,12 +443,15 @@ fn win(p: &crate::platform::PlatformInfo) -> bool {
 pub fn register(reg: &mut Vec<RegisteredCheck>) {
     use crate::check;
     check!(
-        reg, "WIN-REG-001",
+        reg,
+        "WIN-REG-001",
         "HKLM\\SAM ACL restricted to Administrators and SYSTEM",
         "The SAM registry hive grants access only to Administrators and SYSTEM.",
         "An open SAM hive exposes local account hashes to any local user.",
         "Restore the default SAM hive ACL (Administrators: Full Control, SYSTEM: Full Control).",
-        High, "Permissions", &["Microsoft Security Baseline"],
+        High,
+        "Permissions",
+        &["Microsoft Security Baseline"],
         win,
         |ctx| acl_check(ctx, r"HKLM:\SAM", "HKLM\\SAM", AclMode::Hive)
     );
@@ -448,82 +466,116 @@ pub fn register(reg: &mut Vec<RegisteredCheck>) {
         |ctx| acl_check(ctx, r"HKLM:\SECURITY", "HKLM\\SECURITY", AclMode::Hive)
     );
     check!(
-        reg, "WIN-REG-003",
+        reg,
+        "WIN-REG-003",
         "HKLM\\SYSTEM ACL restricted to Administrators and SYSTEM",
         "The SYSTEM registry hive grants access only to Administrators and SYSTEM.",
         "An open SYSTEM hive exposes service configuration and boot secrets.",
         "Restore the default SYSTEM hive ACL (Administrators: Full Control, SYSTEM: Full Control).",
-        High, "Permissions", &["Microsoft Security Baseline"],
+        High,
+        "Permissions",
+        &["Microsoft Security Baseline"],
         win,
         |ctx| acl_check(ctx, r"HKLM:\SYSTEM", "HKLM\\SYSTEM", AclMode::Hive)
     );
     check!(
-        reg, "WIN-REG-004",
+        reg,
+        "WIN-REG-004",
         "%SystemRoot% directory ACL non-world-writable",
         "The Windows directory does not grant Everyone write access.",
         "A writable Windows directory lets malware replace OS binaries.",
         "Reset inherited ACLs: icacls C:\\Windows /reset or restore default inheritance.",
-        High, "Permissions", &[],
+        High,
+        "Permissions",
+        &[],
         win,
         |ctx| acl_check(ctx, &system_root(), "%SystemRoot%", AclMode::Directory)
     );
     check!(
-        reg, "WIN-REG-005",
+        reg,
+        "WIN-REG-005",
         "%ProgramFiles% directory ACL non-world-writable",
         "The Program Files directory does not grant Everyone write access.",
         "Writable program directories enable binary-planting privilege escalation.",
         "Remove Everyone/Users write ACEs from the Program Files tree.",
-        High, "Permissions", &[],
+        High,
+        "Permissions",
+        &[],
         win,
         |ctx| acl_check(ctx, &program_files(), "%ProgramFiles%", AclMode::Directory)
     );
     check!(
-        reg, "WIN-REG-006",
+        reg,
+        "WIN-REG-006",
         "%SystemRoot%\\System32 directory ACL non-world-writable",
         "The System32 directory does not grant Everyone write access.",
         "System32 is the highest-value DLL-sideloading target on the host.",
         "Reset inherited ACLs on C:\\Windows\\System32.",
-        High, "Permissions", &[],
+        High,
+        "Permissions",
+        &[],
         win,
-        |ctx| acl_check(ctx, &system32_dir(), "%SystemRoot%\\System32", AclMode::Directory)
+        |ctx| acl_check(
+            ctx,
+            &system32_dir(),
+            "%SystemRoot%\\System32",
+            AclMode::Directory
+        )
     );
     check!(
-        reg, "WIN-REG-007",
+        reg,
+        "WIN-REG-007",
         "%SystemDrive%\\PerfLogs directory ACL restricted",
         "The PerfLogs directory does not grant Everyone write access.",
         "PerfLogs is world-writable by default on some builds and a known drop point.",
         "Restrict write access on C:\\PerfLogs to Administrators/SYSTEM.",
-        Medium, "Permissions", &[],
+        Medium,
+        "Permissions",
+        &[],
         win,
-        |ctx| acl_check(ctx, &perf_logs_dir(), "%SystemDrive%\\PerfLogs", AclMode::Directory)
+        |ctx| acl_check(
+            ctx,
+            &perf_logs_dir(),
+            "%SystemDrive%\\PerfLogs",
+            AclMode::Directory
+        )
     );
     check!(
-        reg, "WIN-REG-008",
+        reg,
+        "WIN-REG-008",
         "Run and RunOnce auto-start inventory",
         "Registry Run and RunOnce entries (HKLM and HKCU) are enumerated.",
         "Run keys are the most abused persistence location; inventory exposes drift.",
         "Review Run/RunOnce entries against the approved software baseline.",
-        Informational, "Permissions", &[],
+        Informational,
+        "Permissions",
+        &[],
         win,
         run_inventory
     );
     check!(
-        reg, "WIN-REG-009",
+        reg,
+        "WIN-REG-009",
         "Startup folder location and ACL",
         "The all-users Startup folder is located and its ACL recorded.",
         "Startup folders execute everything placed inside them at logon.",
         "Review Startup folder contents and keep its ACL restricted.",
-        Informational, "Permissions", &[],
+        Informational,
+        "Permissions",
+        &[],
         win,
         startup_inventory
     );
     check!(
-        reg, "WIN-REG-010",
+        reg,
+        "WIN-REG-010",
         "Unquoted service binary paths",
         "No auto-start or running service uses an unquoted path containing spaces.",
         "Unquoted spaced paths let attackers escalate by planting executables early in the path.",
         "Quote the ImagePath value or move the binary to a path without spaces.",
-        Medium, "Permissions", &[],
+        Medium,
+        "Permissions",
+        &[],
         win,
         unquoted_paths
     );

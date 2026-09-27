@@ -34,9 +34,9 @@ pub fn resolve_token(
     token_file: Option<&str>,
 ) -> Result<String, String> {
     match (env_token, token_file) {
-        (Some(_), Some(_)) => Err(
-            "both HBS_PUSH_TOKEN and --push-token-file are set; provide exactly one".into(),
-        ),
+        (Some(_), Some(_)) => {
+            Err("both HBS_PUSH_TOKEN and --push-token-file are set; provide exactly one".into())
+        }
         (None, Some(path)) => {
             let raw = std::fs::read_to_string(path)
                 .map_err(|e| format!("cannot read --push-token-file {path}: {e}"))?;
@@ -46,9 +46,9 @@ pub fn resolve_token(
             }
             Ok(token)
         }
-        (None, None) => Err(
-            "no push token: set HBS_PUSH_TOKEN or pass --push-token-file <path>".into(),
-        ),
+        (None, None) => {
+            Err("no push token: set HBS_PUSH_TOKEN or pass --push-token-file <path>".into())
+        }
         (Some(token), None) => {
             let token = token.trim().to_string();
             if token.is_empty() {

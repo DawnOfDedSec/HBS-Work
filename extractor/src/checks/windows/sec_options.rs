@@ -14,14 +14,14 @@ use crate::platform::Os;
 
 const POLICIES_SYSTEM: &str = r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System";
 const CONTROL_LSA: &str = r"HKLM\SYSTEM\CurrentControlSet\Control\Lsa";
-const LANMAN_SERVER: &str =
-    r"HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters";
+const LANMAN_SERVER: &str = r"HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters";
 const LANMAN_WORKSTATION: &str =
     r"HKLM\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters";
 const MEMORY_MGMT: &str =
     r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management";
 const WINLOGON: &str = r"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon";
-const CONTROL_PANEL_DESKTOP: &str = r"HKLM\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Desktop";
+const CONTROL_PANEL_DESKTOP: &str =
+    r"HKLM\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Desktop";
 
 #[derive(Clone, Copy)]
 enum ValueKind {
@@ -175,7 +175,8 @@ const SEC_OPTIONS: &[SecOptionDef] = &[
         id: "WIN-SEC-011",
         title: "No Microsoft accounts for Store apps (NoConnectedUser = 3)",
         description: "Windows Store apps cannot authenticate with Microsoft accounts.",
-        rationale: "Consumer accounts bypass corporate identity controls and leak data to cloud services.",
+        rationale:
+            "Consumer accounts bypass corporate identity controls and leak data to cloud services.",
         remediation: "Set Policies\\System!NoConnectedUser to 3.",
         severity: crate::model::Severity::Medium,
         benchmarks: &["CIS 18.9.4.1"],
@@ -633,12 +634,15 @@ fn evaluate(ctx: &mut ScanContext, d: &'static SecOptionDef) -> CheckOutcome {
         // when every read-only source was unavailable, no evidence was
         // gathered at all — that is DegradedPartial, never Error.
         if matches!(d.kind, ValueKind::NonEmpty) {
-            let observed_absent = attempts.iter().any(|a| {
-                a.outcome.contains("missing") && !a.outcome.contains("unavailable")
-            });
+            let observed_absent = attempts
+                .iter()
+                .any(|a| a.outcome.contains("missing") && !a.outcome.contains("unavailable"));
             if observed_absent {
                 let mut outcome = nok(
-                    format!("{} not configured (expected organizational text)", d.value_name),
+                    format!(
+                        "{} not configured (expected organizational text)",
+                        d.value_name
+                    ),
                     format!(r"{}\{}", d.path, d.value_name),
                     format!("reg query {} /v {}", d.path, d.value_name),
                 );

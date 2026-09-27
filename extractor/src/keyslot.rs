@@ -96,9 +96,7 @@ pub fn parse(buf: &[u8]) -> Result<SlotData> {
     let expiry_unix = u64::from_le_bytes(buf[48..56].try_into().unwrap());
     let issued_at_unix = u64::from_le_bytes(buf[56..64].try_into().unwrap());
     if issued_at_unix >= expiry_unix {
-        bail!(
-            "keyslot issued_at ({issued_at_unix}) must be before expiry ({expiry_unix})"
-        );
+        bail!("keyslot issued_at ({issued_at_unix}) must be before expiry ({expiry_unix})");
     }
     let digest: [u8; 32] = {
         let mut h = Sha256::new();
@@ -142,7 +140,10 @@ pub fn locate_unique(bin: &[u8]) -> Result<usize> {
     let mut candidates: Vec<usize> = Vec::new();
     let mut start = 0usize;
     while start + SLOT_MAGIC.len() <= bin.len() {
-        match bin[start..].windows(SLOT_MAGIC.len()).position(|w| w == SLOT_MAGIC) {
+        match bin[start..]
+            .windows(SLOT_MAGIC.len())
+            .position(|w| w == SLOT_MAGIC)
+        {
             Some(rel) => {
                 let off = start + rel;
                 if off + SLOT_LEN <= bin.len() {
@@ -177,5 +178,12 @@ pub fn read_own_slot() -> Result<SlotData> {
 /// uuid-style formatting: 8-4-4-4-12.
 pub fn hex_id(id: &[u8; 16]) -> String {
     let h = hex::encode(id);
-    format!("{}-{}-{}-{}-{}", &h[0..8], &h[8..12], &h[12..16], &h[16..20], &h[20..32])
+    format!(
+        "{}-{}-{}-{}-{}",
+        &h[0..8],
+        &h[8..12],
+        &h[12..16],
+        &h[16..20],
+        &h[20..32]
+    )
 }

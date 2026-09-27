@@ -106,7 +106,10 @@ fn account_name_from_sid_string(sid_string: &str) -> Option<String> {
     if ok == 0 {
         return None;
     }
-    let nul = name_buf.iter().position(|b| *b == 0).unwrap_or(name_buf.len());
+    let nul = name_buf
+        .iter()
+        .position(|b| *b == 0)
+        .unwrap_or(name_buf.len());
     Some(String::from_utf8_lossy(&name_buf[..nul]).into_owned())
 }
 
@@ -125,7 +128,10 @@ fn local_administrators_group(ctx: &mut ScanContext) -> CheckOutcome {
                 source: format!("net localgroup {ADMINISTRATORS_GROUP}"),
                 outcome: format!("{} members", members.len()),
             });
-            return with_attempts(admin_group_outcome(members, "net localgroup Administrators".into()), attempts);
+            return with_attempts(
+                admin_group_outcome(members, "net localgroup Administrators".into()),
+                attempts,
+            );
         }
         attempts.push(FallbackAttempt {
             source: format!("net localgroup {ADMINISTRATORS_GROUP}"),
@@ -138,10 +144,12 @@ fn local_administrators_group(ctx: &mut ScanContext) -> CheckOutcome {
         });
     }
 
-    let script = "Get-LocalGroupMember -Group 'Administrators' | Select-Object -ExpandProperty Name";
-    if let Some(raw) =
-        ctx.cmd("powershell", &["-NoProfile", "-NonInteractive", "-Command", script])
-    {
+    let script =
+        "Get-LocalGroupMember -Group 'Administrators' | Select-Object -ExpandProperty Name";
+    if let Some(raw) = ctx.cmd(
+        "powershell",
+        &["-NoProfile", "-NonInteractive", "-Command", script],
+    ) {
         let members: Vec<String> = raw
             .lines()
             .map(str::trim)
@@ -198,7 +206,10 @@ fn admin_group_outcome(members: Vec<String>, repro: String) -> CheckOutcome {
         )
     } else {
         nok(
-            format!("local Administrators count = {} (>1): {listing}", members.len()),
+            format!(
+                "local Administrators count = {} (>1): {listing}",
+                members.len()
+            ),
             "group:Administrators".into(),
             repro,
         )
@@ -207,7 +218,8 @@ fn admin_group_outcome(members: Vec<String>, repro: String) -> CheckOutcome {
 
 fn local_power_users_group(ctx: &mut ScanContext) -> CheckOutcome {
     let mut attempts = Vec::new();
-    let group_name = account_name_from_sid_string(POWER_USERS_SID).unwrap_or_else(|| "Power Users".into());
+    let group_name =
+        account_name_from_sid_string(POWER_USERS_SID).unwrap_or_else(|| "Power Users".into());
 
     if let Some(raw) = ctx.cmd("net", &["localgroup", &group_name]) {
         if raw.contains("---") {
@@ -216,7 +228,10 @@ fn local_power_users_group(ctx: &mut ScanContext) -> CheckOutcome {
                 source: format!("net localgroup {group_name}"),
                 outcome: format!("{} members", members.len()),
             });
-            return with_attempts(power_users_outcome(members, format!("net localgroup {group_name}")), attempts);
+            return with_attempts(
+                power_users_outcome(members, format!("net localgroup {group_name}")),
+                attempts,
+            );
         }
         attempts.push(FallbackAttempt {
             source: format!("net localgroup {group_name}"),
@@ -229,9 +244,8 @@ fn local_power_users_group(ctx: &mut ScanContext) -> CheckOutcome {
         });
     }
 
-    let script = format!(
-        "Get-LocalGroupMember -Group '{group_name}' | Select-Object -ExpandProperty Name"
-    );
+    let script =
+        format!("Get-LocalGroupMember -Group '{group_name}' | Select-Object -ExpandProperty Name");
     if let Some(raw) = ctx.cmd(
         "powershell",
         &["-NoProfile", "-NonInteractive", "-Command", &script],
@@ -596,7 +610,9 @@ fn account_check(ctx: &mut ScanContext, field: AccountField) -> CheckOutcome {
             (
                 "Lockout bad count",
                 good,
-                format!("Lockout bad count = {val} (expected 1..=50; 5 recommended; Never means 0)"),
+                format!(
+                    "Lockout bad count = {val} (expected 1..=50; 5 recommended; Never means 0)"
+                ),
             )
         }
         AccountField::LockoutDuration => {
@@ -985,4 +1001,3 @@ fn with_attempts(mut outcome: CheckOutcome, attempts: Vec<FallbackAttempt>) -> C
 fn degraded_with_attempts(reason: &str, attempts: Vec<FallbackAttempt>) -> CheckOutcome {
     with_attempts(degraded(reason), attempts)
 }
-

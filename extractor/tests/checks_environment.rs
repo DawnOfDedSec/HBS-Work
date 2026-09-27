@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 
 use hbs_extractor::checks::register_all;
 use hbs_extractor::context::ScanContext;
-use hbs_extractor::evidence::CmdInjector;
 use hbs_extractor::engine::run_all;
+use hbs_extractor::evidence::CmdInjector;
 use hbs_extractor::model::{CheckResult, RegisteredCheck, Status};
 use hbs_extractor::platform::{detect, DistroFamily, Os};
 
@@ -82,7 +82,11 @@ fn run_one(ctx: &mut ScanContext, id: &str) -> CheckResult {
     let mut reg: Vec<RegisteredCheck> = Vec::new();
     register_all(&mut reg);
     let subset: Vec<RegisteredCheck> = reg.into_iter().filter(|c| c.tc.id == id).collect();
-    assert_eq!(subset.len(), 1, "check {id} must be registered exactly once");
+    assert_eq!(
+        subset.len(),
+        1,
+        "check {id} must be registered exactly once"
+    );
     run_all(&subset, ctx).remove(0)
 }
 
@@ -129,7 +133,11 @@ fn container_host_only_controls_are_not_applicable() {
 #[test]
 fn container_non_hardware_control_still_evaluates() {
     let root = container_root("normal-control");
-    put(&root, "etc/passwd", "root:x:0:0:root:/root:/bin/bash\nsvc:x:999:999::/:/sbin/nologin\n");
+    put(
+        &root,
+        "etc/passwd",
+        "root:x:0:0:root:/root:/bin/bash\nsvc:x:999:999::/:/sbin/nologin\n",
+    );
     let injector: CmdInjector = Box::new(|prog, _| {
         if prog == "systemd-detect-virt" {
             Some("docker".into())
@@ -153,7 +161,11 @@ fn container_non_hardware_control_still_evaluates() {
 fn vm_without_virtual_firmware_is_not_applicable_not_noncompliant() {
     let root = temp_root("vm-firmware");
     put(&root, "sys/class/dmi/id/sys_vendor", "VMware, Inc.\n");
-    put(&root, "sys/class/dmi/id/product_name", "VMware Virtual Platform\n");
+    put(
+        &root,
+        "sys/class/dmi/id/product_name",
+        "VMware Virtual Platform\n",
+    );
     let injector: CmdInjector = Box::new(|prog, _| {
         if prog == "systemd-detect-virt" {
             Some("vmware".into())

@@ -1,9 +1,11 @@
-﻿use hbs_extractor::platform::{detect, lower_own_priority, parse_os_release, DistroFamily, Os};
+use hbs_extractor::platform::{detect, lower_own_priority, parse_os_release, DistroFamily, Os};
 
 #[test]
 fn os_release_families() {
-    let ubuntu = "NAME=\"Ubuntu\"\nVERSION=\"24.04\"\nID=ubuntu\nID_LIKE=debian\nVERSION_ID=24.04\n";
-    let rocky = "NAME=\"Rocky Linux\"\nID=\"rocky\"\nID_LIKE=\"rhel centos fedora\"\nVERSION_ID=\"9.4\"\n";
+    let ubuntu =
+        "NAME=\"Ubuntu\"\nVERSION=\"24.04\"\nID=ubuntu\nID_LIKE=debian\nVERSION_ID=24.04\n";
+    let rocky =
+        "NAME=\"Rocky Linux\"\nID=\"rocky\"\nID_LIKE=\"rhel centos fedora\"\nVERSION_ID=\"9.4\"\n";
     let alpine = "NAME=\"Alpine Linux\"\nID=alpine\nVERSION_ID=3.20.0\n";
     let arch = "NAME=\"Arch Linux\"\nID=arch\n";
     assert_eq!(parse_os_release(ubuntu).1, DistroFamily::Debian);

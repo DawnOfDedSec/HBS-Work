@@ -9,7 +9,9 @@ fn ctx_with(injector: hbs_extractor::evidence::CmdInjector, root: &str) -> ScanC
     p.os = Os::Linux;
     p.family = DistroFamily::Debian;
     p.environment = EnvironmentInfo::default();
-    ScanContext::new(p, false).with_root_prefix(root).with_injector(injector)
+    ScanContext::new(p, false)
+        .with_root_prefix(root)
+        .with_injector(injector)
 }
 
 fn run_one(ctx: &mut ScanContext, id: &str) -> hbs_extractor::model::CheckResult {
@@ -51,7 +53,13 @@ fn no_firewall_fails() {
 #[test]
 fn ufw_default_deny_falls_back_to_config_file() {
     let mut ctx = ctx_with(
-        Box::new(|prog, _| if prog == "systemctl" { Some("active".into()) } else { None }),
+        Box::new(|prog, _| {
+            if prog == "systemctl" {
+                Some("active".into())
+            } else {
+                None
+            }
+        }),
         "tests/fixtures/fw-root",
     );
     let r = run_one(&mut ctx, "LIN-FW-004");

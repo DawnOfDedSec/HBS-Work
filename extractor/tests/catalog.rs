@@ -62,7 +62,10 @@ fn platform_env(os: Os, environment: EnvironmentInfo) -> PlatformInfo {
 fn container_environment() -> EnvironmentInfo {
     EnvironmentInfo {
         kind: Environment::Container,
-        signals: vec!["/.dockerenv present".into(), "/proc/1/cgroup: docker".into()],
+        signals: vec![
+            "/.dockerenv present".into(),
+            "/proc/1/cgroup: docker".into(),
+        ],
         hypervisor: None,
     }
 }
@@ -162,10 +165,7 @@ fn whole_catalog_never_errors_and_evidence_invariants_hold() {
         for r in &results {
             // Availability/parse failures are DegradedPartial, never Error.
             if r.status == Status::Error {
-                problems.push(format!(
-                    "[{os:?}] {} returned Error: {}",
-                    r.id, r.evidence
-                ));
+                problems.push(format!("[{os:?}] {} returned Error: {}", r.id, r.evidence));
             }
 
             if r.status == Status::DegradedPartial {
@@ -214,7 +214,10 @@ fn whole_catalog_container_environment_not_applicable_for_host_only_controls() {
 
     for r in &results {
         if r.status == Status::Error {
-            problems.push(format!("container run: {} returned Error: {}", r.id, r.evidence));
+            problems.push(format!(
+                "container run: {} returned Error: {}",
+                r.id, r.evidence
+            ));
         }
         if r.status == Status::NonCompliant && CONTAINER_IMPOSSIBLE_IDS.contains(&r.id.as_str()) {
             problems.push(format!(

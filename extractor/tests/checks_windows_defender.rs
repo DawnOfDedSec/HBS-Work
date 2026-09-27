@@ -62,14 +62,17 @@ fn fixture_injector(
                 None
             }
         }
-        "reg" if args == [
-            "query",
-            r"HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU",
-            "/v",
-            "NoAutoUpdate",
-        ] => no_auto_update.map(|value| {
-            format!("    NoAutoUpdate    REG_DWORD    0x{value:x}")
-        }),
+        "reg"
+            if args
+                == [
+                    "query",
+                    r"HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU",
+                    "/v",
+                    "NoAutoUpdate",
+                ] =>
+        {
+            no_auto_update.map(|value| format!("    NoAutoUpdate    REG_DWORD    0x{value:x}"))
+        }
         _ => None,
     })
 }
@@ -138,7 +141,11 @@ fn disabled_or_stale_values_fail_their_checks() {
     for result in defender_results(&mut ctx) {
         if result.id == "WIN-DEF-008" {
             assert_eq!(result.status, Status::Compliant, "{}", result.evidence);
-            assert!(result.evidence.contains("active count = 0"), "{}", result.evidence);
+            assert!(
+                result.evidence.contains("active count = 0"),
+                "{}",
+                result.evidence
+            );
         } else {
             assert_eq!(
                 result.status,
@@ -162,7 +169,11 @@ fn asr_active_count_pairs_ids_and_actions_including_scalar_json() {
     let mut ctx = windows_ctx(fixture_injector(None, Some(preference), None, None));
     let result = run_one(&mut ctx, "WIN-DEF-008");
     assert_eq!(result.status, Status::Compliant, "{}", result.evidence);
-    assert!(result.evidence.contains("active count = 1"), "{}", result.evidence);
+    assert!(
+        result.evidence.contains("active count = 1"),
+        "{}",
+        result.evidence
+    );
 }
 
 #[test]
@@ -182,7 +193,11 @@ fn missing_cmdlets_denied_queries_and_bad_json_degrade_never_error() {
                 result.id,
                 result.evidence
             );
-            assert!(!result.fallback_log.is_empty(), "{} missing source log", result.id);
+            assert!(
+                !result.fallback_log.is_empty(),
+                "{} missing source log",
+                result.id
+            );
         }
     }
 }
@@ -210,7 +225,9 @@ fn defender_uses_constant_query_only_powershell_and_registry_commands() {
         Some(0),
     ));
     let results = defender_results(&mut ctx);
-    assert!(results.iter().all(|result| result.status == Status::Compliant));
+    assert!(results
+        .iter()
+        .all(|result| result.status == Status::Compliant));
 
     let powershell_commands: Vec<_> = ctx
         .audit

@@ -5,7 +5,7 @@
 
 use crate::evidence::{self, CmdInjector};
 use crate::model::{bounded_redact, AuditKind, AuditStatus, EvidenceBlock, SelfAudit};
-use crate::platform::{EnvironmentInfo, EnvProbe, PlatformInfo};
+use crate::platform::{EnvProbe, EnvironmentInfo, PlatformInfo};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 

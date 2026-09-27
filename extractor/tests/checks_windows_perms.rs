@@ -13,7 +13,8 @@ use hbs_extractor::evidence::CmdInjector;
 use hbs_extractor::model::{CheckResult, RegisteredCheck, Status};
 use hbs_extractor::platform::{detect, Os};
 
-const ADMIN_ONLY_SAM: &str = r"O:SYG:SYD:PAI(A;CI;KA;;;BA)(A;CI;KA;;;SY)";const BROAD_SAM: &str = r"O:SYG:SYD:PAI(A;CI;KA;;;WD)(A;CI;KA;;;BA)(A;CI;KA;;;SY)";
+const ADMIN_ONLY_SAM: &str = r"O:SYG:SYD:PAI(A;CI;KA;;;BA)(A;CI;KA;;;SY)";
+const BROAD_SAM: &str = r"O:SYG:SYD:PAI(A;CI;KA;;;WD)(A;CI;KA;;;BA)(A;CI;KA;;;SY)";
 const DIR_NO_WORLD: &str = r"O:SYG:SYD:PAI(A;OICI;FA;;;BA)(A;OICI;FA;;;SY)";
 const DIR_WORLD_WRITABLE: &str = r"O:SYG:SYD:PAI(A;OICI;FA;;;WD)(A;OICI;FA;;;BA)";
 
@@ -38,9 +39,7 @@ fn leaked(value: String) -> &'static str {
     Box::leak(value.into_boxed_str())
 }
 
-fn acl_injector(
-    responses: &'static [(&'static str, Option<&'static str>)],
-) -> CmdInjector {
+fn acl_injector(responses: &'static [(&'static str, Option<&'static str>)]) -> CmdInjector {
     Box::new(move |program, args| match (program, args) {
         ("powershell", _) => {
             // Last arg is the script; match on which path it queries.
@@ -109,8 +108,7 @@ fn sam_security_system_acls_restricted_or_flagged() {
     }
 
     // World-writable SAM ACL -> NonCompliant.
-    let bad: &'static [(&'static str, Option<&'static str>)] =
-        &[("SAM", Some(BROAD_SAM))];
+    let bad: &'static [(&'static str, Option<&'static str>)] = &[("SAM", Some(BROAD_SAM))];
     let mut ctx2 = windows_ctx(acl_injector(bad));
     let res2 = run_one(&mut ctx2, "WIN-REG-001");
     assert_eq!(res2.status, Status::NonCompliant, "{}", res2.evidence);
@@ -151,7 +149,9 @@ fn directory_world_writable_flagged_absent_degrades() {
 fn run_key_inventory_is_informational() {
     let responses: &'static [(&'static str, Option<&'static str>)] = &[(
         "Run",
-        Some(r"\r\nHKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Run\r\n    Security    REG_SZ    C:\\Windows\\system32\\SecurityHealthService.exe\r\n"),
+        Some(
+            r"\r\nHKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Run\r\n    Security    REG_SZ    C:\\Windows\\system32\\SecurityHealthService.exe\r\n",
+        ),
     )];
     let mut ctx = windows_ctx(acl_injector(responses));
     let res = run_one(&mut ctx, "WIN-REG-008");
@@ -193,9 +193,14 @@ fn perm_checks_query_only_verbs() {
     for i in 1..=9 {
         run_one(&mut ctx, &format!("WIN-REG-{i:03}"));
     }
-    let ok = ctx.audit.commands.iter().all(|c| {
-        c.starts_with("powershell -")
-            || c.starts_with("reg query ")
-    });
-    assert!(ok, "unexpected commands: {:?}", &ctx.audit.commands[..3.min(ctx.audit.commands.len())]);
+    let ok = ctx
+        .audit
+        .commands
+        .iter()
+        .all(|c| c.starts_with("powershell -") || c.starts_with("reg query "));
+    assert!(
+        ok,
+        "unexpected commands: {:?}",
+        &ctx.audit.commands[..3.min(ctx.audit.commands.len())]
+    );
 }

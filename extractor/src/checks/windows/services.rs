@@ -173,7 +173,9 @@ fn disabled_check(ctx: &mut ScanContext, def: &ServiceCheckDef) -> CheckOutcome 
         Fetch::Found(name, cfg, attempts) => {
             let Some(start) = cfg.start_type else {
                 return with_log(
-                    degraded(&format!("{name} start type unreadable through read-only sources")),
+                    degraded(&format!(
+                        "{name} start type unreadable through read-only sources"
+                    )),
                     attempts,
                 );
             };
@@ -215,7 +217,9 @@ fn disable_if_unused(ctx: &mut ScanContext, def: &ServiceCheckDef) -> CheckOutco
         Fetch::Found(name, cfg, attempts) => {
             let Some(start) = cfg.start_type else {
                 return with_log(
-                    degraded(&format!("{name} start type unreadable through read-only sources")),
+                    degraded(&format!(
+                        "{name} start type unreadable through read-only sources"
+                    )),
                     attempts,
                 );
             };
@@ -286,16 +290,36 @@ fn evaluate_service(ctx: &mut ScanContext, def: &ServiceCheckDef) -> CheckOutcom
 /// never fails.
 fn auto_start_inventory(ctx: &mut ScanContext) -> CheckOutcome {
     const CATALOG: &[ServiceCheckDef] = &[
-        ServiceCheckDef { services: &["TlntSvr"] },
-        ServiceCheckDef { services: &["RemoteRegistry"] },
-        ServiceCheckDef { services: &["Spooler"] },
-        ServiceCheckDef { services: &["SNMP"] },
-        ServiceCheckDef { services: &["RemoteAccess"] },
-        ServiceCheckDef { services: &["SSDPSRV"] },
-        ServiceCheckDef { services: &["upnphost"] },
-        ServiceCheckDef { services: &["Wecsvc"] },
-        ServiceCheckDef { services: &["W3SVC"] },
-        ServiceCheckDef { services: &["SysMain"] },
+        ServiceCheckDef {
+            services: &["TlntSvr"],
+        },
+        ServiceCheckDef {
+            services: &["RemoteRegistry"],
+        },
+        ServiceCheckDef {
+            services: &["Spooler"],
+        },
+        ServiceCheckDef {
+            services: &["SNMP"],
+        },
+        ServiceCheckDef {
+            services: &["RemoteAccess"],
+        },
+        ServiceCheckDef {
+            services: &["SSDPSRV"],
+        },
+        ServiceCheckDef {
+            services: &["upnphost"],
+        },
+        ServiceCheckDef {
+            services: &["Wecsvc"],
+        },
+        ServiceCheckDef {
+            services: &["W3SVC"],
+        },
+        ServiceCheckDef {
+            services: &["SysMain"],
+        },
     ];
     let mut attempts = Vec::new();
     let mut enabled: Vec<String> = Vec::new();
@@ -343,208 +367,357 @@ fn win(p: &crate::platform::PlatformInfo) -> bool {
 pub fn register(reg: &mut Vec<RegisteredCheck>) {
     use crate::check;
     check!(
-        reg, "WIN-SVC-001",
+        reg,
+        "WIN-SVC-001",
         "Telnet service disabled or absent",
         "The legacy Telnet server (TlntSvr) is disabled or not installed.",
         "Telnet sends credentials in cleartext and predates every modern control.",
         "Disable TlntSvr or remove the Telnet Server feature.",
-        High, "Services", &["CIS 2.2.19"],
+        High,
+        "Services",
+        &["CIS 2.2.19"],
         win,
-        |ctx| disabled_check(ctx, &ServiceCheckDef { services: &["TlntSvr", "telnet"] })
+        |ctx| disabled_check(
+            ctx,
+            &ServiceCheckDef {
+                services: &["TlntSvr", "telnet"]
+            }
+        )
     );
     check!(
-        reg, "WIN-SVC-002",
+        reg,
+        "WIN-SVC-002",
         "TFTP service disabled or absent",
         "Trivial FTP daemon is disabled or not installed.",
         "TFTP has no authentication and is a malware drop/transfer channel.",
         "Disable or remove any TFTP service.",
-        Medium, "Services", &[],
+        Medium,
+        "Services",
+        &[],
         win,
-        |ctx| disabled_check(ctx, &ServiceCheckDef { services: &["tftpd", "TFTP", "SimpleTFTP"] })
+        |ctx| disabled_check(
+            ctx,
+            &ServiceCheckDef {
+                services: &["tftpd", "TFTP", "SimpleTFTP"]
+            }
+        )
     );
     check!(
-        reg, "WIN-SVC-003",
+        reg,
+        "WIN-SVC-003",
         "RemoteRegistry service disabled",
         "Remote access to the registry is disabled.",
         "Remote registry reads leak policy, software and credential material.",
         "Set the RemoteRegistry service start type to Disabled.",
-        High, "Services", &["CIS 2.2.14"],
+        High,
+        "Services",
+        &["CIS 2.2.14"],
         win,
-        |ctx| disabled_check(ctx, &ServiceCheckDef { services: &["RemoteRegistry"] })
+        |ctx| disabled_check(
+            ctx,
+            &ServiceCheckDef {
+                services: &["RemoteRegistry"]
+            }
+        )
     );
     check!(
-        reg, "WIN-SVC-004",
+        reg,
+        "WIN-SVC-004",
         "Print Spooler disabled where printing is unused",
         "Spooler is disabled on hosts that do not print (print servers excepted).",
         "Spooler is the PrintNightmare RCE surface; disabling it kills that class.",
         "Disable Spooler on non-print servers; restrict otherwise.",
-        High, "Services", &["CIS 2.2.9"],
+        High,
+        "Services",
+        &["CIS 2.2.9"],
         win,
-        |ctx| disable_if_unused(ctx, &ServiceCheckDef { services: &["Spooler"] })
+        |ctx| disable_if_unused(
+            ctx,
+            &ServiceCheckDef {
+                services: &["Spooler"]
+            }
+        )
     );
     check!(
-        reg, "WIN-SVC-005",
+        reg,
+        "WIN-SVC-005",
         "Fax service disabled or absent",
         "The Fax service is disabled or not installed.",
         "Fax is rarely used and exposes an unwatched processing surface.",
         "Disable the Fax service.",
-        Low, "Services", &["CIS 2.2.6"],
+        Low,
+        "Services",
+        &["CIS 2.2.6"],
         win,
         |ctx| disabled_check(ctx, &ServiceCheckDef { services: &["Fax"] })
     );
     check!(
-        reg, "WIN-SVC-006",
+        reg,
+        "WIN-SVC-006",
         "SMBv1 driver disabled",
         "The MRxSmb10 SMBv1 mini-redirector is disabled.",
         "With the driver off, SMBv1 cannot be negotiated even if other toggles regress.",
         "Set MRxSmb10 start type to 4 (Disabled) and remove SMB1Optional features.",
-        Critical, "Services", &["CIS 18.3.2"],
+        Critical,
+        "Services",
+        &["CIS 18.3.2"],
         win,
-        |ctx| disabled_check(ctx, &ServiceCheckDef { services: &["MRxSmb10"] })
+        |ctx| disabled_check(
+            ctx,
+            &ServiceCheckDef {
+                services: &["MRxSmb10"]
+            }
+        )
     );
     check!(
-        reg, "WIN-SVC-007",
+        reg,
+        "WIN-SVC-007",
         "WinHTTP Web Proxy Auto-Discovery disabled",
         "WPAD service (WinHttpAutoProxySvc) is disabled.",
         "WPAD lets any network peer become your proxy: traffic interception made easy.",
         "Disable WinHttpAutoProxySvc.",
-        Medium, "Services", &[],
+        Medium,
+        "Services",
+        &[],
         win,
-        |ctx| disabled_check(ctx, &ServiceCheckDef { services: &["WinHttpAutoProxySvc"] })
+        |ctx| disabled_check(
+            ctx,
+            &ServiceCheckDef {
+                services: &["WinHttpAutoProxySvc"]
+            }
+        )
     );
     check!(
-        reg, "WIN-SVC-008",
+        reg,
+        "WIN-SVC-008",
         "SNMP service disabled or absent",
         "The SNMP service is disabled or not installed.",
         "SNMPv1/v2c communities are cleartext; the service leaks host inventory.",
         "Disable SNMP or require SNMPv3 with authentication.",
-        Medium, "Services", &["CIS 2.2.18"],
+        Medium,
+        "Services",
+        &["CIS 2.2.18"],
         win,
-        |ctx| disabled_check(ctx, &ServiceCheckDef { services: &["SNMP", "SNMPService"] })
+        |ctx| disabled_check(
+            ctx,
+            &ServiceCheckDef {
+                services: &["SNMP", "SNMPService"]
+            }
+        )
     );
     check!(
-        reg, "WIN-SVC-009",
+        reg,
+        "WIN-SVC-009",
         "Routing and Remote Access disabled",
         "RemoteAccess (RRAS) service is disabled.",
         "RRAS turns the host into a router/VPN endpoint: a high-value takeover target.",
         "Disable RemoteAccess unless the host is a dedicated VPN server.",
-        Medium, "Services", &[],
+        Medium,
+        "Services",
+        &[],
         win,
-        |ctx| disabled_check(ctx, &ServiceCheckDef { services: &["RemoteAccess"] })
+        |ctx| disabled_check(
+            ctx,
+            &ServiceCheckDef {
+                services: &["RemoteAccess"]
+            }
+        )
     );
     check!(
-        reg, "WIN-SVC-010",
+        reg,
+        "WIN-SVC-010",
         "SSDP Discovery disabled",
         "SSDPSRV discovery service is disabled.",
         "SSDP broadcasts host presence and enables UPnP negotiation.",
         "Disable SSDPSRV.",
-        Low, "Services", &["CIS 2.2.16"],
+        Low,
+        "Services",
+        &["CIS 2.2.16"],
         win,
-        |ctx| disabled_check(ctx, &ServiceCheckDef { services: &["SSDPSRV"] })
+        |ctx| disabled_check(
+            ctx,
+            &ServiceCheckDef {
+                services: &["SSDPSRV"]
+            }
+        )
     );
     check!(
-        reg, "WIN-SVC-011",
+        reg,
+        "WIN-SVC-011",
         "UPnP Device Host disabled",
         "upnphost service is disabled.",
         "UPnP opens NAT-traversal paths without user intent.",
         "Disable upnphost (and its SSDPSRV dependency).",
-        Low, "Services", &["CIS 2.2.22"],
+        Low,
+        "Services",
+        &["CIS 2.2.22"],
         win,
-        |ctx| disabled_check(ctx, &ServiceCheckDef { services: &["upnphost"] })
+        |ctx| disabled_check(
+            ctx,
+            &ServiceCheckDef {
+                services: &["upnphost"]
+            }
+        )
     );
     check!(
-        reg, "WIN-SVC-012",
+        reg,
+        "WIN-SVC-012",
         "Windows Event Collector evaluated",
         "Wecsvc subscription service state is recorded.",
         "Event collection state determines whether centralized log review exists.",
         "Enable Wecsvc when forwarding to a collector; document otherwise.",
-        Informational, "Services", &["CIS 8.1"],
+        Informational,
+        "Services",
+        &["CIS 8.1"],
         win,
-        |ctx| evaluate_service(ctx, &ServiceCheckDef { services: &["Wecsvc"] })
+        |ctx| evaluate_service(
+            ctx,
+            &ServiceCheckDef {
+                services: &["Wecsvc"]
+            }
+        )
     );
     check!(
-        reg, "WIN-SVC-013",
+        reg,
+        "WIN-SVC-013",
         "IIS web server services evaluated",
         "Web server service state is recorded.",
         "A web role on a non-web server is unmanaged attack surface.",
         "Stop W3SVC unless this host is an approved web server.",
-        Informational, "Services", &[],
+        Informational,
+        "Services",
+        &[],
         win,
-        |ctx| evaluate_service(ctx, &ServiceCheckDef { services: &["W3SVC", "IISADMIN"] })
+        |ctx| evaluate_service(
+            ctx,
+            &ServiceCheckDef {
+                services: &["W3SVC", "IISADMIN"]
+            }
+        )
     );
     check!(
-        reg, "WIN-SVC-014",
+        reg,
+        "WIN-SVC-014",
         "Microsoft FTP service disabled or absent",
         "msftpsvc FTP service is disabled or not installed.",
         "FTP sends credentials and data in cleartext; SFTP/HTTPS cover modern needs.",
         "Disable msftpsvc; use SFTP or HTTPS transfers.",
-        Medium, "Services", &[],
+        Medium,
+        "Services",
+        &[],
         win,
-        |ctx| disabled_check(ctx, &ServiceCheckDef { services: &["msftpsvc", "FTPSVC"] })
+        |ctx| disabled_check(
+            ctx,
+            &ServiceCheckDef {
+                services: &["msftpsvc", "FTPSVC"]
+            }
+        )
     );
     check!(
-        reg, "WIN-SVC-015",
+        reg,
+        "WIN-SVC-015",
         "Xbox Live services disabled",
         "XblAuthManager and related Xbox services are disabled.",
         "Game services on servers are pure surface with zero operational value.",
         "Disable XblAuthManager, XblGameSave, XboxNetApiSvc, XboxGipSvc.",
-        Low, "Services", &[],
+        Low,
+        "Services",
+        &[],
         win,
-        |ctx| disabled_check(ctx, &ServiceCheckDef {
-            services: &["XblAuthManager", "XblGameSave", "XboxNetApiSvc", "XboxGipSvc"],
-        })
+        |ctx| disabled_check(
+            ctx,
+            &ServiceCheckDef {
+                services: &[
+                    "XblAuthManager",
+                    "XblGameSave",
+                    "XboxNetApiSvc",
+                    "XboxGipSvc"
+                ],
+            }
+        )
     );
     check!(
-        reg, "WIN-SVC-016",
+        reg,
+        "WIN-SVC-016",
         "SysMain (Superfetch) evaluated",
         "SysMain prefetch service state is recorded.",
         "SysMain is a known memory-abuse vector on RAM-constrained servers.",
         "Consider disabling SysMain on dedicated servers.",
-        Informational, "Services", &[],
+        Informational,
+        "Services",
+        &[],
         win,
-        |ctx| evaluate_service(ctx, &ServiceCheckDef { services: &["SysMain"] })
+        |ctx| evaluate_service(
+            ctx,
+            &ServiceCheckDef {
+                services: &["SysMain"]
+            }
+        )
     );
     check!(
-        reg, "WIN-SVC-017",
+        reg,
+        "WIN-SVC-017",
         "Bluetooth support evaluated",
         "Bluetooth service state is recorded.",
         "Bluetooth stacks expose pairing and audio surfaces on servers.",
         "Disable BTAGService/bthserv where no Bluetooth hardware is needed.",
-        Informational, "Services", &[],
+        Informational,
+        "Services",
+        &[],
         win,
-        |ctx| evaluate_service(ctx, &ServiceCheckDef {
-            services: &["BTAGService", "bthserv", "BluetoothUserService"],
-        })
+        |ctx| evaluate_service(
+            ctx,
+            &ServiceCheckDef {
+                services: &["BTAGService", "bthserv", "BluetoothUserService"],
+            }
+        )
     );
     check!(
-        reg, "WIN-SVC-018",
+        reg,
+        "WIN-SVC-018",
         "Peer Name Resolution Protocol disabled",
         "PNRPsvc (and p2p host) services are disabled.",
         "Peer-to-peer name resolution creates undocumented host-to-host channels.",
         "Disable PNRPsvc, p2psvc, p2pimsvc.",
-        Low, "Services", &[],
+        Low,
+        "Services",
+        &[],
         win,
-        |ctx| disabled_check(ctx, &ServiceCheckDef {
-            services: &["PNRPsvc", "p2psvc", "p2pimsvc"],
-        })
+        |ctx| disabled_check(
+            ctx,
+            &ServiceCheckDef {
+                services: &["PNRPsvc", "p2psvc", "p2pimsvc"],
+            }
+        )
     );
     check!(
-        reg, "WIN-SVC-019",
+        reg,
+        "WIN-SVC-019",
         "Link-Layer Topology Discovery disabled",
         "lltdsvc discovery mapper is disabled.",
         "LLTD maps the network neighborhood; servers do not need to advertise.",
         "Disable lltdsvc.",
-        Low, "Services", &[],
+        Low,
+        "Services",
+        &[],
         win,
-        |ctx| disabled_check(ctx, &ServiceCheckDef { services: &["lltdsvc"] })
+        |ctx| disabled_check(
+            ctx,
+            &ServiceCheckDef {
+                services: &["lltdsvc"]
+            }
+        )
     );
     check!(
-        reg, "WIN-SVC-020",
+        reg,
+        "WIN-SVC-020",
         "Unnecessary auto-start services inventory",
         "Catalog services not configured as disabled are listed.",
         "Auto-start sprawl widens the service attack surface over time.",
         "Review non-disabled catalog services against the approved baseline.",
-        Informational, "Services", &[],
+        Informational,
+        "Services",
+        &[],
         win,
         auto_start_inventory
     );

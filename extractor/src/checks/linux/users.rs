@@ -7,26 +7,266 @@ use crate::platform::Os;
 
 pub fn register(reg: &mut Vec<RegisteredCheck>) {
     use crate::check;
-    check!(reg, "LIN-USER-001", "/etc/passwd permissions", "0644 root:root.", "Writable passwd = instant root via crafted entries.", "chmod 644 /etc/passwd; chown root:root.", High, "Users", &["CIS 6.1.2"], linux, |c| file_mode(c, "/etc/passwd", 0o644, false));
-    check!(reg, "LIN-USER-002", "/etc/passwd owned by root", "root:root ownership.", "Foreign owners can rewrite account maps.", "chown root:root /etc/passwd.", High, "Users", &["CIS 6.1.1"], linux, |c| file_owner_root(c, "/etc/passwd"));
-    check!(reg, "LIN-USER-003", "/etc/shadow permissions", "0600 (some distros 0640 root:shadow).", "Readable shadow = offline hash cracking for every user.", "chmod 600 /etc/shadow (or distro-blessed 640 root:shadow).", High, "Users", &["CIS 6.1.3"], linux, shadow_mode);
-    check!(reg, "LIN-USER-004", "/etc/shadow owned by root", "root (or root:shadow) ownership.", "Wrong owners can nullify or read hashes.", "chown root:shadow /etc/shadow.", High, "Users", &["CIS 6.1.4"], linux, |c| file_owner_root(c, "/etc/shadow"));
-    check!(reg, "LIN-USER-005", "/etc/gshadow-* permissions", "0600 root:root (Debian: 640 root:shadow).", "Group hashes leak the same way.", "chmod 600 /etc/gshadow.", Medium, "Users", &["CIS 6.1.5-6"], linux, |c| file_mode(c, "/etc/gshadow", 0o600, true));
-    check!(reg, "LIN-USER-006", "/etc/group permissions", "0644 root:root.", "Writable group maps grant group escalation.", "chmod 644 /etc/group.", Medium, "Users", &["CIS 6.1.7-8"], linux, |c| file_mode(c, "/etc/group", 0o644, false));
-    check!(reg, "LIN-USER-007", "/etc/shadow empty passwords", "No user may have an empty hash field.", "Empty fields log in without any secret.", "passwd -l <user>; never blank hashes.", High, "Users", &["CIS 6.2.1"], linux, shadow_empty_passwords);
-    check!(reg, "LIN-USER-008", "No legacy + passwd entries", "NIS + lines must be absent.", "+:: entries grant wildcard access.", "Remove +::* lines from passwd/group.", Medium, "Users", &["CIS 6.2.2"], linux, |c| no_plus_entries(c, "/etc/passwd"));
-    check!(reg, "LIN-USER-009", "No legacy + shadow entries", "NIS + lines must be absent.", "Same wildcard risk for hashes.", "Remove +:: lines from shadow.", Medium, "Users", &["CIS 6.2.3"], linux, |c| no_plus_entries(c, "/etc/shadow"));
-    check!(reg, "LIN-USER-010", "No legacy + group entries", "NIS + lines must be absent.", "Group wildcard escalation.", "Remove +:: lines from group.", Medium, "Users", &["CIS 6.2.4"], linux, |c| no_plus_entries(c, "/etc/group"));
-    check!(reg, "LIN-USER-011", "Root is the only UID-0 account", "Exactly one uid 0.", "Extra uid-0 accounts are backdoor superusers.", "Demote or remove extra uid-0 accounts.", High, "Users", &["CIS 6.2.5"], linux, uid0_accounts);
-    check!(reg, "LIN-USER-012", "No duplicate UIDs", "UIDs unique.", "Duplicate UIDs defeat attribution and auditing.", "Reassign colliding UIDs.", Medium, "Users", &["CIS 6.2.6"], linux, |c| no_dup_field(c, 2, "UID"));
-    check!(reg, "LIN-USER-013", "No duplicate usernames", "Usernames unique.", "Login ambiguity breaks all accountability.", "Rename duplicates.", Medium, "Users", &["CIS 6.2.7"], linux, |c| no_dup_field(c, 0, "username"));
-    check!(reg, "LIN-USER-014", "No duplicate GIDs", "GIDs unique.", "Group collisions over-grant.", "Fix group ids.", Medium, "Users", &["CIS 6.2.8"], linux, |c| no_dup_gid(c));
-    check!(reg, "LIN-USER-015", "Root PATH clean", "No group/world-writable or empty entries in root PATH.", "Poisoned root PATH plants command hijacks.", "Strip writable/empty/duplicate PATH entries for root.", Medium, "Users", &["CIS 6.2.10"], linux, root_path);
-    check!(reg, "LIN-USER-016", "Home directories permissions", "0750 or stricter.", "World-readable homes leak keys/history.", "chmod 750 /home/<user>.", Medium, "Users", &["CIS 6.2.18"], linux, home_perms);
-    check!(reg, "LIN-USER-017", "Dotfiles not group/world writable", "Users' rc files writable only by owner.", "Writable .bashrc = persistent code exec on next login.", "chmod go-w ~/.bashrc ~/.profile etc.", Medium, "Users", &["CIS 6.2.19"], linux, dotfile_perms);
-    check!(reg, "LIN-USER-018", "No .forward/.rhosts for users", "Legacy trust files absent.", ".rhosts grants passwordless trust; .forward pipes mail to commands.", "Remove forward/rhosts files.", Medium, "Users", &["CIS 6.2.20"], linux, no_forward_rhosts);
-    check!(reg, "LIN-USER-019", "Umask defaults to 027 or stricter", "login.defs/profile umask.", "Loose umask creates world-readable secrets by default.", "umask 027 in /etc/login.defs + profile.", Low, "Users", &["CIS 5.4.4"], linux, umask_check);
-    check!(reg, "LIN-USER-020", "crontab and cron dirs permissions", "Cron files root-owned, not world-writable.", "Writable cron = scheduled root execution.", "chmod 600 crontabs; 700 cron dirs.", Medium, "Users", &["CIS 6.1.9-11"], linux, cron_perms);
+    check!(
+        reg,
+        "LIN-USER-001",
+        "/etc/passwd permissions",
+        "0644 root:root.",
+        "Writable passwd = instant root via crafted entries.",
+        "chmod 644 /etc/passwd; chown root:root.",
+        High,
+        "Users",
+        &["CIS 6.1.2"],
+        linux,
+        |c| file_mode(c, "/etc/passwd", 0o644, false)
+    );
+    check!(
+        reg,
+        "LIN-USER-002",
+        "/etc/passwd owned by root",
+        "root:root ownership.",
+        "Foreign owners can rewrite account maps.",
+        "chown root:root /etc/passwd.",
+        High,
+        "Users",
+        &["CIS 6.1.1"],
+        linux,
+        |c| file_owner_root(c, "/etc/passwd")
+    );
+    check!(
+        reg,
+        "LIN-USER-003",
+        "/etc/shadow permissions",
+        "0600 (some distros 0640 root:shadow).",
+        "Readable shadow = offline hash cracking for every user.",
+        "chmod 600 /etc/shadow (or distro-blessed 640 root:shadow).",
+        High,
+        "Users",
+        &["CIS 6.1.3"],
+        linux,
+        shadow_mode
+    );
+    check!(
+        reg,
+        "LIN-USER-004",
+        "/etc/shadow owned by root",
+        "root (or root:shadow) ownership.",
+        "Wrong owners can nullify or read hashes.",
+        "chown root:shadow /etc/shadow.",
+        High,
+        "Users",
+        &["CIS 6.1.4"],
+        linux,
+        |c| file_owner_root(c, "/etc/shadow")
+    );
+    check!(
+        reg,
+        "LIN-USER-005",
+        "/etc/gshadow-* permissions",
+        "0600 root:root (Debian: 640 root:shadow).",
+        "Group hashes leak the same way.",
+        "chmod 600 /etc/gshadow.",
+        Medium,
+        "Users",
+        &["CIS 6.1.5-6"],
+        linux,
+        |c| file_mode(c, "/etc/gshadow", 0o600, true)
+    );
+    check!(
+        reg,
+        "LIN-USER-006",
+        "/etc/group permissions",
+        "0644 root:root.",
+        "Writable group maps grant group escalation.",
+        "chmod 644 /etc/group.",
+        Medium,
+        "Users",
+        &["CIS 6.1.7-8"],
+        linux,
+        |c| file_mode(c, "/etc/group", 0o644, false)
+    );
+    check!(
+        reg,
+        "LIN-USER-007",
+        "/etc/shadow empty passwords",
+        "No user may have an empty hash field.",
+        "Empty fields log in without any secret.",
+        "passwd -l <user>; never blank hashes.",
+        High,
+        "Users",
+        &["CIS 6.2.1"],
+        linux,
+        shadow_empty_passwords
+    );
+    check!(
+        reg,
+        "LIN-USER-008",
+        "No legacy + passwd entries",
+        "NIS + lines must be absent.",
+        "+:: entries grant wildcard access.",
+        "Remove +::* lines from passwd/group.",
+        Medium,
+        "Users",
+        &["CIS 6.2.2"],
+        linux,
+        |c| no_plus_entries(c, "/etc/passwd")
+    );
+    check!(
+        reg,
+        "LIN-USER-009",
+        "No legacy + shadow entries",
+        "NIS + lines must be absent.",
+        "Same wildcard risk for hashes.",
+        "Remove +:: lines from shadow.",
+        Medium,
+        "Users",
+        &["CIS 6.2.3"],
+        linux,
+        |c| no_plus_entries(c, "/etc/shadow")
+    );
+    check!(
+        reg,
+        "LIN-USER-010",
+        "No legacy + group entries",
+        "NIS + lines must be absent.",
+        "Group wildcard escalation.",
+        "Remove +:: lines from group.",
+        Medium,
+        "Users",
+        &["CIS 6.2.4"],
+        linux,
+        |c| no_plus_entries(c, "/etc/group")
+    );
+    check!(
+        reg,
+        "LIN-USER-011",
+        "Root is the only UID-0 account",
+        "Exactly one uid 0.",
+        "Extra uid-0 accounts are backdoor superusers.",
+        "Demote or remove extra uid-0 accounts.",
+        High,
+        "Users",
+        &["CIS 6.2.5"],
+        linux,
+        uid0_accounts
+    );
+    check!(
+        reg,
+        "LIN-USER-012",
+        "No duplicate UIDs",
+        "UIDs unique.",
+        "Duplicate UIDs defeat attribution and auditing.",
+        "Reassign colliding UIDs.",
+        Medium,
+        "Users",
+        &["CIS 6.2.6"],
+        linux,
+        |c| no_dup_field(c, 2, "UID")
+    );
+    check!(
+        reg,
+        "LIN-USER-013",
+        "No duplicate usernames",
+        "Usernames unique.",
+        "Login ambiguity breaks all accountability.",
+        "Rename duplicates.",
+        Medium,
+        "Users",
+        &["CIS 6.2.7"],
+        linux,
+        |c| no_dup_field(c, 0, "username")
+    );
+    check!(
+        reg,
+        "LIN-USER-014",
+        "No duplicate GIDs",
+        "GIDs unique.",
+        "Group collisions over-grant.",
+        "Fix group ids.",
+        Medium,
+        "Users",
+        &["CIS 6.2.8"],
+        linux,
+        |c| no_dup_gid(c)
+    );
+    check!(
+        reg,
+        "LIN-USER-015",
+        "Root PATH clean",
+        "No group/world-writable or empty entries in root PATH.",
+        "Poisoned root PATH plants command hijacks.",
+        "Strip writable/empty/duplicate PATH entries for root.",
+        Medium,
+        "Users",
+        &["CIS 6.2.10"],
+        linux,
+        root_path
+    );
+    check!(
+        reg,
+        "LIN-USER-016",
+        "Home directories permissions",
+        "0750 or stricter.",
+        "World-readable homes leak keys/history.",
+        "chmod 750 /home/<user>.",
+        Medium,
+        "Users",
+        &["CIS 6.2.18"],
+        linux,
+        home_perms
+    );
+    check!(
+        reg,
+        "LIN-USER-017",
+        "Dotfiles not group/world writable",
+        "Users' rc files writable only by owner.",
+        "Writable .bashrc = persistent code exec on next login.",
+        "chmod go-w ~/.bashrc ~/.profile etc.",
+        Medium,
+        "Users",
+        &["CIS 6.2.19"],
+        linux,
+        dotfile_perms
+    );
+    check!(
+        reg,
+        "LIN-USER-018",
+        "No .forward/.rhosts for users",
+        "Legacy trust files absent.",
+        ".rhosts grants passwordless trust; .forward pipes mail to commands.",
+        "Remove forward/rhosts files.",
+        Medium,
+        "Users",
+        &["CIS 6.2.20"],
+        linux,
+        no_forward_rhosts
+    );
+    check!(
+        reg,
+        "LIN-USER-019",
+        "Umask defaults to 027 or stricter",
+        "login.defs/profile umask.",
+        "Loose umask creates world-readable secrets by default.",
+        "umask 027 in /etc/login.defs + profile.",
+        Low,
+        "Users",
+        &["CIS 5.4.4"],
+        linux,
+        umask_check
+    );
+    check!(
+        reg,
+        "LIN-USER-020",
+        "crontab and cron dirs permissions",
+        "Cron files root-owned, not world-writable.",
+        "Writable cron = scheduled root execution.",
+        "chmod 600 crontabs; 700 cron dirs.",
+        Medium,
+        "Users",
+        &["CIS 6.1.9-11"],
+        linux,
+        cron_perms
+    );
 }
 
 fn linux(p: &crate::platform::PlatformInfo) -> bool {
@@ -39,15 +279,25 @@ fn file_mode(ctx: &mut ScanContext, path: &str, want: u32, debian_loose: bool) -
         Some(mode) => {
             let loose_ok = debian_loose && mode == 0o640;
             if mode <= want || loose_ok {
-                ok(format!("{path} mode {mode:o}"), path.into(), format!("stat -c '%a' {path}"))
+                ok(
+                    format!("{path} mode {mode:o}"),
+                    path.into(),
+                    format!("stat -c '%a' {path}"),
+                )
             } else {
                 with_block(
-                    nok(format!("{path} mode {mode:o} (expected <= {want:o})"), path.into(), format!("stat -c '%a' {path}")),
+                    nok(
+                        format!("{path} mode {mode:o} (expected <= {want:o})"),
+                        path.into(),
+                        format!("stat -c '%a' {path}"),
+                    ),
                     block,
                 )
             }
         }
-        None => degraded(&format!("{path} metadata not readable (needs root for some files)")),
+        None => degraded(&format!(
+            "{path} metadata not readable (needs root for some files)"
+        )),
     }
 }
 
@@ -67,11 +317,27 @@ fn file_owner_root(ctx: &mut ScanContext, path: &str) -> CheckOutcome {
             let uid = md.uid();
             let gid = md.gid();
             if uid == 0 && (gid == 0 || path.ends_with("shadow") || path.ends_with("gshadow")) {
-                ok(format!("{path} owned by {uid}:{gid} (root acceptable)", uid = uid, gid = gid), path.into(), format!("stat -c '%U:%G' {path}"))
+                ok(
+                    format!(
+                        "{path} owned by {uid}:{gid} (root acceptable)",
+                        uid = uid,
+                        gid = gid
+                    ),
+                    path.into(),
+                    format!("stat -c '%U:%G' {path}"),
+                )
             } else if uid == 0 {
-                ok(format!("{path} owned by 0:{gid}"), path.into(), format!("stat -c '%U:%G' {path}"))
+                ok(
+                    format!("{path} owned by 0:{gid}"),
+                    path.into(),
+                    format!("stat -c '%U:%G' {path}"),
+                )
             } else {
-                nok(format!("{path} NOT owned by root (uid={uid})"), path.into(), format!("stat -c '%U' {path}"))
+                nok(
+                    format!("{path} NOT owned by root (uid={uid})"),
+                    path.into(),
+                    format!("stat -c '%U' {path}"),
+                )
             }
         } else {
             degraded(&format!("{path} not statable (may need root)"))
@@ -123,9 +389,17 @@ fn no_plus_entries(ctx: &mut ScanContext, path: &str) -> CheckOutcome {
         Some(c) => {
             let plus: Vec<&str> = c.lines().filter(|l| l.starts_with('+')).collect();
             if plus.is_empty() {
-                ok(format!("no legacy + entries in {path}"), path.into(), format!("grep '^+' {path}"))
+                ok(
+                    format!("no legacy + entries in {path}"),
+                    path.into(),
+                    format!("grep '^+' {path}"),
+                )
             } else {
-                nok(format!("legacy + entries in {path}: {}", plus.len()), path.into(), format!("grep '^+' {path}"))
+                nok(
+                    format!("legacy + entries in {path}: {}", plus.len()),
+                    path.into(),
+                    format!("grep '^+' {path}"),
+                )
             }
         }
         None => degraded(&format!("{path} not readable")),
@@ -143,12 +417,26 @@ fn uid0_accounts(ctx: &mut ScanContext) -> CheckOutcome {
                 })
                 .collect();
             if uid0.len() <= 1 && uid0.first().map(|u| u == "root").unwrap_or(true) {
-                ok("root is the only uid-0 account".into(), "/etc/passwd".into(), "awk -F: '($3==0)' /etc/passwd".into())
+                ok(
+                    "root is the only uid-0 account".into(),
+                    "/etc/passwd".into(),
+                    "awk -F: '($3==0)' /etc/passwd".into(),
+                )
             } else {
-                nok(format!("uid-0 accounts: {}", uid0.join(", ")), "/etc/passwd".into(), "awk -F: '($3==0)' /etc/passwd".into())
+                nok(
+                    format!("uid-0 accounts: {}", uid0.join(", ")),
+                    "/etc/passwd".into(),
+                    "awk -F: '($3==0)' /etc/passwd".into(),
+                )
             }
         }
-        None => degraded_from_attempts(vec![FallbackAttempt { source: "/etc/passwd".into(), outcome: "missing".into() }], "/etc/passwd missing"),
+        None => degraded_from_attempts(
+            vec![FallbackAttempt {
+                source: "/etc/passwd".into(),
+                outcome: "missing".into(),
+            }],
+            "/etc/passwd missing",
+        ),
     }
 }
 
@@ -168,12 +456,26 @@ fn no_dup_field(ctx: &mut ScanContext, field: usize, label: &str) -> CheckOutcom
                 }
             }
             if dups.is_empty() {
-                ok(format!("no duplicate {label}s"), "/etc/passwd".into(), format!("cut -d: -f{} /etc/passwd | sort | uniq -d", field + 1))
+                ok(
+                    format!("no duplicate {label}s"),
+                    "/etc/passwd".into(),
+                    format!("cut -d: -f{} /etc/passwd | sort | uniq -d", field + 1),
+                )
             } else {
-                nok(format!("duplicate {label}s: {}", dups.join(", ")), "/etc/passwd".into(), "see evidence".into())
+                nok(
+                    format!("duplicate {label}s: {}", dups.join(", ")),
+                    "/etc/passwd".into(),
+                    "see evidence".into(),
+                )
             }
         }
-        None => degraded_from_attempts(vec![FallbackAttempt { source: "/etc/passwd".into(), outcome: "missing".into() }], "/etc/passwd missing"),
+        None => degraded_from_attempts(
+            vec![FallbackAttempt {
+                source: "/etc/passwd".into(),
+                outcome: "missing".into(),
+            }],
+            "/etc/passwd missing",
+        ),
     }
 }
 
@@ -193,9 +495,17 @@ fn no_dup_gid(ctx: &mut ScanContext) -> CheckOutcome {
                 }
             }
             if dups.is_empty() {
-                ok("no duplicate GIDs".into(), "/etc/group".into(), "cut -d: -f3 /etc/group | sort | uniq -d".into())
+                ok(
+                    "no duplicate GIDs".into(),
+                    "/etc/group".into(),
+                    "cut -d: -f3 /etc/group | sort | uniq -d".into(),
+                )
             } else {
-                nok(format!("duplicate GIDs: {}", dups.join(", ")), "/etc/group".into(), "see evidence".into())
+                nok(
+                    format!("duplicate GIDs: {}", dups.join(", ")),
+                    "/etc/group".into(),
+                    "see evidence".into(),
+                )
             }
         }
         None => degraded("/etc/group not readable"),
@@ -218,7 +528,9 @@ fn root_path(ctx: &mut ScanContext) -> CheckOutcome {
         }
     }
     if path_entries.is_empty() {
-        return degraded("root PATH definition not readable — verify manually for writable entries");
+        return degraded(
+            "root PATH definition not readable — verify manually for writable entries",
+        );
     }
     let mut bad = Vec::new();
     for e in &path_entries {
@@ -235,9 +547,17 @@ fn root_path(ctx: &mut ScanContext) -> CheckOutcome {
         }
     }
     if bad.is_empty() {
-        ok(format!("root PATH clean ({} entries)", path_entries.len()), "/etc/profile".into(), "echo $PATH".into())
+        ok(
+            format!("root PATH clean ({} entries)", path_entries.len()),
+            "/etc/profile".into(),
+            "echo $PATH".into(),
+        )
     } else {
-        nok(bad.join("; "), "/etc/profile".into(), "check writable dirs in root PATH".into())
+        nok(
+            bad.join("; "),
+            "/etc/profile".into(),
+            "check writable dirs in root PATH".into(),
+        )
     }
 }
 
@@ -267,7 +587,11 @@ fn home_perms(ctx: &mut ScanContext) -> CheckOutcome {
         return degraded("no home directories statable");
     }
     if bad.is_empty() {
-        ok(format!("{checked} home directories checked, none group/world writable"), "/home".into(), "ls -ld /home/*".into())
+        ok(
+            format!("{checked} home directories checked, none group/world writable"),
+            "/home".into(),
+            "ls -ld /home/*".into(),
+        )
     } else {
         nok(bad.join("; "), "/home".into(), "ls -ld /home/*".into())
     }
@@ -302,7 +626,11 @@ fn dotfile_perms(ctx: &mut ScanContext) -> CheckOutcome {
         return degraded("no user dotfiles statable");
     }
     if bad.is_empty() {
-        ok(format!("{checked} dotfiles checked, none group/world writable"), "user homes".into(), "ls -la ~/*".into())
+        ok(
+            format!("{checked} dotfiles checked, none group/world writable"),
+            "user homes".into(),
+            "ls -la ~/*".into(),
+        )
     } else {
         nok(bad.join("; "), "user homes".into(), "ls -la ~/*".into())
     }
@@ -326,31 +654,51 @@ fn no_forward_rhosts(ctx: &mut ScanContext) -> CheckOutcome {
         }
     }
     if found.is_empty() {
-        ok("no .forward/.rhosts/.netrc files".into(), "user homes".into(), "find /home -name '.forward' -o -name '.rhosts'".into())
+        ok(
+            "no .forward/.rhosts/.netrc files".into(),
+            "user homes".into(),
+            "find /home -name '.forward' -o -name '.rhosts'".into(),
+        )
     } else {
-        nok(format!("legacy trust files: {}", found.join(", ")), "user homes".into(), "see evidence".into())
+        nok(
+            format!("legacy trust files: {}", found.join(", ")),
+            "user homes".into(),
+            "see evidence".into(),
+        )
     }
 }
 
 fn umask_check(ctx: &mut ScanContext) -> CheckOutcome {
     let mut value = None;
     if let Some(defs) = ctx.read("/etc/login.defs") {
-        value = defs
-            .lines()
-            .map(str::trim_start)
-            .find_map(|l| l.strip_prefix("UMASK").and_then(|r| r.trim().split_whitespace().next().map(str::to_string)));
+        value = defs.lines().map(str::trim_start).find_map(|l| {
+            l.strip_prefix("UMASK")
+                .and_then(|r| r.trim().split_whitespace().next().map(str::to_string))
+        });
     }
     let loc = "/etc/login.defs".to_string();
     match value.as_deref() {
         Some(v @ ("027" | "077" | "022" | "072" | "026" | "017" | "027")) => {
             let strict = v == "027" || v == "077";
             if strict {
-                ok(format!("UMASK {v}"), loc, "grep UMASK /etc/login.defs".into())
+                ok(
+                    format!("UMASK {v}"),
+                    loc,
+                    "grep UMASK /etc/login.defs".into(),
+                )
             } else {
-                nok(format!("UMASK {v} (expected 027/077 for stricter defaults)"), loc, "grep UMASK /etc/login.defs".into())
+                nok(
+                    format!("UMASK {v} (expected 027/077 for stricter defaults)"),
+                    loc,
+                    "grep UMASK /etc/login.defs".into(),
+                )
             }
         }
-        Some(v) => nok(format!("UMASK {v} is permissive"), loc, "grep UMASK /etc/login.defs".into()),
+        Some(v) => nok(
+            format!("UMASK {v} is permissive"),
+            loc,
+            "grep UMASK /etc/login.defs".into(),
+        ),
         None => degraded("UMASK not set in login.defs (shell defaults apply)"),
     }
 }
@@ -358,7 +706,14 @@ fn umask_check(ctx: &mut ScanContext) -> CheckOutcome {
 fn cron_perms(ctx: &mut ScanContext) -> CheckOutcome {
     let mut bad = Vec::new();
     let mut checked = 0;
-    for p in ["/etc/crontab", "/etc/cron.d", "/etc/cron.daily", "/etc/cron.hourly", "/etc/cron.weekly", "/etc/cron.monthly"] {
+    for p in [
+        "/etc/crontab",
+        "/etc/cron.d",
+        "/etc/cron.daily",
+        "/etc/cron.hourly",
+        "/etc/cron.weekly",
+        "/etc/cron.monthly",
+    ] {
         if let Some(mode) = ctx.unix_mode(p) {
             checked += 1;
             if mode & 0o022 != 0 {
@@ -370,8 +725,16 @@ fn cron_perms(ctx: &mut ScanContext) -> CheckOutcome {
         return degraded("cron paths not statable (not installed?)");
     }
     if bad.is_empty() {
-        ok(format!("{checked} cron paths checked"), "/etc/cron*".into(), "ls -ld /etc/cron*".into())
+        ok(
+            format!("{checked} cron paths checked"),
+            "/etc/cron*".into(),
+            "ls -ld /etc/cron*".into(),
+        )
     } else {
-        nok(bad.join("; "), "/etc/cron*".into(), "ls -ld /etc/cron*".into())
+        nok(
+            bad.join("; "),
+            "/etc/cron*".into(),
+            "ls -ld /etc/cron*".into(),
+        )
     }
 }

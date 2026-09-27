@@ -20,30 +20,114 @@ pub const MAX_READ: usize = 1024 * 1024;
 /// pins that property.
 pub const COMMAND_ALLOWLIST: &[&str] = &[
     // cross-platform / linux
-    "uname", "hostname", "id", "getent", "systemd-detect-virt", "ss",
-    "ip", "sysctl", "dpkg-query", "rpm", "apk", "pacman", "zypper",
-    "chkconfig", "systemctl", "timedatectl", "localectl", "docker",
-    "lsb_release", "last", "uptime", "ufw", "firewall-cmd", "nft",
-    "iptables", "auditctl", "package", "at", "atq", "getcap", "debsums",
-    "dnf", "apt-get", "mount", "findmnt", "mokutil", "bootctl",
-    "chronyc", "lsmod", "crontab", "realm", "free", "lscpu",
-    "sshd", "ssh", "zgrep", "stat", "sha256sum", "openssl", "lspci", "lsusb",
+    "uname",
+    "hostname",
+    "id",
+    "getent",
+    "systemd-detect-virt",
+    "ss",
+    "ip",
+    "sysctl",
+    "dpkg-query",
+    "rpm",
+    "apk",
+    "pacman",
+    "zypper",
+    "chkconfig",
+    "systemctl",
+    "timedatectl",
+    "localectl",
+    "docker",
+    "lsb_release",
+    "last",
+    "uptime",
+    "ufw",
+    "firewall-cmd",
+    "nft",
+    "iptables",
+    "auditctl",
+    "package",
+    "at",
+    "atq",
+    "getcap",
+    "debsums",
+    "dnf",
+    "apt-get",
+    "mount",
+    "findmnt",
+    "mokutil",
+    "bootctl",
+    "chronyc",
+    "lsmod",
+    "crontab",
+    "realm",
+    "free",
+    "lscpu",
+    "sshd",
+    "ssh",
+    "zgrep",
+    "stat",
+    "sha256sum",
+    "openssl",
+    "lspci",
+    "lsusb",
     // windows
-    "systeminfo", "reg", "auditpol", "net", "wmic", "sc",
-    "wevtutil", "powershell", "pwsh", "manage-bde", "dsregcmd",
-    "cmdkey", "tzutil", "driverquery", "schtasks", "netsh", "whoami",
-    "arp", "route", "qwinsta",
+    "systeminfo",
+    "reg",
+    "auditpol",
+    "net",
+    "wmic",
+    "sc",
+    "wevtutil",
+    "powershell",
+    "pwsh",
+    "manage-bde",
+    "dsregcmd",
+    "cmdkey",
+    "tzutil",
+    "driverquery",
+    "schtasks",
+    "netsh",
+    "whoami",
+    "arp",
+    "route",
+    "qwinsta",
 ];
 
 /// Program names that must never appear in [`COMMAND_ALLOWLIST`] because
 /// they resolve names or open network connections. Kept here so the
 /// no-egress test and the allowlist stay in sync.
 pub const FORBIDDEN_NETWORK_PROGRAMS: &[&str] = &[
-    "nslookup", "dig", "delv", "host", "drill", "kdig",
-    "showmount", "rpcinfo", "rpcclient", "smbclient", "smbstatus", "nfsstat",
-    "ping", "ping6", "traceroute", "tracepath", "mtr",
-    "nc", "ncat", "netcat", "socat", "telnet", "ftp", "sftp", "scp",
-    "curl", "wget", "sshfs", "mount.nfs", "gpg",
+    "nslookup",
+    "dig",
+    "delv",
+    "host",
+    "drill",
+    "kdig",
+    "showmount",
+    "rpcinfo",
+    "rpcclient",
+    "smbclient",
+    "smbstatus",
+    "nfsstat",
+    "ping",
+    "ping6",
+    "traceroute",
+    "tracepath",
+    "mtr",
+    "nc",
+    "ncat",
+    "netcat",
+    "socat",
+    "telnet",
+    "ftp",
+    "sftp",
+    "scp",
+    "curl",
+    "wget",
+    "sshfs",
+    "mount.nfs",
+    "gpg",
 ];
 
 /// Programs whose FIRST argument must be one of the listed verbs.
@@ -56,13 +140,46 @@ const RESTRICTED_VERBS: &[(&str, &[&str])] = &[
     ("manage-bde", &["-status"]),
     ("cmdkey", &["/list"]),
     ("dsregcmd", &["/status"]),
-    ("wmic", &["qfe", "csproduct", "os", "computersystem", "cpu", "bios", "logicaldisk"]),
+    (
+        "wmic",
+        &[
+            "qfe",
+            "csproduct",
+            "os",
+            "computersystem",
+            "cpu",
+            "bios",
+            "logicaldisk",
+        ],
+    ),
     ("ufw", &["status"]),
-    ("systemctl", &["is-active", "is-enabled", "cat", "show", "list-units", "list-timers", "list-unit-files"]),
-    ("ss", &["-tulpn", "-tulpn4", "-tulpn6", "-tuln", "-tulnp", "-tulpne"]),
+    (
+        "systemctl",
+        &[
+            "is-active",
+            "is-enabled",
+            "cat",
+            "show",
+            "list-units",
+            "list-timers",
+            "list-unit-files",
+        ],
+    ),
+    (
+        "ss",
+        &["-tulpn", "-tulpn4", "-tulpn6", "-tuln", "-tulnp", "-tulpne"],
+    ),
     ("nft", &["list"]),
     ("auditctl", &["-l", "-s"]),
-    ("firewall-cmd", &["--state", "--get-default-zone", "--list-all", "--list-services"]),
+    (
+        "firewall-cmd",
+        &[
+            "--state",
+            "--get-default-zone",
+            "--list-all",
+            "--list-services",
+        ],
+    ),
     ("dnf", &["updateinfo", "repoquery"]),
     ("at", &["-l"]),
     ("mokutil", &["--sb-state"]),
@@ -91,7 +208,10 @@ const RESTRICTED_VERBS: &[(&str, &[&str])] = &[
     ("localectl", &["status"]),
     ("getent", &["passwd", "group", "shadow", "initgroups"]),
     ("dpkg-query", &["-W", "-L", "-S", "-l"]),
-    ("rpm", &["-q", "-qa", "-qf", "-V", "-Vv", "--query", "--last"]),
+    (
+        "rpm",
+        &["-q", "-qa", "-qf", "-V", "-Vv", "--query", "--last"],
+    ),
     ("apk", &["info", "list", "version"]),
     ("pacman", &["-Q", "-Qi", "-Ql", "-Qo"]),
     ("zypper", &["--no-gpg-checks", "search", "info", "lp"]),
@@ -274,9 +394,9 @@ fn has_remote_target(arg: &str) -> bool {
     let bytes = arg.as_bytes();
     bytes.iter().enumerate().any(|(i, b)| {
         *b == b'@'
-            && bytes
-                .get(i + 1)
-                .map_or(false, |n| n.is_ascii_alphanumeric() || *n == b'[' || *n == b'.')
+            && bytes.get(i + 1).map_or(false, |n| {
+                n.is_ascii_alphanumeric() || *n == b'[' || *n == b'.'
+            })
     })
 }
 
@@ -299,9 +419,26 @@ fn iptables_query_only(args: &[&str]) -> bool {
         return false;
     }
     const CHANGING: &[&str] = &[
-        "-A", "--append", "-D", "--delete", "-I", "--insert", "-R", "--replace",
-        "-F", "--flush", "-Z", "--zero", "-N", "--new-chain", "-X", "--delete-chain",
-        "-P", "--policy", "-E", "--rename-chain",
+        "-A",
+        "--append",
+        "-D",
+        "--delete",
+        "-I",
+        "--insert",
+        "-R",
+        "--replace",
+        "-F",
+        "--flush",
+        "-Z",
+        "--zero",
+        "-N",
+        "--new-chain",
+        "-X",
+        "--delete-chain",
+        "-P",
+        "--policy",
+        "-E",
+        "--rename-chain",
     ];
     !args.iter().any(|a| {
         CHANGING.contains(a)
@@ -361,8 +498,20 @@ fn netsh_query_only(args: &[&str]) -> bool {
         let l = arg.to_ascii_lowercase();
         matches!(
             l.as_str(),
-            "set" | "add" | "delete" | "del" | "reset" | "export" | "dump" | "install" | "uninstall"
-        ) || l.contains('>') || l.contains('<') || l.contains('|') || l.contains('&') || l.contains(';')
+            "set"
+                | "add"
+                | "delete"
+                | "del"
+                | "reset"
+                | "export"
+                | "dump"
+                | "install"
+                | "uninstall"
+        ) || l.contains('>')
+            || l.contains('<')
+            || l.contains('|')
+            || l.contains('&')
+            || l.contains(';')
     }) {
         return false;
     }
@@ -372,9 +521,7 @@ fn netsh_query_only(args: &[&str]) -> bool {
         "advfirewall" => has_show,
         // Only the local ip/ipv4 query contexts the catalog reads;
         // `portproxy` (and other proxy/relay verbs) are refused.
-        "interface" => {
-            has_show && matches!(args.get(1).copied(), Some("ip") | Some("ipv4"))
-        }
+        "interface" => has_show && matches!(args.get(1).copied(), Some("ip") | Some("ipv4")),
         // Local HTTP URL reservations and WLAN profiles.
         "http" | "wlan" => has_show,
         _ => false,
@@ -614,7 +761,8 @@ pub fn run_command(
             return None;
         }
     };
-    let status = wait_timeout::ChildExt::wait_timeout(&mut child, Duration::from_millis(timeout_ms));
+    let status =
+        wait_timeout::ChildExt::wait_timeout(&mut child, Duration::from_millis(timeout_ms));
     match status {
         Ok(Some(st)) if st.success() => {
             let mut out = String::new();
@@ -675,5 +823,6 @@ pub fn run_command(
 }
 
 fn code_str(code: Option<i32>) -> String {
-    code.map(|c| c.to_string()).unwrap_or_else(|| "?".to_string())
+    code.map(|c| c.to_string())
+        .unwrap_or_else(|| "?".to_string())
 }

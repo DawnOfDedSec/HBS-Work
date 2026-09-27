@@ -8,7 +8,9 @@ fn linux_ctx(root: &str) -> ScanContext {
     let mut p = detect();
     p.os = Os::Linux;
     p.family = DistroFamily::Debian;
-    ScanContext::new(p, false).with_root_prefix(root).with_injector(Box::new(|_, _| None))
+    ScanContext::new(p, false)
+        .with_root_prefix(root)
+        .with_injector(Box::new(|_, _| None))
 }
 
 #[test]
@@ -37,10 +39,17 @@ fn ssh_check_result_carries_evidence_block() {
     let mut ctx = linux_ctx("tests/fixtures/ssh-weak");
     let mut reg: Vec<RegisteredCheck> = Vec::new();
     register_all(&mut reg);
-    let subset: Vec<RegisteredCheck> = reg.into_iter().filter(|c| c.tc.id == "LIN-SSH-001").collect();
+    let subset: Vec<RegisteredCheck> = reg
+        .into_iter()
+        .filter(|c| c.tc.id == "LIN-SSH-001")
+        .collect();
     let out = run_all(&subset, &mut ctx).remove(0);
     assert_eq!(out.status, Status::NonCompliant);
-    assert_eq!(out.evidence_blocks.len(), 1, "ssh_kv must attach the pinpoint block");
+    assert_eq!(
+        out.evidence_blocks.len(),
+        1,
+        "ssh_kv must attach the pinpoint block"
+    );
     assert_eq!(out.evidence_blocks[0].path, "/etc/ssh/sshd_config");
     assert_eq!(out.evidence_blocks[0].line, 1);
 }

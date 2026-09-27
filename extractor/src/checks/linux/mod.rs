@@ -1,17 +1,17 @@
 //! Linux check modules. Shared helpers live here; one file per CIS
 //! section below.
 
-pub mod firewall;
 pub mod auditd;
 pub mod containers;
+pub mod firewall;
 pub mod fsck;
 pub mod logging;
 pub mod network;
 pub mod pam;
 pub mod services;
-pub mod users;
 pub mod ssh;
 pub mod threat;
+pub mod users;
 
 use crate::context::ScanContext;
 

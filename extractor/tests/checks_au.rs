@@ -8,7 +8,9 @@ fn ctx_with(root: &str) -> ScanContext {
     let mut p = detect();
     p.os = Os::Linux;
     p.family = DistroFamily::Debian;
-    ScanContext::new(p, false).with_root_prefix(root).with_injector(Box::new(|_, _| None))
+    ScanContext::new(p, false)
+        .with_root_prefix(root)
+        .with_injector(Box::new(|_, _| None))
 }
 
 fn run_one(ctx: &mut ScanContext, id: &str) -> hbs_extractor::model::CheckResult {

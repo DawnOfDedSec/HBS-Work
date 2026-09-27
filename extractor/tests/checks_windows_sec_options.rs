@@ -28,59 +28,95 @@ fn sec_injector(pass: bool) -> CmdInjector {
 
 fn mock_reg_pass(path: &str, name: &str) -> Option<String> {
     match (path, name) {
-        (r"HKLM\SYSTEM\CurrentControlSet\Control\Lsa", "LmCompatibilityLevel") => {
-            Some(format!("\r\n    LmCompatibilityLevel    REG_DWORD    0x5\r\n"))
-        }
+        (r"HKLM\SYSTEM\CurrentControlSet\Control\Lsa", "LmCompatibilityLevel") => Some(format!(
+            "\r\n    LmCompatibilityLevel    REG_DWORD    0x5\r\n"
+        )),
         (r"HKLM\SYSTEM\CurrentControlSet\Control\Lsa", "NoLMHash") => {
             Some(format!("\r\n    NoLMHash    REG_DWORD    0x1\r\n"))
         }
-        (r"HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters", "RequireSecuritySignature") => {
-            Some(format!("\r\n    RequireSecuritySignature    REG_DWORD    0x1\r\n"))
-        }
-        (r"HKLM\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters", "RequireSecuritySignature") => {
-            Some(format!("\r\n    RequireSecuritySignature    REG_DWORD    0x1\r\n"))
-        }
+        (
+            r"HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters",
+            "RequireSecuritySignature",
+        ) => Some(format!(
+            "\r\n    RequireSecuritySignature    REG_DWORD    0x1\r\n"
+        )),
+        (
+            r"HKLM\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters",
+            "RequireSecuritySignature",
+        ) => Some(format!(
+            "\r\n    RequireSecuritySignature    REG_DWORD    0x1\r\n"
+        )),
         (r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", "EnableLUA") => {
             Some(format!("\r\n    EnableLUA    REG_DWORD    0x1\r\n"))
         }
-        (r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", "ConsentPromptBehaviorAdmin") => {
-            Some(format!("\r\n    ConsentPromptBehaviorAdmin    REG_DWORD    0x2\r\n"))
-        }
-        (r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", "EnableInstallerDetection") => {
-            Some(format!("\r\n    EnableInstallerDetection    REG_DWORD    0x1\r\n"))
-        }
-        (r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", "EnableSecureUIPaths") => {
-            Some(format!("\r\n    EnableSecureUIPaths    REG_DWORD    0x1\r\n"))
-        }
-        (r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", "EnableVirtualization") => {
-            Some(format!("\r\n    EnableVirtualization    REG_DWORD    0x1\r\n"))
-        }
-        (r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management", "ClearPageFileAtShutdown") => {
-            Some(format!("\r\n    ClearPageFileAtShutdown    REG_DWORD    0x1\r\n"))
-        }
+        (
+            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System",
+            "ConsentPromptBehaviorAdmin",
+        ) => Some(format!(
+            "\r\n    ConsentPromptBehaviorAdmin    REG_DWORD    0x2\r\n"
+        )),
+        (
+            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System",
+            "EnableInstallerDetection",
+        ) => Some(format!(
+            "\r\n    EnableInstallerDetection    REG_DWORD    0x1\r\n"
+        )),
+        (
+            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System",
+            "EnableSecureUIPaths",
+        ) => Some(format!(
+            "\r\n    EnableSecureUIPaths    REG_DWORD    0x1\r\n"
+        )),
+        (
+            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System",
+            "EnableVirtualization",
+        ) => Some(format!(
+            "\r\n    EnableVirtualization    REG_DWORD    0x1\r\n"
+        )),
+        (
+            r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management",
+            "ClearPageFileAtShutdown",
+        ) => Some(format!(
+            "\r\n    ClearPageFileAtShutdown    REG_DWORD    0x1\r\n"
+        )),
         (r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", "NoConnectedUser") => {
             Some(format!("\r\n    NoConnectedUser    REG_DWORD    0x3\r\n"))
         }
-        (r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", "InactivityTimeoutSecs") => {
-            Some(format!("\r\n    InactivityTimeoutSecs    REG_DWORD    0x384\r\n")) // 900
+        (
+            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System",
+            "InactivityTimeoutSecs",
+        ) => {
+            Some(format!(
+                "\r\n    InactivityTimeoutSecs    REG_DWORD    0x384\r\n"
+            )) // 900
         }
-        (r"HKLM\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Desktop", "ScreenSaverIsSecure") => {
-            Some(format!("\r\n    ScreenSaverIsSecure    REG_SZ    1\r\n"))
-        }
-        (r"HKLM\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Desktop", "ScreenSaveTimeOut") => {
-            Some(format!("\r\n    ScreenSaveTimeOut    REG_SZ    900\r\n"))
-        }
+        (
+            r"HKLM\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Desktop",
+            "ScreenSaverIsSecure",
+        ) => Some(format!("\r\n    ScreenSaverIsSecure    REG_SZ    1\r\n")),
+        (
+            r"HKLM\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Desktop",
+            "ScreenSaveTimeOut",
+        ) => Some(format!("\r\n    ScreenSaveTimeOut    REG_SZ    900\r\n")),
         (r"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon", "ForceUnlockLogon") => {
             Some(format!("\r\n    ForceUnlockLogon    REG_DWORD    0x1\r\n"))
         }
-        (r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", "dontdisplaylastusername") => {
-            Some(format!("\r\n    dontdisplaylastusername    REG_DWORD    0x1\r\n"))
-        }
-        (r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", "LegalNoticeCaption") => {
-            Some(format!("\r\n    LegalNoticeCaption    REG_SZ    Authorized Use Only\r\n"))
-        }
+        (
+            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System",
+            "dontdisplaylastusername",
+        ) => Some(format!(
+            "\r\n    dontdisplaylastusername    REG_DWORD    0x1\r\n"
+        )),
+        (
+            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System",
+            "LegalNoticeCaption",
+        ) => Some(format!(
+            "\r\n    LegalNoticeCaption    REG_SZ    Authorized Use Only\r\n"
+        )),
         (r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", "LegalNoticeText") => {
-            Some(format!("\r\n    LegalNoticeText    REG_SZ    All activities are monitored and logged.\r\n"))
+            Some(format!(
+                "\r\n    LegalNoticeText    REG_SZ    All activities are monitored and logged.\r\n"
+            ))
         }
         (r"HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters", "SMB1") => {
             Some(format!("\r\n    SMB1    REG_DWORD    0x0\r\n"))
@@ -91,66 +127,101 @@ fn mock_reg_pass(path: &str, name: &str) -> Option<String> {
         (r"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon", "CachedLogonsCount") => {
             Some(format!("\r\n    CachedLogonsCount    REG_SZ    4\r\n"))
         }
-        (r"HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters", "RestrictNullSessAccess") => {
-            Some(format!("\r\n    RestrictNullSessAccess    REG_DWORD    0x1\r\n"))
-        }
+        (
+            r"HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters",
+            "RestrictNullSessAccess",
+        ) => Some(format!(
+            "\r\n    RestrictNullSessAccess    REG_DWORD    0x1\r\n"
+        )),
         _ => None,
     }
 }
 
 fn mock_reg_fail(path: &str, name: &str) -> Option<String> {
     match (path, name) {
-        (r"HKLM\SYSTEM\CurrentControlSet\Control\Lsa", "LmCompatibilityLevel") => {
-            Some(format!("\r\n    LmCompatibilityLevel    REG_DWORD    0x2\r\n"))
-        }
+        (r"HKLM\SYSTEM\CurrentControlSet\Control\Lsa", "LmCompatibilityLevel") => Some(format!(
+            "\r\n    LmCompatibilityLevel    REG_DWORD    0x2\r\n"
+        )),
         (r"HKLM\SYSTEM\CurrentControlSet\Control\Lsa", "NoLMHash") => {
             Some(format!("\r\n    NoLMHash    REG_DWORD    0x0\r\n"))
         }
-        (r"HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters", "RequireSecuritySignature") => {
-            Some(format!("\r\n    RequireSecuritySignature    REG_DWORD    0x0\r\n"))
-        }
-        (r"HKLM\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters", "RequireSecuritySignature") => {
-            Some(format!("\r\n    RequireSecuritySignature    REG_DWORD    0x0\r\n"))
-        }
+        (
+            r"HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters",
+            "RequireSecuritySignature",
+        ) => Some(format!(
+            "\r\n    RequireSecuritySignature    REG_DWORD    0x0\r\n"
+        )),
+        (
+            r"HKLM\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters",
+            "RequireSecuritySignature",
+        ) => Some(format!(
+            "\r\n    RequireSecuritySignature    REG_DWORD    0x0\r\n"
+        )),
         (r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", "EnableLUA") => {
             Some(format!("\r\n    EnableLUA    REG_DWORD    0x0\r\n"))
         }
-        (r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", "ConsentPromptBehaviorAdmin") => {
-            Some(format!("\r\n    ConsentPromptBehaviorAdmin    REG_DWORD    0x0\r\n"))
-        }
-        (r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", "EnableInstallerDetection") => {
-            Some(format!("\r\n    EnableInstallerDetection    REG_DWORD    0x0\r\n"))
-        }
-        (r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", "EnableSecureUIPaths") => {
-            Some(format!("\r\n    EnableSecureUIPaths    REG_DWORD    0x0\r\n"))
-        }
-        (r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", "EnableVirtualization") => {
-            Some(format!("\r\n    EnableVirtualization    REG_DWORD    0x0\r\n"))
-        }
-        (r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management", "ClearPageFileAtShutdown") => {
-            Some(format!("\r\n    ClearPageFileAtShutdown    REG_DWORD    0x0\r\n"))
-        }
+        (
+            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System",
+            "ConsentPromptBehaviorAdmin",
+        ) => Some(format!(
+            "\r\n    ConsentPromptBehaviorAdmin    REG_DWORD    0x0\r\n"
+        )),
+        (
+            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System",
+            "EnableInstallerDetection",
+        ) => Some(format!(
+            "\r\n    EnableInstallerDetection    REG_DWORD    0x0\r\n"
+        )),
+        (
+            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System",
+            "EnableSecureUIPaths",
+        ) => Some(format!(
+            "\r\n    EnableSecureUIPaths    REG_DWORD    0x0\r\n"
+        )),
+        (
+            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System",
+            "EnableVirtualization",
+        ) => Some(format!(
+            "\r\n    EnableVirtualization    REG_DWORD    0x0\r\n"
+        )),
+        (
+            r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management",
+            "ClearPageFileAtShutdown",
+        ) => Some(format!(
+            "\r\n    ClearPageFileAtShutdown    REG_DWORD    0x0\r\n"
+        )),
         (r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", "NoConnectedUser") => {
             Some(format!("\r\n    NoConnectedUser    REG_DWORD    0x1\r\n"))
         }
-        (r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", "InactivityTimeoutSecs") => {
-            Some(format!("\r\n    InactivityTimeoutSecs    REG_DWORD    0x708\r\n")) // 1800
+        (
+            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System",
+            "InactivityTimeoutSecs",
+        ) => {
+            Some(format!(
+                "\r\n    InactivityTimeoutSecs    REG_DWORD    0x708\r\n"
+            )) // 1800
         }
-        (r"HKLM\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Desktop", "ScreenSaverIsSecure") => {
-            Some(format!("\r\n    ScreenSaverIsSecure    REG_SZ    0\r\n"))
-        }
-        (r"HKLM\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Desktop", "ScreenSaveTimeOut") => {
-            Some(format!("\r\n    ScreenSaveTimeOut    REG_SZ    1800\r\n"))
-        }
+        (
+            r"HKLM\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Desktop",
+            "ScreenSaverIsSecure",
+        ) => Some(format!("\r\n    ScreenSaverIsSecure    REG_SZ    0\r\n")),
+        (
+            r"HKLM\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Desktop",
+            "ScreenSaveTimeOut",
+        ) => Some(format!("\r\n    ScreenSaveTimeOut    REG_SZ    1800\r\n")),
         (r"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon", "ForceUnlockLogon") => {
             Some(format!("\r\n    ForceUnlockLogon    REG_DWORD    0x0\r\n"))
         }
-        (r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", "dontdisplaylastusername") => {
-            Some(format!("\r\n    dontdisplaylastusername    REG_DWORD    0x0\r\n"))
-        }
-        (r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", "LegalNoticeCaption") => {
-            Some(format!("\r\n    LegalNoticeCaption    REG_SZ    \r\n"))
-        }
+        (
+            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System",
+            "dontdisplaylastusername",
+        ) => Some(format!(
+            "\r\n    dontdisplaylastusername    REG_DWORD    0x0\r\n"
+        )),
+        (
+            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System",
+            "LegalNoticeCaption",
+        ) => Some(format!("\r\n    LegalNoticeCaption    REG_SZ    \r\n")),
         (r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", "LegalNoticeText") => {
             Some(format!("\r\n    LegalNoticeText    REG_SZ    \r\n"))
         }
@@ -163,9 +234,12 @@ fn mock_reg_fail(path: &str, name: &str) -> Option<String> {
         (r"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon", "CachedLogonsCount") => {
             Some(format!("\r\n    CachedLogonsCount    REG_SZ    10\r\n"))
         }
-        (r"HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters", "RestrictNullSessAccess") => {
-            Some(format!("\r\n    RestrictNullSessAccess    REG_DWORD    0x0\r\n"))
-        }
+        (
+            r"HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters",
+            "RestrictNullSessAccess",
+        ) => Some(format!(
+            "\r\n    RestrictNullSessAccess    REG_DWORD    0x0\r\n"
+        )),
         _ => None,
     }
 }
@@ -215,7 +289,11 @@ fn each_sec_check_chains_reg_powershell_and_native_sources() {
     let sources: Vec<&str> = res.fallback_log.iter().map(|a| a.source.as_str()).collect();
     assert_eq!(
         sources,
-        ["reg query", "PowerShell Get-ItemProperty", "native registry"],
+        [
+            "reg query",
+            "PowerShell Get-ItemProperty",
+            "native registry"
+        ],
         "{}",
         res.evidence
     );
@@ -229,7 +307,10 @@ fn each_sec_check_accepts_a_single_independent_registry_source() {
     let res = run_one(&mut ctx, "WIN-SEC-019");
     assert_eq!(res.status, Status::Compliant, "{}", res.evidence);
     assert_eq!(
-        res.fallback_log.iter().map(|a| a.source.as_str()).collect::<Vec<_>>(),
+        res.fallback_log
+            .iter()
+            .map(|a| a.source.as_str())
+            .collect::<Vec<_>>(),
         ["reg query"]
     );
 }
@@ -265,7 +346,13 @@ fn missing_registry_keys_degrade_gracefully() {
             res.status,
             res.evidence
         );
-        assert!(res.degraded_reason.is_some(), "Check {id} degraded_reason missing");
-        assert!(!res.fallback_log.is_empty(), "Check {id} fallback_log missing");
+        assert!(
+            res.degraded_reason.is_some(),
+            "Check {id} degraded_reason missing"
+        );
+        assert!(
+            !res.fallback_log.is_empty(),
+            "Check {id} fallback_log missing"
+        );
     }
 }

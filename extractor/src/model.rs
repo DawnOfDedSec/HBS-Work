@@ -165,7 +165,10 @@ pub fn bounded_redact(s: &str) -> String {
     if redacted.chars().count() <= MAX_AUDIT_STRING {
         return redacted;
     }
-    let cut: String = redacted.chars().take(MAX_AUDIT_STRING.saturating_sub(1)).collect();
+    let cut: String = redacted
+        .chars()
+        .take(MAX_AUDIT_STRING.saturating_sub(1))
+        .collect();
     format!("{cut}\u{2026}")
 }
 

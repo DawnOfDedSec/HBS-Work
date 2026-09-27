@@ -7,7 +7,10 @@ use hbs_extractor::keyslot::{check_expiry, locate_unique, parse, SLOT_LEN};
 
 #[test]
 fn parses_typescript_patched_slot() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../fixtures/keyslot-ts-patched.bin");
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../fixtures/keyslot-ts-patched.bin"
+    );
     let Ok(bin) = std::fs::read(path) else {
         eprintln!("TS fixture absent; skipping cross-language check");
         return;

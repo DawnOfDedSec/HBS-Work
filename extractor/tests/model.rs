@@ -28,7 +28,11 @@ fn check_result_serializes_all_fields() {
             outcome: "ok".into(),
         }],
         evidence_blocks: vec![],
-        run_context: hbs_extractor::model::RunContext { user: "test".into(), uid: Some(1000), elevated: false },
+        run_context: hbs_extractor::model::RunContext {
+            user: "test".into(),
+            uid: Some(1000),
+            elevated: false,
+        },
         duration_ms: 3,
     };
     let v: serde_json::Value = serde_json::to_value(&r).unwrap();
