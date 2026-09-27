@@ -73,6 +73,22 @@ fi
 
 # --- prerequisites -----------------------------------------------------------
 command -v git >/dev/null 2>&1 || fail "git is required (install it, then re-run)"
+command -v curl >/dev/null 2>&1 || fail "curl is required (install it, then re-run)"
+
+# unzip + ca-certificates are required by the Bun bootstrap; install via the
+# system package manager when missing (best-effort across common distros).
+if ! command -v unzip >/dev/null 2>&1; then
+  log "installing unzip (required by the Bun runtime)…"
+  SUDO=""; [[ "$(id -u)" -ne 0 ]] && command -v sudo >/dev/null 2>&1 && SUDO="sudo"
+  if command -v apt-get >/dev/null 2>&1; then $SUDO apt-get update -qq && $SUDO apt-get install -y -qq unzip ca-certificates
+  elif command -v dnf >/dev/null 2>&1; then $SUDO dnf install -y -q unzip ca-certificates
+  elif command -v yum >/dev/null 2>&1; then $SUDO yum install -y -q unzip ca-certificates
+  elif command -v apk >/dev/null 2>&1; then $SUDO apk add --no-cache unzip ca-certificates
+  elif command -v zypper >/dev/null 2>&1; then $SUDO zypper --non-interactive install unzip ca-certificates
+  fi
+fi
+command -v unzip >/dev/null 2>&1 || fail "unzip is required (install it, then re-run)"
+
 if ! command -v bun >/dev/null 2>&1; then
   log "installing Bun runtime…"
   curl -fsSL https://bun.sh/install | bash
