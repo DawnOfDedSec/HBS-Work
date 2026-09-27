@@ -166,7 +166,7 @@ export function NetworkUploadModal({ open, campaignId, locationId, locationName,
             addFiles([...event.dataTransfer.files]);
           }}
           className={`flex cursor-pointer flex-col items-center gap-2 rounded-control border border-dashed p-6 text-center transition-colors ${
-            dragging ? "border-accent bg-accent/5" : "border-hairline hover:border-hairline-strong"
+            dragging ? "border-accent bg-accent/5" : "border-control-edge hover:border-control-edge-strong"
           }`}
         >
           <FileUp size={22} aria-hidden className="text-ink-subtle" />

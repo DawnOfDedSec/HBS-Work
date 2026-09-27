@@ -311,7 +311,7 @@ export function Downloads({ campaignId, locationId, onBack }: DownloadsProps) {
               <div className="flex flex-wrap items-center gap-2">
                 <a
                   href={issuance.downloadUrl}
-                  className="inline-flex items-center gap-1.5 rounded-control border border-hairline bg-surface-raised px-3 py-1.5 text-xs text-ink hover:border-hairline-strong"
+                  className="inline-flex items-center gap-1.5 rounded-control border border-control-edge bg-surface-raised px-3 py-1.5 text-xs text-ink hover:border-control-edge-strong"
                 >
                   <Download size={13} aria-hidden /> Download artifact ({issuance.downloadCount})
                 </a>

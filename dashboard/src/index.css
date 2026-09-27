@@ -1,6 +1,36 @@
 @import "tailwindcss";
 
 /*
+ * Fonts (self-hosted, and that is not a preference).
+ *
+ * The console is deployed into air-gapped networks, so a fonts.googleapis
+ * link is not merely slow, it never resolves. Both families ship as
+ * variable woff2 in public/fonts and are preloaded from index.html.
+ *
+ * `Inter` is the UI face this console already declared: it is tuned for
+ * dense small text, and 11px labels are the most common text style here.
+ * `JetBrains Mono` carries identifiers, hashes, machine-ids and commands.
+ * 78 KB for both, latin subset. src/tokens.test.ts fails the build if a
+ * face is declared but its file is missing, which is exactly how this
+ * console spent its life declaring Inter and rendering in Segoe UI.
+ */
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/inter-latin-var.woff2") format("woff2");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/jbmono-latin-var.woff2") format("woff2");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/*
  * HBS Console design system.
  *
  * Everything below is expressed as semantic tokens so components never carry
@@ -8,6 +38,17 @@
  * `:root`; the light theme re-declares the same properties under
  * `[data-theme="light"]`, so a single utility (`bg-surface`, `text-critical`)
  * adapts to the active theme at runtime.
+ *
+ * Contrast contract (enforced by src/tokens.test.ts): every text token clears
+ * WCAG AA 4.5:1 against every surface it can be painted on, and every control
+ * boundary token clears the 3:1 of 1.4.11 against the surfaces it borders.
+ * Two consequences worth knowing before editing:
+ *   - Surfaces are not interchangeable. `ink-subtle` is tuned against the
+ *     *lightest* dark surface (`surface-overlay`) and the *darkest* light one
+ *     (`surface-sunken`); a new lighter/darker surface can break it.
+ *   - Chrome accents and severity tones are separate channels. `control-edge`
+ *     exists so interactive boundaries can be strengthened without touching
+ *     `hairline`, which is what keeps the dense tables calm.
  */
 
 @theme {
@@ -31,10 +72,18 @@
   --color-hairline-strong: #33475c;
   --color-hairline-soft: #1a2532;
 
+  /* Control boundaries (WCAG 1.4.11) ---------------------------------- */
+  /* Distinct from `hairline` on purpose: dividers stay quiet, but a control
+     whose border is the only thing identifying it must clear 3:1 against both
+     its own fill and the surface behind it. */
+  --color-control-edge: #527293;
+  --color-control-edge-strong: #6b8cae;
+
   /* Text -------------------------------------------------------------- */
   --color-ink: #e9eff7;
   --color-ink-muted: #9fb0c3;
-  --color-ink-subtle: #6d8098;
+  /* tuned against surface-overlay, the lightest dark surface (4.51:1) */
+  --color-ink-subtle: #798ea9;
   --color-ink-inverse: #0b0f14;
 
   /* Accents ----------------------------------------------------------- */
@@ -48,6 +97,7 @@
   --color-critical: #fb7185;
   --color-critical-strong: #f43f5e;
   --color-critical-soft: #3a1620;
+  --color-critical-contrast: #0b0f14;
   --color-high: #fbbf24;
   --color-high-strong: #f59e0b;
   --color-high-soft: #3a2a10;
@@ -118,24 +168,28 @@
   --color-hairline-strong: #b9c6d8;
   --color-hairline-soft: #e6ebf3;
 
+  --color-control-edge: #7d8693;
+  --color-control-edge-strong: #6b7480;
+
   --color-ink: #0f172a;
   --color-ink-muted: #4a5a70;
-  --color-ink-subtle: #6b7c93;
+  --color-ink-subtle: #5e6d81;
   --color-ink-inverse: #f8fafc;
 
-  --color-accent: #0284c7;
-  --color-accent-strong: #0369a1;
+  --color-accent: #0369a1;
+  --color-accent-strong: #075985;
   --color-accent-soft: #e0f2fe;
   --color-accent-contrast: #f0f9ff;
-  --color-focus: #0284c7;
+  --color-focus: #0369a1;
 
   --color-critical: #b91c1c;
   --color-critical-strong: #991b1b;
   --color-critical-soft: #fee2e2;
-  --color-high: #b45309;
+  --color-critical-contrast: #ffffff;
+  --color-high: #ac5009;
   --color-high-strong: #92400e;
   --color-high-soft: #fef3c7;
-  --color-medium: #a16207;
+  --color-medium: #985d07;
   --color-medium-soft: #fef9c3;
   --color-low: #0369a1;
   --color-low-soft: #e0f2fe;
@@ -146,7 +200,7 @@
   --color-compliant-soft: #d1fae5;
   --color-noncompliant: #b91c1c;
   --color-noncompliant-soft: #fee2e2;
-  --color-degraded: #b45309;
+  --color-degraded: #ac5009;
   --color-degraded-soft: #fef3c7;
   --color-na: #475569;
   --color-na-soft: #e2e8f0;
@@ -155,7 +209,7 @@
 
   --color-treatment-open: #0369a1;
   --color-treatment-open-soft: #e0f2fe;
-  --color-treatment-accepted: #b45309;
+  --color-treatment-accepted: #ac5009;
   --color-treatment-accepted-soft: #fef3c7;
   --color-treatment-false-positive: #475569;
   --color-treatment-false-positive-soft: #e2e8f0;
@@ -164,7 +218,7 @@
 
   --color-evidence-primary: #047857;
   --color-evidence-primary-soft: #d1fae5;
-  --color-evidence-fallback: #b45309;
+  --color-evidence-fallback: #ac5009;
   --color-evidence-fallback-soft: #fef3c7;
   --color-evidence-degraded: #475569;
   --color-evidence-degraded-soft: #e2e8f0;

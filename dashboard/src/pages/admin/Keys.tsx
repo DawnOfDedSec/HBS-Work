@@ -212,7 +212,7 @@ export function Keys({ role: providedRole }: { role?: AdminRole | null } = {}) {
         <div className="flex items-center justify-end gap-1.5">
           <a
             href={api.downloadUrl(issuance.id)}
-            className="inline-flex items-center gap-1 rounded-control border border-hairline bg-surface-raised px-2 py-1 text-xs text-ink hover:border-hairline-strong"
+            className="inline-flex items-center gap-1 rounded-control border border-control-edge bg-surface-raised px-2 py-1 text-xs text-ink hover:border-control-edge-strong"
           >
             <Download size={12} aria-hidden /> Artifact
           </a>
@@ -393,7 +393,7 @@ function RevokeModal({
             rows={3}
             value={reason}
             onChange={(event) => setReason(event.target.value)}
-            className="mt-1 w-full rounded-control border border-hairline bg-surface-raised px-3 py-2 text-sm text-ink placeholder:text-ink-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            className="mt-1 w-full rounded-control border border-control-edge bg-surface-raised px-3 py-2 text-sm text-ink placeholder:text-ink-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           />
         </label>
         {error ? (

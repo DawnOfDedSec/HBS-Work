@@ -73,7 +73,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
             SIZE_CLASS[size],
             Icon ? "pl-9" : "pl-3",
             trailing ? "pr-10" : "pr-3",
-            isInvalid ? "border-critical/60" : "border-hairline hover:border-hairline-strong",
+            isInvalid ? "border-critical/60" : "border-control-edge hover:border-control-edge-strong",
             focusRing,
             className,
           )}

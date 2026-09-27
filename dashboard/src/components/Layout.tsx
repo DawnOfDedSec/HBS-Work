@@ -201,7 +201,7 @@ export function Layout({
               type="button"
               onClick={() => setPaletteOpen(true)}
               className={cn(
-                "group flex h-9 items-center gap-2 rounded-control border border-hairline bg-surface px-3 text-sm text-ink-subtle transition-colors hover:border-hairline-strong hover:text-ink",
+                "group flex h-9 items-center gap-2 rounded-control border border-control-edge bg-surface px-3 text-sm text-ink-subtle transition-colors hover:border-control-edge-strong hover:text-ink",
                 focusRing,
               )}
             >
@@ -231,7 +231,7 @@ export function Layout({
                 aria-expanded={menuOpen}
                 onClick={() => setMenuOpen((value) => !value)}
                 className={cn(
-                  "flex h-9 items-center gap-2 rounded-control border border-hairline bg-surface px-2 pr-2.5 text-sm hover:border-hairline-strong",
+                  "flex h-9 items-center gap-2 rounded-control border border-control-edge bg-surface px-2 pr-2.5 text-sm hover:border-control-edge-strong",
                   focusRing,
                 )}
               >

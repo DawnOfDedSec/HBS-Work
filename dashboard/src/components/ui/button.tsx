@@ -22,10 +22,10 @@ const VARIANT_CLASS: Record<ButtonVariant, string> = {
   primary:
     "bg-accent text-accent-contrast border border-transparent shadow-panel hover:bg-accent-strong active:translate-y-px",
   secondary:
-    "bg-surface-raised text-ink border border-hairline hover:border-hairline-strong hover:bg-surface-overlay",
+    "bg-surface-raised text-ink border border-control-edge hover:border-control-edge-strong hover:bg-surface-overlay",
   ghost: "bg-transparent text-ink-muted border border-transparent hover:bg-surface-raised hover:text-ink",
   danger:
-    "bg-critical-strong text-white border border-transparent shadow-panel hover:brightness-110 active:translate-y-px",
+    "bg-critical-strong text-critical-contrast border border-transparent shadow-panel hover:brightness-110 active:translate-y-px",
   subtle: "bg-accent-soft text-accent border border-transparent hover:brightness-110",
 };
 
@@ -126,7 +126,7 @@ export function ButtonGroup({ children, className }: ButtonGroupProps) {
     <div
       role="group"
       className={cn(
-        "inline-flex items-center gap-0.5 rounded-control border border-hairline bg-surface-raised p-0.5",
+        "inline-flex items-center gap-0.5 rounded-control border border-control-edge bg-surface-raised p-0.5",
         className,
       )}
     >

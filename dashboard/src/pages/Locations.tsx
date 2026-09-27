@@ -344,7 +344,7 @@ export function Locations({ campaignId, role, onOpenHost, onOpenDownloads, onOpe
                         <button
                           type="button"
                           onClick={() => onOpenHost?.(host.id)}
-                          className="rounded-full border border-hairline bg-surface-raised px-2 py-0.5 text-2xs text-ink-muted hover:border-hairline-strong hover:text-ink"
+                          className="rounded-full border border-control-edge bg-surface-raised px-2 py-0.5 text-2xs text-ink-muted hover:border-control-edge-strong hover:text-ink"
                         >
                           {sanitizeText(host.displayId)}
                         </button>
@@ -370,7 +370,7 @@ export function Locations({ campaignId, role, onOpenHost, onOpenDownloads, onOpe
                             type="button"
                             onClick={() => onOpenNetworkDevice?.(device.id)}
                             title={`Review score ${device.score === null ? "-" : device.score.toFixed(0)}`}
-                            className="inline-flex items-center gap-1.5 rounded-full border border-hairline bg-surface-raised px-2 py-0.5 text-2xs text-ink-muted hover:border-hairline-strong hover:text-ink"
+                            className="inline-flex items-center gap-1.5 rounded-full border border-control-edge bg-surface-raised px-2 py-0.5 text-2xs text-ink-muted hover:border-control-edge-strong hover:text-ink"
                           >
                             <span className="max-w-28 truncate">{sanitizeText(device.hostname) || `#${device.id}`}</span>
                             {device.score !== null ? (

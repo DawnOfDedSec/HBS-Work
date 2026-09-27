@@ -1,9 +1,45 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>HBS Dashboard</title>
+    <meta name="color-scheme" content="dark light" />
+    <meta
+      name="description"
+      content="HBS Console: campaign issuance, host review and finding triage for offline baseline security scans."
+    />
+    <title>HBS Console</title>
+
+    <!-- Self-hosted fonts (see src/index.css). Preloaded so the UI face is
+         ready for the first paint; nothing is fetched from a third party. -->
+    <link rel="preload" href="/fonts/inter-latin-var.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/jbmono-latin-var.woff2" as="font" type="font/woff2" crossorigin />
+
+    <!--
+      Apply the stored theme before the first paint. useTheme() does this in a
+      layout effect, which runs after the browser has already painted the dark
+      canvas, so a light-theme user saw a dark flash on every load. The key here
+      must match STORAGE_KEY in src/useTheme.ts; a test asserts that it does.
+    -->
+    <script>
+      try {
+        if (localStorage.getItem("hbs-theme") === "light") {
+          document.documentElement.dataset.theme = "light";
+        }
+      } catch (error) {
+        /* storage can be unavailable (private mode); the default theme applies */
+      }
+    </script>
+
+    <!-- Painted before the stylesheet arrives, so there is no white flash. -->
+    <style>
+      html {
+        background: #0b0f14;
+      }
+      html[data-theme="light"] {
+        background: #f4f6fb;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

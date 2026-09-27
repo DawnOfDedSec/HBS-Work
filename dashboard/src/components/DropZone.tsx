@@ -166,7 +166,7 @@ export function DropZone({ onReportArrived, className }: DropZoneProps) {
           className={
             dragging
               ? "rounded-panel border-2 border-dashed border-accent bg-accent-soft/50 p-6 text-center"
-              : "rounded-panel border-2 border-dashed border-hairline bg-surface-sunken/60 p-6 text-center"
+              : "rounded-panel border-2 border-dashed border-control-edge bg-surface-sunken/60 p-6 text-center"
           }
         >
           <FileUp className="mx-auto text-ink-subtle" size={26} aria-hidden />
@@ -240,7 +240,7 @@ export function DropZone({ onReportArrived, className }: DropZoneProps) {
                     {entry.result.duplicate ? <Badge tone="high">Duplicate replay</Badge> : null}
                     <a
                       href={entry.result.links.campaign}
-                      className="rounded-full border border-hairline bg-surface-raised px-2 py-0.5 text-ink-muted hover:text-ink"
+                      className="rounded-full border border-control-edge bg-surface-raised px-2 py-0.5 text-ink-muted hover:text-ink"
                     >
                       Campaign #{entry.result.campaignId}
                     </a>
@@ -249,7 +249,7 @@ export function DropZone({ onReportArrived, className }: DropZoneProps) {
                     </span>
                     <a
                       href={entry.result.links.location}
-                      className="rounded-full border border-hairline bg-surface-raised px-2 py-0.5 text-ink-muted hover:text-ink"
+                      className="rounded-full border border-control-edge bg-surface-raised px-2 py-0.5 text-ink-muted hover:text-ink"
                     >
                       Location #{entry.result.locationId}
                     </a>
@@ -258,7 +258,7 @@ export function DropZone({ onReportArrived, className }: DropZoneProps) {
                     </span>
                     <a
                       href={entry.result.links.host}
-                      className="rounded-full border border-hairline bg-surface-raised px-2 py-0.5 text-ink-muted hover:text-ink"
+                      className="rounded-full border border-control-edge bg-surface-raised px-2 py-0.5 text-ink-muted hover:text-ink"
                     >
                       Host #{entry.result.hostId}
                     </a>

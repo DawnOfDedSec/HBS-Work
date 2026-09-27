@@ -500,7 +500,7 @@ function TreatmentModal({
               onChange={(event) => setJustification(event.target.value)}
               rows={3}
               aria-invalid={justificationMissing}
-              className="mt-1 w-full rounded-control border border-hairline bg-surface-raised px-3 py-2 text-sm text-ink placeholder:text-ink-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+              className="mt-1 w-full rounded-control border border-control-edge bg-surface-raised px-3 py-2 text-sm text-ink placeholder:text-ink-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
             />
           </label>
           <div className="grid gap-3 sm:grid-cols-2">

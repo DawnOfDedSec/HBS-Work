@@ -159,6 +159,13 @@ const distDir = resolve(import.meta.dir, "..", "dist");
 const indexHtml = join(distDir, "index.html");
 if (existsSync(indexHtml)) {
   app.use("/assets/*", serveStatic({ root: distDir }));
+  // Self-hosted fonts live in public/fonts, so Vite emits them to
+  // dist/fonts. Serving only /assets/* meant every font request fell
+  // through to the SPA fallback below, got the HTML shell back, and the
+  // browser quietly used the OS default face - in production only, since
+  // `bun run dev` lets Vite serve public/ itself. Guarded by
+  // server/static.test.ts.
+  app.use("/fonts/*", serveStatic({ root: distDir }));
   app.get("*", (c, next) => {
     if (c.req.path.startsWith("/api/")) return next();
     return serveStatic({ path: indexHtml })(c, next);

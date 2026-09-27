@@ -78,7 +78,7 @@ export function LiveActivity({ onOpenReport, onOpenHost, onOpenNetworkDevice }: 
             });
           }}
           className={cn(
-            "relative inline-flex h-9 w-9 items-center justify-center rounded-control border border-hairline bg-surface text-ink-muted hover:border-hairline-strong hover:text-ink",
+            "relative inline-flex h-9 w-9 items-center justify-center rounded-control border border-control-edge bg-surface text-ink-muted hover:border-control-edge-strong hover:text-ink",
             focusRing,
           )}
         >

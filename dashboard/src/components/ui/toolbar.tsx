@@ -15,7 +15,7 @@ export function Toolbar({ children, label, className }: ToolbarProps) {
       role="toolbar"
       aria-label={label}
       className={cn(
-        "flex flex-wrap items-center gap-2 rounded-control border border-hairline bg-surface px-3 py-2",
+        "flex flex-wrap items-center gap-2 rounded-control border border-control-edge bg-surface px-3 py-2",
         className,
       )}
     >

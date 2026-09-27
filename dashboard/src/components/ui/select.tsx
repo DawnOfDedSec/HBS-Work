@@ -61,7 +61,7 @@ export function Select({
           className={cn(
             "w-full appearance-none rounded-control border bg-surface-raised pr-8 text-ink transition-colors",
             size === "sm" ? "h-8 pl-2.5 text-xs" : "h-9 pl-3 text-sm",
-            isInvalid ? "border-critical/60" : "border-hairline hover:border-hairline-strong",
+            isInvalid ? "border-critical/60" : "border-control-edge hover:border-control-edge-strong",
             focusRing,
           )}
           {...rest}

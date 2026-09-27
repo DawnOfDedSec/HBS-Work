@@ -93,7 +93,7 @@ export function Pagination({
                   focusRing,
                   entry === current
                     ? "border-accent/40 bg-accent-soft text-accent"
-                    : "border-hairline bg-surface-raised text-ink-muted hover:text-ink",
+                    : "border-control-edge bg-surface-raised text-ink-muted hover:text-ink",
                 )}
               >
                 {entry}

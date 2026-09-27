@@ -1,31 +1,78 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { FolderKanban, LayoutDashboard, Network, Server } from "lucide-react";
 import { api } from "./api";
 import { Layout } from "./components/Layout";
 import { Toaster } from "./components/Toaster";
 import type { BreadcrumbItem } from "./components/ui";
-import { AdminHub } from "./pages/AdminHub";
-import { CampaignDetail } from "./pages/CampaignDetail";
-import { Campaigns } from "./pages/Campaigns";
-import { CheckDetail } from "./pages/CheckDetail";
-import { Downloads } from "./pages/Downloads";
-import { Executive } from "./pages/Executive";
-import { Findings } from "./pages/Findings";
-import { HostDetail } from "./pages/HostDetail";
-import { Locations } from "./pages/Locations";
 import { Login } from "./pages/Login";
-import { NetworkDeviceDetail } from "./pages/NetworkDeviceDetail";
-import { NetworkReportDetail } from "./pages/NetworkReportDetail";
-import { Overview } from "./pages/Overview";
-import { Remediation } from "./pages/Remediation";
-import { ReportDetail } from "./pages/ReportDetail";
 import { Setup } from "./pages/Setup";
-import { Standards } from "./pages/Standards";
-import { Telemetry } from "./pages/Telemetry";
-import { Treatment } from "./pages/Treatment";
 import { navItem, routeLabel, type RouteKey } from "./routes";
+
+/**
+ * Route-level code splitting.
+ *
+ * This console is a state machine over `RouteKey` rather than a router, so every
+ * page used to be a static import: a single bundle containing all 20 pages, the
+ * chart library and every table renderer, which the login screen downloaded in
+ * full before it could draw a password field. Each page is now its own chunk,
+ * fetched the first time its route is opened; after that it is cached.
+ *
+ * Login and Setup stay eager on purpose. They render before any route exists,
+ * so splitting them would add a second round trip to the very first paint an
+ * operator sees, which is the one moment a spinner is least welcome.
+ */
+const AdminHub = lazy(async () => ({ default: (await import("./pages/AdminHub")).AdminHub }));
+const CampaignDetail = lazy(async () => ({ default: (await import("./pages/CampaignDetail")).CampaignDetail }));
+const Campaigns = lazy(async () => ({ default: (await import("./pages/Campaigns")).Campaigns }));
+const CheckDetail = lazy(async () => ({ default: (await import("./pages/CheckDetail")).CheckDetail }));
+const Downloads = lazy(async () => ({ default: (await import("./pages/Downloads")).Downloads }));
+const Executive = lazy(async () => ({ default: (await import("./pages/Executive")).Executive }));
+const Findings = lazy(async () => ({ default: (await import("./pages/Findings")).Findings }));
+const HostDetail = lazy(async () => ({ default: (await import("./pages/HostDetail")).HostDetail }));
+const Locations = lazy(async () => ({ default: (await import("./pages/Locations")).Locations }));
+const NetworkDeviceDetail = lazy(async () => ({ default: (await import("./pages/NetworkDeviceDetail")).NetworkDeviceDetail }));
+const NetworkReportDetail = lazy(async () => ({ default: (await import("./pages/NetworkReportDetail")).NetworkReportDetail }));
+const Overview = lazy(async () => ({ default: (await import("./pages/Overview")).Overview }));
+const Remediation = lazy(async () => ({ default: (await import("./pages/Remediation")).Remediation }));
+const ReportDetail = lazy(async () => ({ default: (await import("./pages/ReportDetail")).ReportDetail }));
+const Standards = lazy(async () => ({ default: (await import("./pages/Standards")).Standards }));
+const Telemetry = lazy(async () => ({ default: (await import("./pages/Telemetry")).Telemetry }));
+const Treatment = lazy(async () => ({ default: (await import("./pages/Treatment")).Treatment }));
 import { LiveEventsProvider } from "./useLiveEvents";
 import type { AuthUser } from "./types";
+
+/** Placeholder while a route chunk is in flight, sized so the layout does not jump. */
+/**
+ * Suspense fallback for the lazy routes.
+ *
+ * Route chunks are small and cached after the first visit, so the fetch
+ * normally resolves inside a frame or two. Rendering a spinner immediately
+ * meant *every* navigation flashed one, including ones with nothing to wait
+ * for - the indicator became noise. It now waits before appearing, so fast
+ * navigations look instant and the spinner is reserved for a genuine wait.
+ * The reserved height keeps the page from collapsing and springing back
+ * while it is blank.
+ */
+export function PageFallback() {
+  const [waited, setWaited] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setWaited(true), 200);
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (!waited) return <div className="min-h-[280px]" aria-busy="true" />;
+
+  return (
+    <div className="flex min-h-[280px] items-center justify-center" role="status" aria-live="polite">
+      <span
+        className="h-5 w-5 animate-spin rounded-full border-2 border-hairline border-t-accent"
+        aria-hidden
+      />
+      <span className="sr-only">Loading page…</span>
+    </div>
+  );
+}
 
 type Phase = "loading" | "setup" | "login" | "ready";
 
@@ -325,7 +372,8 @@ export function App() {
           onOpenCampaign={openCampaign}
           breadcrumbs={breadcrumbs}
         >
-          {workspace()}
+          {/* Keeps the chrome stable while a route chunk arrives. */}
+          <Suspense fallback={<PageFallback />}>{workspace()}</Suspense>
         </Layout>
       </LiveEventsProvider>
     );

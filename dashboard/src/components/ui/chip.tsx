@@ -32,7 +32,7 @@ export function Chip({ label, value, icon: Icon, onRemove, onClick, active = fal
     "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-2xs",
     active
       ? "border-accent/40 bg-accent-soft text-accent"
-      : "border-hairline bg-surface-raised text-ink",
+      : "border-control-edge bg-surface-raised text-ink",
     className,
   );
 
