@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # HBS Console installer for Linux and macOS.
 #
-#   curl -fsSL https://raw.githubusercontent.com/DawnOfDedSec/HBS-Work/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/DawnOfDedSec/HBS-Tool/main/scripts/install.sh | bash
 #
 # Installs or updates: Bun (runtime), the HBS repo (app), the `hbs` control
 # CLI, and a background service (systemd user unit on Linux, LaunchAgent on
@@ -14,7 +14,7 @@ HBS_HOME="${HBS_HOME:-$HOME/.hbs}"
 APP_DIR="$HBS_HOME/app"
 DATA_DIR="$HBS_HOME/data"
 BIN_DIR="$HOME/.local/bin"
-REPO_URL="${HBS_REPO_URL:-https://github.com/DawnOfDedSec/HBS-Work.git}"
+REPO_URL="${HBS_REPO_URL:-https://github.com/DawnOfDedSec/HBS-Tool.git}"
 BRANCH="${HBS_BRANCH:-main}"
 PORT="${HBS_PORT:-3000}"
 SERVICE="hbs"

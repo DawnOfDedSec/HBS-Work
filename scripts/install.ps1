@@ -1,6 +1,6 @@
 ﻿# HBS Console installer for Windows.
 #
-#   irm https://raw.githubusercontent.com/DawnOfDedSec/HBS-Work/main/scripts/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/DawnOfDedSec/HBS-Tool/main/scripts/install.ps1 | iex
 #
 # Installs or updates: Bun (runtime), the HBS repo (app), the `hbs` command,
 # and a startup tray icon that runs the server in the background.
@@ -14,7 +14,7 @@ param(
   [switch]$Update,
   [switch]$Uninstall,
   [switch]$Purge,
-  [string]$RepoUrl = "https://github.com/DawnOfDedSec/HBS-Work.git",
+  [string]$RepoUrl = "https://github.com/DawnOfDedSec/HBS-Tool.git",
   [string]$Branch = "main"
 )
 
