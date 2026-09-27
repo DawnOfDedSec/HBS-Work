@@ -1,7 +1,7 @@
 /** DocBlock primitives shared by the docs reader and pages. */
 export type DocBlock =
   | { type: 'text'; content: string }
-  | { type: 'h3'; content: string }
+  | { type: 'h2'; content: string }
   | { type: 'code'; content: string; lang?: string; title?: string }
   | { type: 'table'; headers: string[]; rows: string[][] }
   | { type: 'list'; items: string[] }
@@ -20,7 +20,7 @@ export const DOC_SECTIONS: DocSection[] = [
     title: 'Getting started',
     blurb: 'Install the dashboard, sign in, issue a patched extractor, run the read-only scan, and read your first results.',
     content: [
-      { type: 'h3', content: '1. Install and open the dashboard' },
+      { type: 'h2', content: '1. Install and open the dashboard' },
       {
         type: 'text',
         content:
@@ -49,7 +49,7 @@ export const DOC_SECTIONS: DocSection[] = [
         content:
           'On first launch the server creates a superuser account and prints its credentials once in the terminal or service log. Sign in with those and change the password under Admin → Users; after that everything happens in the browser.',
       },
-      { type: 'h3', content: '2. Create a campaign and generate an extractor' },
+      { type: 'h2', content: '2. Create a campaign and generate an extractor' },
       {
         type: 'text',
         content:
@@ -64,7 +64,7 @@ export const DOC_SECTIONS: DocSection[] = [
           "Pick the platform of the machines you will scan (linux-amd64 or windows-amd64) and download the file. Reports it produces can only be opened by this dashboard.",
         ],
       },
-      { type: 'h3', content: '3. Scan a server (offline, read-only)' },
+      { type: 'h2', content: '3. Scan a server (offline, read-only)' },
       {
         type: 'text',
         content:
@@ -85,7 +85,7 @@ hbs-extractor.exe --no-elevate --quiet`,
         content:
           'That is the whole scan: strictly read-only, no internet access, exactly one file written (hbs-report-*.hbs). On Windows, double-clicking the .exe also works; use --elevate for admin-only checks (declining the UAC prompt is safe).',
       },
-      { type: 'h3', content: '4. Get the report into the dashboard' },
+      { type: 'h2', content: '4. Get the report into the dashboard' },
       {
         type: 'list',
         items: [
@@ -98,7 +98,7 @@ hbs-extractor.exe --no-elevate --quiet`,
         content:
           'The host appears immediately via live notification. Campaign and location are derived from the issuance, and re-scanning a server auto-resolves findings that now pass.',
       },
-      { type: 'h3', content: '5. Read the results' },
+      { type: 'h2', content: '5. Read the results' },
       {
         type: 'table',
         headers: ['You are...', 'Open...', 'You get...'],
@@ -121,7 +121,7 @@ hbs-extractor.exe --no-elevate --quiet`,
         content:
           'This walkthrough takes one dashboard machine and one target server (here: Ubuntu) from nothing to a reviewed, exported report. Every step except copying files is a click in the browser.',
       },
-      { type: 'h3', content: 'Step 1: start the dashboard (5 minutes, one time)' },
+      { type: 'h2', content: 'Step 1: start the dashboard (5 minutes, one time)' },
       {
         type: 'code',
         lang: 'bash',
@@ -133,7 +133,7 @@ hbs-extractor.exe --no-elevate --quiet`,
         content:
           'The installer finishes with the console address (http://127.0.0.1:3000 on this machine) and one-time superuser credentials. Open the address in a browser, sign in, and change the password under Admin → Users.',
       },
-      { type: 'h3', content: 'Step 2: campaign, location, extractor (2 minutes)' },
+      { type: 'h2', content: 'Step 2: campaign, location, extractor (2 minutes)' },
       {
         type: 'list',
         items: [
@@ -148,7 +148,7 @@ hbs-extractor.exe --no-elevate --quiet`,
         content:
           'The downloaded file is tied to this issuance: it expires on schedule, can be revoked from the same page, and its reports can only be decrypted by this dashboard.',
       },
-      { type: 'h3', content: 'Step 3: scan the target server (2 minutes)' },
+      { type: 'h2', content: 'Step 3: scan the target server (2 minutes)' },
       {
         type: 'code',
         lang: 'bash',
@@ -161,7 +161,7 @@ hbs-extractor.exe --no-elevate --quiet`,
         content:
           'Unprivileged, offline, and done in about two minutes for the full catalog. It leaves exactly one new file next to itself: hbs-report-*.hbs. Copy that file back to the dashboard machine.',
       },
-      { type: 'h3', content: 'Step 4: upload and see results (1 minute)' },
+      { type: 'h2', content: 'Step 4: upload and see results (1 minute)' },
       {
         type: 'text',
         content:
@@ -175,7 +175,7 @@ hbs-extractor.exe --no-elevate --quiet`,
           'Executive Summary: the same result as a one-page narrative, ready to print or save as PDF.',
         ],
       },
-      { type: 'h3', content: 'Step 5: what to do next' },
+      { type: 'h2', content: 'Step 5: what to do next' },
       {
         type: 'list',
         items: [
@@ -198,7 +198,7 @@ hbs-extractor.exe --no-elevate --quiet`,
     title: 'Extractor reference',
     blurb: 'Every flag, exit code, and the strict read-only guarantee of the hbs-extractor binary.',
     content: [
-      { type: 'h3', content: 'Build' },
+      { type: 'h2', content: 'Build' },
       {
         type: 'code',
         lang: 'bash',
@@ -206,7 +206,7 @@ hbs-extractor.exe --no-elevate --quiet`,
 cargo build               # debug (includes the hidden --dev-insecure-key)
 cargo build --release     # LTO, stripped, panic=abort, opt-level=z`,
       },
-      { type: 'h3', content: 'Command-line flags' },
+      { type: 'h2', content: 'Command-line flags' },
       {
         type: 'table',
         headers: ['Flag', 'Meaning'],
@@ -230,7 +230,7 @@ cargo build --release     # LTO, stripped, panic=abort, opt-level=z`,
         content:
           'Hidden/internal: --elevated-child (relaunch guard) and, debug builds only, --dev-insecure-key <64-hex> - never present in release builds.',
       },
-      { type: 'h3', content: 'Environment variables' },
+      { type: 'h2', content: 'Environment variables' },
       {
         type: 'table',
         headers: ['Variable', 'Effect'],
@@ -241,7 +241,7 @@ cargo build --release     # LTO, stripped, panic=abort, opt-level=z`,
         content:
           'Supplying both HBS_PUSH_TOKEN and --push-token-file is an error. The token never appears in argv, the URL, logs, the self-audit, the report, or the keyslot.',
       },
-      { type: 'h3', content: 'Output & exit codes' },
+      { type: 'h2', content: 'Output & exit codes' },
       {
         type: 'list',
         items: [
@@ -252,13 +252,13 @@ cargo build --release     # LTO, stripped, panic=abort, opt-level=z`,
           'A network push failure does not fail the scan: the local report is kept and the summary shows a push-failed status.',
         ],
       },
-      { type: 'h3', content: 'Least privilege' },
+      { type: 'h2', content: 'Least privilege' },
       {
         type: 'text',
         content:
           'Scans always start unprivileged. Admin-only checks run only under an explicit --elevate (a single Windows UAC consent; Linux never invokes sudo). Declined elevation does not abort: remaining checks use read-only fallbacks and unresolved results become DegradedPartial.',
       },
-      { type: 'h3', content: 'Strict read-only guarantee' },
+      { type: 'h2', content: 'Strict read-only guarantee' },
       {
         type: 'text',
         content:
@@ -271,7 +271,7 @@ cargo build --release     # LTO, stripped, panic=abort, opt-level=z`,
     title: 'Dashboard reference',
     blurb: 'Hosting flags, roles, the ingest pipeline, console pages and the key API endpoints.',
     content: [
-      { type: 'h3', content: 'Install & run' },
+      { type: 'h2', content: 'Install & run' },
       {
         type: 'code',
         lang: 'bash',
@@ -280,7 +280,7 @@ bun install
 bun run dev                  # Vite dev server (SPA) + proxies /api to :3000
 bun run build && bun server/index.ts   # production single-process`,
       },
-      { type: 'h3', content: 'Hosting & configuration' },
+      { type: 'h2', content: 'Hosting & configuration' },
       {
         type: 'table',
         headers: ['HTTP flag', 'Env', 'Meaning'],
@@ -292,7 +292,7 @@ bun run build && bun server/index.ts   # production single-process`,
           ['-', 'HBS_DATA_ROOT', 'Keys/artifacts root (default server/data)'],
         ],
       },
-      { type: 'h3', content: 'First run & users' },
+      { type: 'h2', content: 'First run & users' },
       {
         type: 'list',
         items: [
@@ -302,7 +302,7 @@ bun run build && bun server/index.ts   # production single-process`,
           'Roles: super_admin (all), auditor (campaigns, issuances, ingest, treatment, exports), viewer (read-only).',
         ],
       },
-      { type: 'h3', content: 'Workflow' },
+      { type: 'h2', content: 'Workflow' },
       {
         type: 'list',
         items: [
@@ -315,7 +315,7 @@ bun run build && bun server/index.ts   # production single-process`,
           'Export - Excel, CSV, PDF (executive + technical), Word, diagnostic bundle.',
         ],
       },
-      { type: 'h3', content: 'Console pages' },
+      { type: 'h2', content: 'Console pages' },
       {
         type: 'table',
         headers: ['Page', 'Audience', 'What it does'],
@@ -332,7 +332,7 @@ bun run build && bun server/index.ts   # production single-process`,
           ['Admin', 'super_admin', 'Users, issuance keys, retention, audit log, encrypted backup/restore'],
         ],
       },
-      { type: 'h3', content: 'Key API endpoints' },
+      { type: 'h2', content: 'Key API endpoints' },
       {
         type: 'code',
         lang: 'text',
@@ -360,7 +360,7 @@ GET    /api/export/campaign/:id?format=…`,
     title: 'Security model',
     blurb: 'The .hbs v2 envelope, the binary keyslot, and the honest limits of the sealed-report design.',
     content: [
-      { type: 'h3', content: '.hbs v2 envelope (93-byte header, little-endian)' },
+      { type: 'h2', content: '.hbs v2 envelope (93-byte header, little-endian)' },
       {
         type: 'code',
         lang: 'text',
@@ -383,13 +383,13 @@ GET    /api/export/campaign/:id?format=…`,
           'The dashboard keeps a bounded HBS1 ingest path for migration only and never issues v1.',
         ],
       },
-      { type: 'h3', content: 'Keyslot (512 bytes, patched per issuance)' },
+      { type: 'h2', content: 'Keyslot (512 bytes, patched per issuance)' },
       {
         type: 'text',
         content:
           'Magic HBSKSLOT, version, flags, key id, campaign/extractor IDs, issued/expiry timestamps, 32-byte recipient public key, zero pad, SHA-256 checksum. Strict validation rejects absent/duplicate slots, nonzero flags/reserved/pad, nil IDs or key, and issued_at >= expiry. The checksum detects corruption, not trust.',
       },
-      { type: 'h3', content: 'Self-diagnosing report' },
+      { type: 'h2', content: 'Self-diagnosing report' },
       {
         type: 'list',
         items: [
@@ -399,7 +399,7 @@ GET    /api/export/campaign/:id?format=…`,
           'All strings are redacted and size-bounded before sealing.',
         ],
       },
-      { type: 'h3', content: 'Honest security statement' },
+      { type: 'h2', content: 'Honest security statement' },
       {
         type: 'text',
         content:
@@ -458,7 +458,7 @@ GET    /api/export/campaign/:id?format=…`,
     title: 'Validation & testing',
     blurb: 'Unit suites, the 13-distro Linux sweep, Windows Server Core matrices, and the E2E harnesses.',
     content: [
-      { type: 'h3', content: 'Unit / integration' },
+      { type: 'h2', content: 'Unit / integration' },
       {
         type: 'code',
         lang: 'bash',
@@ -467,7 +467,7 @@ cd dashboard && bun test                # Bun backend + frontend unit suite
 cd dashboard && bunx tsc --noEmit       # strict TypeScript
 cd dashboard && bunx playwright test    # browser E2E (gated by HBS_E2E=1)`,
       },
-      { type: 'h3', content: 'Real-world matrices' },
+      { type: 'h2', content: 'Real-world matrices' },
       {
         type: 'code',
         lang: 'bash',
@@ -481,7 +481,7 @@ cd dashboard && bun run ../scripts/e2e-linux.ts
 # Windows: Server Core LTSC 2019/2022/2025 via the Docker WINDOWS engine
 cd dashboard && bun run ../scripts/docker-e2e-hosts-windows.ts`,
       },
-      { type: 'h3', content: 'Harness reference' },
+      { type: 'h2', content: 'Harness reference' },
       {
         type: 'table',
         headers: ['Script', 'Purpose'],

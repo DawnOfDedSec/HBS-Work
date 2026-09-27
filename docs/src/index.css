@@ -2,10 +2,48 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ---------------------------------------------------------------------------
+ * Fonts
+ *
+ * Self-hosted variable woff2 (docs/public/fonts), latin subset only - 75 KB
+ * for both families. Vendored rather than CDN-linked for two reasons:
+ *   1. A security vendor's docs should not make third-party requests that hand
+ *      a visitor's IP to someone else's server.
+ *   2. `JetBrains Mono` is what the extractor and the dashboard use for
+ *      identifiers, so a `.hbs` name, a machine-id or a copyable command is set
+ *      in one consistent mono on every OS instead of Consolas here and DejaVu
+ *      there.
+ * index.html preloads both files so the fetch starts before CSS is parsed.
+ * ------------------------------------------------------------------------ */
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('/fonts/plex-sans-latin-var.woff2') format('woff2');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/jbmono-latin-var.woff2') format('woff2');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   color-scheme: dark;
   --line: rgba(139, 92, 246, 0.16);
   --line-light: rgba(255, 255, 255, 0.08);
+  /* Interactive boundary (WCAG 1.4.11, >=3:1) and focus indicator (>=3:1).
+     Tailwind emits `edge`/`edge-strong` from tailwind.config.js for the utility
+     path; these variables are for the plain-CSS rules below. */
+  --edge: #6f7488;
+  --focus: #a78bfa;
+  /* cta-* stops are the only gradient allowed behind white text */
+  --cta-1: #7c3aed;
+  --cta-2: #db2777;
+  --cta-3: #c2410c;
 }
 
 html {
@@ -14,7 +52,18 @@ html {
 }
 
 body {
-  @apply bg-surface text-ink2 antialiased overflow-x-hidden;
+  @apply bg-surface font-sans text-ink2 antialiased;
+  overflow-x: hidden;
+  font-feature-settings: 'kern' 1, 'liga' 1;
+}
+
+/* headings are the product's voice: tight, heavy, never gradient-filled */
+h1,
+h2,
+h3 {
+  @apply text-ink;
+  letter-spacing: -0.018em;
+  text-wrap: balance;
 }
 
 /* canonical dot-pattern backdrop (SPEC 5.13) */
@@ -35,96 +84,111 @@ body::before {
   color: #fff;
 }
 
-/* links: violet family (SPEC 3) */
-a {
-  transition: color 0.15s;
+/* ---------------------------------------------------------------------------
+ * Focus
+ *
+ * The previous rule was `box-shadow: 0 0 0 3px rgba(139,92,246,0.18)`, which
+ * composites to #221b3d over the canvas - 1.19:1, i.e. effectively invisible.
+ * A real 2px ring plus a 2px offset keeps it visible on every background in
+ * this design, including inside panels (1.4.11 requires 3:1).
+ * ------------------------------------------------------------------------ */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: inherit;
 }
 
-/* display gradient text: canonical 120deg pastel (SPEC 3) */
-.grad-text {
-  background: linear-gradient(120deg, #c4b5fd, #f9a8d4 50%, #fdba74);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
-}
-
-/* vivid 90deg variant: LANDING PAGE ONLY (SPEC appendix) */
-.grad-text-vivid {
-  background: linear-gradient(90deg, #a78bfa, #ec4899 55%, #f97316);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
-}
-
-/* navbar brand trailing gradient dot */
-.brand-dot {
-  background: linear-gradient(120deg, #c4b5fd, #f9a8d4 50%, #fdba74);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-/* mono micro-label (SPEC 3) */
+/* Mono micro-label: eyebrows, section numerals, table keys. The site sets its
+   spine in mono because this product is about identifiers. */
 .mono-label {
   @apply font-mono uppercase;
-  font-size: 0.72em;
-  font-weight: 700;
-  letter-spacing: 0.15em;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
   color: #9aa0b4;
 }
 
-/* buttons (SPEC 5.3) */
+.section-num {
+  @apply font-mono text-xs;
+  color: #7e85a2;
+}
+
+/* ---------------------------------------------------------------------------
+ * Buttons
+ * ------------------------------------------------------------------------ */
 .btn-primary {
-  @apply inline-flex items-center gap-2 rounded-full font-bold text-white;
+  @apply inline-flex items-center gap-2 rounded-full font-semibold text-white;
   padding: 12px 26px;
-  font-size: 0.9em;
+  font-size: 0.9rem;
   line-height: 1;
-  background: linear-gradient(135deg, #8b5cf6, #ec4899 55%, #f97316);
-  box-shadow: 0 4px 24px rgba(236, 72, 153, 0.35);
-  transition: transform 0.16s, box-shadow 0.16s, background 0.16s;
+  /* deepened cta-* stops: white clears AA on every one (5.70 / 4.60 / 4.51).
+     The vivid brand trio stays reserved for non-text marks. */
+  background-image: linear-gradient(135deg, var(--cta-1), var(--cta-2) 55%, var(--cta-3));
+  box-shadow: 0 4px 22px rgba(219, 39, 119, 0.3);
+  transition: transform 0.16s, box-shadow 0.16s, filter 0.16s;
 }
 .btn-primary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 30px rgba(236, 72, 153, 0.45);
-}
-.btn-ghost {
-  @apply inline-flex items-center gap-2 rounded-full font-semibold text-ink;
-  padding: 12px 26px;
-  font-size: 0.9em;
-  line-height: 1;
-  border: 1px solid var(--line-light);
-  background: rgba(255, 255, 255, 0.03);
-  transition: transform 0.16s, background 0.16s, border-color 0.16s;
-}
-.btn-ghost:hover {
-  transform: translateY(-2px);
-  background: rgba(255, 255, 255, 0.07);
-  border-color: rgba(139, 92, 246, 0.45);
+  box-shadow: 0 10px 30px rgba(219, 39, 119, 0.42);
+  filter: saturate(1.12);
 }
 
-/* glass card with border-beam hover (SPEC 5.5) */
-.glass-card {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 18px 18px 16px;
-  background: rgba(255, 255, 255, 0.02);
+.btn-ghost,
+.btn-secondary {
+  @apply inline-flex items-center gap-2 rounded-full font-semibold text-ink;
+  padding: 12px 24px;
+  font-size: 0.9rem;
+  line-height: 1;
+  border: 1px solid var(--edge);
+  background: rgba(255, 255, 255, 0.035);
+  transition: transform 0.16s, background 0.16s, border-color 0.16s;
+}
+.btn-ghost:hover,
+.btn-secondary:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.07);
+  border-color: #a3a8bd;
+}
+
+.btn-quiet {
+  @apply inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-medium text-ink;
+  font-size: 0.8rem;
+  border: 1px solid var(--edge);
+  background: rgba(255, 255, 255, 0.03);
+  transition: background 0.15s, border-color 0.15s;
+}
+.btn-quiet:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: #a3a8bd;
+}
+
+/* ---------------------------------------------------------------------------
+ * Surfaces
+ *
+ * `.panel` is the workhorse (solid, hairline). `.beam-card` is the OPT-IN
+ * travelling-border variant: used on two priority blocks, not on every card,
+ * because a light that spins on every tile is decoration rather than emphasis.
+ * ------------------------------------------------------------------------ */
+.panel {
+  background: #151828;
   border: 1px solid var(--line-light);
   border-radius: 14px;
-  backdrop-filter: blur(8px);
+}
+
+.panel-inset {
+  background: #101320;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.beam-card {
   position: relative;
   overflow: hidden;
-  transition: transform 0.18s, border-color 0.18s, box-shadow 0.18s, background 0.18s;
+  background: #151828;
+  border: 1px solid var(--line-light);
+  border-radius: 14px;
 }
-.glass-card:hover {
-  transform: translateY(-3px);
-  background: rgba(255, 255, 255, 0.045);
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.5), 0 0 24px rgba(139, 92, 246, 0.12);
-  border-color: rgba(139, 92, 246, 0.45);
-}
-.glass-card::before {
+.beam-card::before {
   content: '';
   position: absolute;
   inset: -1px;
@@ -133,20 +197,15 @@ a {
   background: conic-gradient(
     from var(--beam-angle, 0deg),
     transparent 70%,
-    rgba(139, 92, 246, 0.5) 82%,
-    rgba(236, 72, 153, 0.5) 90%,
+    rgba(139, 92, 246, 0.55) 82%,
+    rgba(236, 72, 153, 0.55) 90%,
     transparent
   );
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
-  opacity: 0;
-  transition: opacity 0.25s;
+  animation: beam-spin 4.5s linear infinite;
   pointer-events: none;
-}
-.glass-card:hover::before {
-  opacity: 1;
-  animation: beam-spin 2.6s linear infinite;
 }
 @property --beam-angle {
   syntax: '<angle>';
@@ -159,136 +218,363 @@ a {
   }
 }
 
-/* icon tile inside cards (SPEC 5.5 anatomy) */
-.icon-tile {
-  @apply flex items-center justify-center;
-  width: 42px;
-  height: 42px;
+/* the hero artifact: a sealed-report specimen styled like the file itself */
+.artifact {
+  @apply font-mono;
+  background: #101320;
+  border: 1px solid var(--line);
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.05);
+  box-shadow: 0 24px 60px -28px rgba(0, 0, 0, 0.9);
+}
+
+.icon-tile {
+  @apply inline-flex items-center justify-center;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  background: rgba(139, 92, 246, 0.12);
+  border: 1px solid var(--line);
+  color: #c4b5fd;
+}
+.beam-card:hover .icon-tile {
+  background: rgba(139, 92, 246, 0.2);
+}
+
+/* ---------------------------------------------------------------------------
+ * Callouts (shared by the docs block renderer and the license page)
+ * ------------------------------------------------------------------------ */
+.note {
+  border-radius: 12px;
+  padding: 14px 18px;
+  border-left: 3px solid;
+}
+.note-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.note-body {
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: #b9bfd4;
+}
+.note-info {
+  border-color: rgba(139, 92, 246, 0.55);
+  background: rgba(139, 92, 246, 0.09);
+}
+.note-info .note-label {
+  color: #c4b5fd;
+}
+.note-warn {
+  border-color: rgba(251, 191, 36, 0.5);
+  background: rgba(251, 191, 36, 0.08);
+}
+.note-warn .note-label {
+  color: #fbbf24;
+}
+.note-tip {
+  border-color: rgba(52, 211, 153, 0.5);
+  background: rgba(52, 211, 153, 0.08);
+}
+.note-tip .note-label {
+  color: #34d399;
+}
+
+/* ---------------------------------------------------------------------------
+ * Pipeline rail (the air-gapped flow diagram)
+ * ------------------------------------------------------------------------ */
+.rail {
+  position: relative;
+  height: 2px;
+  background: linear-gradient(90deg, rgba(139, 92, 246, 0.3), rgba(236, 72, 153, 0.3));
+  overflow: hidden;
+}
+/* the travelling packet of light */
+.rail::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, #c4b5fd 45%, transparent);
+  background-size: 45% 100%;
+  background-repeat: no-repeat;
+  animation: flow-sweep 3.2s linear infinite;
+}
+
+/* ---------------------------------------------------------------------------
+ * Marquee (Magic UI pattern, CSS only)
+ * ------------------------------------------------------------------------ */
+.marquee {
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent, white 8%, white 92%, transparent);
+  mask-image: linear-gradient(90deg, transparent, white 8%, white 92%, transparent);
+}
+.marquee-track {
+  display: flex;
+  width: max-content;
+  gap: 2.25rem;
+  animation: marquee 38s linear infinite;
+}
+.marquee-track.marquee-reverse {
+  animation-name: marquee-reverse;
+}
+.marquee-copy {
+  display: flex;
+  gap: 2.25rem;
+}
+.marquee:hover .marquee-track,
+.marquee:focus-within .marquee-track {
+  animation-play-state: paused;
+}
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+@keyframes marquee-reverse {
+  from {
+    transform: translateX(-50%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.chip {
+  @apply inline-flex items-center gap-2 whitespace-nowrap font-mono;
+  font-size: 0.74rem;
+  letter-spacing: 0.02em;
+  color: #b9bfd4;
+  padding: 5px 12px;
   border: 1px solid var(--line-light);
-  font-size: 1.15rem;
-  transition: transform 0.18s, box-shadow 0.18s;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.02);
 }
-.glass-card:hover .icon-tile {
-  transform: scale(1.08);
-  box-shadow: 0 0 18px rgba(139, 92, 246, 0.25);
-}
-
-/* stat tile (SPEC 5.6, CSS flavor) */
-.stat-tile {
-  @apply rounded-2xl border border-white/10 bg-white/[0.02] p-4 text-center backdrop-blur-md;
-  transition: transform 0.16s;
-}
-.stat-tile:hover {
-  transform: translateY(-2px);
+.chip-mark {
+  color: #8b5cf6;
 }
 
-/* tables (SPEC 5.7) */
+/* ---------------------------------------------------------------------------
+ * Tables (SPEC 5.7)
+ * ------------------------------------------------------------------------ */
 .spec-table {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  font-size: 0.9em;
+  font-size: 0.875rem;
   background: #151828;
   border: 1px solid var(--line);
   border-radius: 10px;
   overflow: hidden;
 }
 .spec-table th {
-  padding: 9px 14px;
+  padding: 10px 14px;
   background: #1a1e32;
   color: #e8eaf2;
-  font-weight: 620;
+  font-weight: 600;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   text-align: left;
   border-bottom: 1px solid var(--line);
 }
 .spec-table td {
-  padding: 9px 14px;
+  padding: 10px 14px;
   color: #b9bfd4;
   border-bottom: 1px solid var(--line-light);
+  vertical-align: top;
 }
 .spec-table tbody tr:last-child td {
   border-bottom: none;
 }
 .spec-table tbody tr:hover {
-  background: rgba(139, 92, 246, 0.06);
+  background: rgba(139, 92, 246, 0.07);
 }
 
-/* code blocks + copy button (SPEC 5.8) */
+/* ---------------------------------------------------------------------------
+ * Code (SPEC 5.8)
+ * ------------------------------------------------------------------------ */
 pre.spec-pre {
   position: relative;
-  padding: 14px 16px 26px;
-  background: #151828;
+  padding: 16px 16px 26px;
+  background: #101320;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 28px rgba(0, 0, 0, 0.4);
+  border-radius: 12px;
   overflow-x: auto;
 }
 pre.spec-pre code {
-  font-family: 'Fira Code', ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 0.84em;
-  line-height: 1.65;
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.7;
   color: #dfe2ef;
 }
-.spec-pre::before {
+.spec-pre[data-lang]::before {
   content: attr(data-lang);
   position: absolute;
-  top: 8px;
-  right: 10px;
-  font-family: 'Fira Code', ui-monospace, monospace;
-  font-size: 0.62em;
+  top: 9px;
+  right: 11px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.62rem;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: #6a7089;
+  letter-spacing: 0.1em;
+  /* was #6a7089, which measured 3.60:1 on the panel */
+  color: #7e85a2;
 }
 .copy-btn {
   position: absolute;
-  top: 8px;
-  right: 8px;
-  font-size: 11px;
+  top: 7px;
+  right: 7px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.66rem;
   font-weight: 600;
-  color: #9aa0b4;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--line-light);
-  border-radius: 6px;
-  padding: 3px 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #b9bfd4;
+  background: rgba(16, 19, 32, 0.94);
+  border: 1px solid var(--edge);
+  border-radius: 7px;
+  padding: 4px 9px;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
-pre:hover .copy-btn,
-.copy-btn:focus-visible {
-  opacity: 1;
+/* touch devices never fire :hover, so the button must stay visible there */
+@media (hover: hover) {
+  .copy-btn {
+    opacity: 0;
+  }
+  pre.spec-pre:hover .copy-btn,
+  .copy-btn:focus-visible {
+    opacity: 1;
+  }
 }
 .copy-btn:hover {
   color: #fff;
-  border-color: rgba(139, 92, 246, 0.5);
+  border-color: #a3a8bd;
+  background: #1a1e32;
 }
 .copy-btn.ok {
   color: #34d399;
-  border-color: rgba(16, 185, 129, 0.4);
+  border-color: rgba(16, 185, 129, 0.55);
+  opacity: 1;
 }
 
-/* inline code */
 code.inline {
-  font-family: 'Fira Code', ui-monospace, monospace;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 0.85em;
-  background: rgba(139, 92, 246, 0.1);
+  background: rgba(139, 92, 246, 0.12);
   border: 1px solid var(--line);
-  color: #d8ccfe;
+  color: #ddd2fe;
   border-radius: 6px;
   padding: 0.12em 0.4em;
 }
 
-/* focus ring (SPEC 8) */
-a:focus-visible,
-button:focus-visible,
-input:focus-visible,
-select:focus-visible {
-  outline: none;
-  border-color: #8b5cf6;
-  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.18);
+/* ---------------------------------------------------------------------------
+ * Reveal
+ *
+ * One staggered entrance per section. The hiding class is only added after
+ * mount, so prerendered HTML and no-JS visitors always see the content.
+ * ------------------------------------------------------------------------ */
+.reveal {
+  opacity: 0;
+  transform: translateY(14px);
+}
+/* The transition is a SEPARATE class on purpose. If `.reveal` carried it,
+   arming after the first paint would animate the content *from visible to
+   hidden* - a fade-out flash on every section below the fold. Reveal arms
+   `.reveal` in a layout effect (before paint) and only then adds
+   `.reveal-ready`, so the descent to opacity 0 is instantaneous and the fade
+   only ever runs in the direction the reader sees. */
+.reveal-ready {
+  transition: opacity 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.reveal.is-in {
+  opacity: 1;
+  transform: none;
+}
+
+/* ---------------------------------------------------------------------------
+ * Tabs
+ * ------------------------------------------------------------------------ */
+.tab {
+  @apply inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium;
+  color: #9aa0b4;
+  transition: color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.tab:hover {
+  color: #e8eaf2;
+  background: rgba(255, 255, 255, 0.04);
+}
+.tab[aria-selected='true'] {
+  color: #fff;
+  background: rgba(139, 92, 246, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(139, 92, 246, 0.5);
+}
+
+/* ---------------------------------------------------------------------------
+ * Terminal window (install commands)
+ * ------------------------------------------------------------------------ */
+.term {
+  background: #101320;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.term-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line-light);
+  background: rgba(255, 255, 255, 0.02);
+}
+.term-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #2c3350;
+}
+.term-line {
+  opacity: 0;
+  animation: term-in 0.3s ease-out forwards;
+}
+@keyframes term-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.term-caret {
+  display: inline-block;
+  width: 7px;
+  height: 1.05em;
+  translate: 0 2px;
+  background: #c4b5fd;
+  animation: caret-blink 1.05s steps(1) infinite;
+}
+
+/* ---------------------------------------------------------------------------
+ * Utilities
+ * ------------------------------------------------------------------------ */
+.hash {
+  @apply font-mono;
+  font-size: 0.78rem;
+  color: #b9bfd4;
+  word-break: break-all;
+}
+
+.stat-num {
+  @apply font-mono font-bold text-white;
+  font-size: clamp(1.6rem, 3.4vw, 2.3rem);
+  line-height: 1;
+  letter-spacing: -0.03em;
 }
 
 /* scrollbars (SPEC 2.1) */
@@ -297,27 +583,69 @@ select:focus-visible {
   scrollbar-color: #232840 transparent;
 }
 *::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 *::-webkit-scrollbar-thumb {
   background: #232840;
-  border-radius: 3px;
+  border-radius: 4px;
 }
 
-/* marquee (landing only) */
-.animate-marquee:hover {
-  animation-play-state: paused;
-}
-
-/* reduced motion (SPEC 7, mandatory) */
+/* ---------------------------------------------------------------------------
+ * Reduced motion (SPEC 7, mandatory)
+ *
+ * Zeroing durations is not enough here: a frozen beam light or a half-drawn
+ * caret is worse than no animation, so those are switched off outright and the
+ * marquee is pinned to its resting position so the content stays readable.
+ * ------------------------------------------------------------------------ */
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto !important;
+  }
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
+  }
+  .rail::after,
+  .beam-card::before,
+  .term-line {
+  opacity: 0;
+  animation: term-in 0.3s ease-out forwards;
+}
+@keyframes term-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.term-caret {
+    animation: none !important;
+  }
+  .rail::after {
+    opacity: 0;
+  }
+  /* With the animation off, a clipped strip hides most of its content behind
+     the fade mask and offers no way to reach it: the standards and platform
+     lists were largely unreadable for anyone with reduced motion set. Turn the
+     marquee into a plain scrollable row, and drop the duplicated track, which
+     exists only to make the loop seamless and would otherwise read twice. */
+  .marquee {
+    overflow-x: auto;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .marquee-copy {
+    display: none;
+  }
+  .marquee-track {
+    animation: none !important;
+    transform: none !important;
   }
 }

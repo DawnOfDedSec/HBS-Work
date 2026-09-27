@@ -1,12 +1,27 @@
+import Note from '../components/ui/Note';
+
+const TERMS: Array<[string, string, string]> = [
+  ['Fork, modify, self-host', 'Allowed', 'Apache-2.0 grants apply exactly as written.'],
+  ['Commercial use inside your company', 'Allowed', 'Internal use is not resale.'],
+  ['Client engagements using HBS as a tool', 'Allowed', 'HBS is not the product being sold.'],
+  ['Derivatives that add their own value', 'Allowed', 'Additive products are fine.'],
+  ['Selling the software itself', 'Not allowed', 'The Commons Clause restricts resale of the software.'],
+];
+
 export default function License() {
   return (
     <div className="mx-auto max-w-[900px] px-6 py-10">
-      <p className="mono-label">License</p>
-      <h1 className="mt-2 text-3xl font-extrabold text-white">Apache-2.0 with the Commons Clause</h1>
-      <div className="mt-6 space-y-4 leading-[1.8] text-ink2">
-        <p>
-          HBS Tool is licensed under the <strong className="text-white">Apache License 2.0 with the
-          Commons Clause</strong>, held by{' '}
+      <header className="border-b border-hairline pb-6">
+        <p className="mono-label">License</p>
+        <h1 className="mt-3 text-[clamp(1.7rem,3.4vw,2.4rem)] font-bold">
+          Apache-2.0 with the Commons Clause
+        </h1>
+        <p className="mt-4 leading-[1.8] text-ink2">
+          HBS Tool is licensed under the{' '}
+          <strong className="font-semibold text-ink">
+            Apache License 2.0 with the Commons Clause
+          </strong>
+          , held by{' '}
           <a
             className="text-link hover:text-linkh"
             href="https://github.com/PotenFYR-Studios"
@@ -26,18 +41,46 @@ export default function License() {
           </a>{' '}
           file is authoritative - this page is a plain-language summary, not legal advice.
         </p>
-        <div
-          className="rounded-xl px-5 py-4 text-sm text-ink2"
-          style={{ borderLeft: '3px solid rgba(139, 92, 246, 0.45)', background: 'rgba(139, 92, 246, 0.08)' }}
-        >
-          <span className="mono-label mr-2" style={{ color: '#d8ccfe' }}>
-            In short
-          </span>
-          You are free to fork, modify, and use HBS Tool for free, for any purpose - including
+      </header>
+
+      <div className="mt-8">
+        <Note tone="info" label="In short">
+          You are free to fork, modify and use HBS Tool for free, for any purpose - including
           commercial use, and building products or services around it. You may NOT sell the software
           itself (or a product or service whose value derives entirely or substantially from its
           functionality) as a paid product.
+        </Note>
+      </div>
+
+      <section className="mt-8">
+        <p className="section-num">01</p>
+        <h2 className="mt-2 text-[1.2rem] font-bold">What that means in practice</h2>
+        <div className="mt-5 overflow-x-auto">
+          <table className="spec-table">
+            <caption className="sr-only">Permitted and restricted uses under Apache-2.0 with the Commons Clause</caption>
+            <thead>
+              <tr>
+                <th scope="col">Use</th>
+                <th scope="col">Status</th>
+                <th scope="col">Why</th>
+              </tr>
+            </thead>
+            <tbody>
+              {TERMS.map(([use, status, why]) => (
+                <tr key={use}>
+                  <td className="text-ink">{use}</td>
+                  <td className={status === 'Allowed' ? 'font-mono text-[0.8rem] text-ok' : 'font-mono text-[0.8rem] text-deny'}>
+                    {status}
+                  </td>
+                  <td className="text-faint">{why}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
+      </section>
+
+      <section className="mt-10 space-y-4 leading-[1.8] text-ink2">
         <p>
           Commons Clause is a narrow condition on top of Apache-2.0, not a switch to a non-free
           license: every Apache-2.0 grant (use, modification, distribution, patent grant,
@@ -61,7 +104,8 @@ export default function License() {
           never redistributed. All product names, logos, brands and trademarks belong to their
           respective owners.
         </p>
-      </div>
+      </section>
+
       <p className="mt-8 text-[0.85em] text-faint">
         Questions about licensing? Reach the maintainers via{' '}
         <a
@@ -73,7 +117,12 @@ export default function License() {
           GitHub issues
         </a>{' '}
         or{' '}
-        <a className="text-link hover:text-linkh" href="https://potenfyr.in" target="_blank" rel="noopener noreferrer">
+        <a
+          className="text-link hover:text-linkh"
+          href="https://potenfyr.in"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
           potenfyr.in
         </a>
         .

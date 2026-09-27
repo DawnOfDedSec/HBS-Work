@@ -68,18 +68,28 @@ GET  /api/issuances/:id/download?token=<downloadToken>`,
 export default function Examples() {
   return (
     <div className="mx-auto max-w-[1280px] px-6 py-10">
-      <p className="mono-label">Examples</p>
-      <h1 className="mt-2 text-3xl font-extrabold text-white">Real workflows, copy and run</h1>
-      <p className="mt-2 max-w-[720px] text-muted">
-        Every recipe below reflects the extractor and dashboard as they actually behave today.
-      </p>
+      <header className="border-b border-hairline pb-6">
+        <p className="mono-label">Examples</p>
+        <h1 className="mt-3 text-[clamp(1.7rem,3.4vw,2.4rem)] font-bold">
+          Real workflows, copy and run
+        </h1>
+        <p className="mt-3 max-w-[720px] leading-relaxed text-muted">
+          Every recipe below reflects the extractor and dashboard as they actually behave today.
+        </p>
+      </header>
+
       <div className="mt-8 grid gap-4 lg:grid-cols-2">
-        {EXAMPLES.map((ex) => (
-          <div key={ex.title} className="glass-card !gap-2">
-            <h3 className="text-[1.0em] font-bold text-white">{ex.title}</h3>
-            <p className="text-[0.84em] text-muted">{ex.blurb}</p>
-            <Code content={ex.code} lang={ex.lang} />
-          </div>
+        {EXAMPLES.map((ex, i) => (
+          <article key={ex.title} className="panel flex flex-col p-5">
+            <div className="flex items-baseline gap-3">
+              <span className="section-num">{String(i + 1).padStart(2, '0')}</span>
+              <h2 className="text-[1rem] font-bold">{ex.title}</h2>
+            </div>
+            <p className="mt-1.5 text-[0.84rem] leading-relaxed text-muted">{ex.blurb}</p>
+            <div className="mt-4">
+              <Code content={ex.code} lang={ex.lang} />
+            </div>
+          </article>
         ))}
       </div>
     </div>
