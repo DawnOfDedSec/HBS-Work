@@ -1,7 +1,31 @@
-# HBS — Host Baseline Security Review Platform
+<div align="center">
 
-An offline-first, strictly read-only configuration-security review platform for
-enterprise servers, with a sealed-report security model.
+<img src="https://capsule-render.vercel.app/api?type=waving&color=0:8b5cf6,50:ec4899,100:f97316&height=220&section=header&text=hbs-tool&fontSize=52&fontColor=ffffff&fontAlignY=34&desc=Sealed%20reports%20%C2%B7%20Read-only%20scans%20%C2%B7%20368%20hardening%20testcases&descSize=18&descAlignY=55&animation=twinkling" width="100%" alt="hbs-tool banner"/>
+
+[![Release](https://img.shields.io/github/v/release/PotenFYR-Studios/HBS-Tool?style=for-the-badge&logo=github&logoColor=white&labelColor=1c1e26&color=8b5cf6)](https://github.com/PotenFYR-Studios/HBS-Tool/releases)
+[![Docs](https://img.shields.io/badge/docs-hbs--tool.docs.potenfyr.in-8b5cf6?style=for-the-badge&logo=googlechrome&logoColor=white&labelColor=1c1e26)](https://hbs-tool.docs.potenfyr.in)
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-ec4899?style=for-the-badge&logo=linux&logoColor=white&labelColor=1c1e26)](#platform-support)
+[![Discord](https://img.shields.io/badge/Discord-Join%20us-5865F2?style=for-the-badge&logo=discord&logoColor=white&labelColor=1c1e26)](https://discord.com/invite/zUaN2FPBec)
+[![GitHub](https://img.shields.io/badge/GitHub-PotenFYR--Studios-181717?style=for-the-badge&logo=github&logoColor=white&labelColor=1c1e26)](https://github.com/PotenFYR-Studios/HBS-Tool)
+[![View](https://komarev.com/ghpvc/?username=PotenFYR-Studios-HBS-Tool&color=ec4899&style=for-the-badge&label=VIEW&labelColor=1c1e26)](https://github.com/PotenFYR-Studios/HBS-Tool)
+
+[![CI](https://img.shields.io/github/actions/workflow/status/PotenFYR-Studios/HBS-Tool/validate.yml?branch=main&style=flat-square&logo=githubactions&label=CI&color=2ea043&labelColor=1c1e26)](https://github.com/PotenFYR-Studios/HBS-Tool/actions/workflows/validate.yml)
+[![testcases](https://img.shields.io/badge/hardening-368%20testcases-8b5cf6?style=flat-square&labelColor=1c1e26)](#testcase-catalog)
+[![network](https://img.shields.io/badge/target%20network-air--gapped%20by%20default-2ea043?style=flat-square&labelColor=1c1e26)](#report-format--security-model)
+
+[![Typing SVG](https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=20&pause=1200&color=8B5CF6&center=true&vCenter=true&width=800&lines=Offline-first+host+baseline+security+reviews;Strictly+read-only+scans+%C2%B7+sealed+reports;368+hardening+testcases+across+Linux+%26+Windows;Executive+one-pagers+to+raw+evidence+pivots)](https://github.com/PotenFYR-Studios/HBS-Tool)
+
+**HBS** — an offline-first, strictly read-only configuration-security review platform for enterprise servers, with a sealed-report security model.
+
+[Docs](https://hbs-tool.docs.potenfyr.in) · [Getting started](https://hbs-tool.docs.potenfyr.in/docs/getting-started) · [Releases](https://github.com/PotenFYR-Studios/HBS-Tool/releases) · [Issues](https://github.com/PotenFYR-Studios/HBS-Tool/issues)
+
+</div>
+
+---
+
+## Why HBS
+
+Auditing a fleet of enterprise servers with screen shots, spreadsheets and SSH one-liners is slow, inconsistent and leaks data at every step. HBS does it in two sealed halves:
 
 - **Extractor** (Rust, single static binary) — runs on a target host, evaluates
   **368 hardening testcases**, and writes a **sealed report** (`.hbs`, `HBS2` v2)
@@ -16,10 +40,11 @@ It is built for four audiences: **security leadership** (executive one-pager),
 (pivots, evidence, diffing, telemetry), and **upper management** (board-ready
 reporting and printable deliverables).
 
-> **Design/plan:** `docs/superpowers/specs/` and `docs/superpowers/plans/`.
-> **Execution ledger:** `.superpowers/sdd/`.
-
----
+> The full documentation lives at **[hbs-tool.docs.potenfyr.in](https://hbs-tool.docs.potenfyr.in)**:
+> [getting started](https://hbs-tool.docs.potenfyr.in/docs/getting-started),
+> the [extractor reference](https://hbs-tool.docs.potenfyr.in/docs/extractor) and
+> the [security model](https://hbs-tool.docs.potenfyr.in/docs/security-model).
+> This README mirrors the same content.
 
 ## Table of contents
 
@@ -92,6 +117,16 @@ identically in Rust and TypeScript: the **sealed-report envelope** and the
 ## Quick start
 
 ### 1. Dashboard (hosted on your machine)
+
+```bash
+# Linux / macOS
+curl -fsSL https://raw.githubusercontent.com/PotenFYR-Studios/HBS-Tool/main/scripts/install.sh | bash
+
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/PotenFYR-Studios/HBS-Tool/main/scripts/install.ps1 | iex
+```
+
+Or straight from a clone:
 
 ```bash
 cd dashboard
@@ -482,6 +517,8 @@ cd dashboard && bun run ../scripts/e2e-loop.ts
   - Publishes a release tagged `v<version>` from `extractor/Cargo.toml`:
     - **new version** → creates the release with the changelog (commits since the previous tag);
     - **same version** → overwrites the assets and **appends** the new changelog to the existing notes.
+- **`.github/workflows/docs-pages.yml`** — builds `docs/` and publishes it to
+  GitHub Pages at **[hbs-tool.docs.potenfyr.in](https://hbs-tool.docs.potenfyr.in)**.
 
 ---
 
@@ -574,6 +611,65 @@ extractor/           Rust crate (lib + `hbs-extractor` binary)
 dashboard/           Bun + Hono backend (`server/`) + Vite/React SPA (`src/`)
 fixtures/            Cross-language crypto/keyslot vectors
 scripts/             Build + validation harnesses (see table above)
-.github/workflows/   validate.yml, release.yml
-docs/superpowers/    Design spec and implementation plan
+docs/                Documentation site (GitHub Pages, hbs-tool.docs.potenfyr.in)
+.github/workflows/   validate.yml, release.yml, docs-pages.yml
 ```
+
+## Docs & links
+
+- [Documentation site](https://hbs-tool.docs.potenfyr.in) (this repo's `docs/`, deployed via GitHub Pages)
+- [Releases](https://github.com/PotenFYR-Studios/HBS-Tool/releases) — installers, extractor binaries, `SHA256SUMS`, `manifest.json`
+- [Issues](https://github.com/PotenFYR-Studios/HBS-Tool/issues)
+- [License](LICENSE) — Apache-2.0 with the Commons Clause · [Notice](NOTICE.md)
+- [PotenFYR Studios](https://github.com/PotenFYR-Studios) | [Website](https://potenfyr.in) | [Discord](https://discord.com/invite/zUaN2FPBec)
+
+## License
+
+Licensed under the **Apache License 2.0 with the Commons Clause**: free to fork, modify, use, and build around; not to be sold as a product. See [LICENSE](LICENSE); the LICENSE file is authoritative. Referenced standards (CIS, NIST 800-53, ISO 27001, PCI-DSS) and all product names are the property of their respective owners; see [NOTICE.md](NOTICE.md).
+
+## Contributing
+
+PRs welcome; see [CONTRIBUTING.md](CONTRIBUTING.md) for setup, commands and conventions.
+Found a vulnerability? Please report privately: see [SECURITY.md](SECURITY.md).
+
+<a href="https://github.com/PotenFYR-Studios/HBS-Tool/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=PotenFYR-Studios/HBS-Tool" alt="hbs-tool contributors" />
+</a>
+<a href="https://github.com/PotenFYR-Studios/HBS-Tool/stargazers">
+  <img src="https://img.shields.io/github/stars/PotenFYR-Studios/HBS-Tool?style=social&label=Stars" alt="Live star count" />
+</a>
+<a href="https://github.com/PotenFYR-Studios/HBS-Tool/network/members">
+  <img src="https://img.shields.io/github/forks/PotenFYR-Studios/HBS-Tool?style=social&label=Forks" alt="Live fork count" />
+</a>
+
+---
+
+## ⭐ Star History
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=potenfyr-studios/authcore,potenfyr-studios/statfyr,potenfyr-studios/discord-botlists,potenfyr-studios/shell-eggs,potenfyr-studios/prog-language-eggs,potenfyr-studios/minecraft-eggs,potenfyr-studios/database-eggs,potenfyr-studios/apicordon,potenfyr-studios/ojaj,potenfyr-studios/fyrwall,potenfyr-studios/echoingdeaths,potenfyr-studios/hbs-tool&type=Date&theme=dark" />
+  <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=potenfyr-studios/authcore,potenfyr-studios/statfyr,potenfyr-studios/discord-botlists,potenfyr-studios/shell-eggs,potenfyr-studios/prog-language-eggs,potenfyr-studios/minecraft-eggs,potenfyr-studios/database-eggs,potenfyr-studios/apicordon,potenfyr-studios/ojaj,potenfyr-studios/fyrwall,potenfyr-studios/echoingdeaths,potenfyr-studios/hbs-tool&type=Date" />
+  <img alt="Star history chart for all PotenFYR Studios public repositories" src="https://api.star-history.com/svg?repos=potenfyr-studios/authcore,potenfyr-studios/statfyr,potenfyr-studios/discord-botlists,potenfyr-studios/shell-eggs,potenfyr-studios/prog-language-eggs,potenfyr-studios/minecraft-eggs,potenfyr-studios/database-eggs,potenfyr-studios/apicordon,potenfyr-studios/ojaj,potenfyr-studios/fyrwall,potenfyr-studios/echoingdeaths,potenfyr-studios/hbs-tool&type=Date" width="80%" />
+</picture>
+
+Every public PotenFYR Studios repository on one live chart, served by [star-history.com](https://star-history.com).
+
+---
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/PotenFYR-Studios/FYRwall/output/github-snake-dark.svg" />
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/PotenFYR-Studios/FYRwall/output/github-snake.svg" />
+  <img alt="Contribution snake animation" src="https://raw.githubusercontent.com/PotenFYR-Studios/FYRwall/output/github-snake.svg" width="100%" />
+</picture>
+
+---
+
+<!-- markdownlint-disable -->
+
+<div align="center">
+
+<img src="https://capsule-render.vercel.app/api?type=waving&color=0:f97316,50:ec4899,100:8b5cf6&height=120&section=footer&text=Made%20with%20%E2%9D%A4%EF%B8%8F%20by%20PotenFYR%20Studios&fontSize=22&fontColor=ffffff&animation=twinkling" width="100%" alt="footer"/>
+
+</div>
+
+<!-- markdownlint-enable -->

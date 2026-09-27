@@ -36,7 +36,7 @@ const RELEASE_ASSET_TARGETS: Record<AgentPlatform, { target: string; ext: string
 };
 
 export function defaultReleaseApiUrl(): string {
-  return process.env.HBS_AGENT_RELEASE_URL ?? "https://api.github.com/repos/DawnOfDedSec/HBS-Tool/releases/latest";
+  return process.env.HBS_AGENT_RELEASE_URL ?? "https://api.github.com/repos/PotenFYR-Studios/HBS-Tool/releases/latest";
 }
 
 function cachePath(outputDir: string, platform: AgentPlatform): string {

@@ -1,8 +1,9 @@
 name: release
 
-# Runs only after `validate` succeeds on main. Builds every target, then creates
-# the GitHub Release for the version in extractor/Cargo.toml — or, if that
-# release already exists, overwrites the assets and APPENDS the new changelog.
+# Runs only after `validate` succeeds on main (or manually). Builds every
+# target in parallel, then creates the GitHub Release for the version in
+# extractor/Cargo.toml — or, if that release already exists, overwrites the
+# assets and APPENDS the new changelog.
 
 on:
   workflow_run:
@@ -12,6 +13,11 @@ on:
 
 permissions:
   contents: write
+
+# Serialize releases; never cancel one mid-publish.
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -24,33 +30,39 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { target: x86_64-unknown-linux-musl,   os: ubuntu-22.04, experimental: false }
-          - { target: aarch64-unknown-linux-musl,  os: ubuntu-22.04, experimental: false }
-          - { target: armv7-unknown-linux-musleabihf, os: ubuntu-22.04, experimental: true }
-          - { target: x86_64-pc-windows-msvc,      os: windows-2022,  experimental: false }
-          - { target: aarch64-pc-windows-msvc,     os: windows-11-arm, experimental: true }
+          - { target: x86_64-unknown-linux-musl,      os: ubuntu-24.04,  experimental: false }
+          - { target: aarch64-unknown-linux-musl,     os: ubuntu-24.04,  experimental: false }
+          - { target: armv7-unknown-linux-musleabihf, os: ubuntu-24.04,  experimental: true }
+          - { target: x86_64-pc-windows-msvc,         os: windows-2022,  experimental: false }
+          - { target: aarch64-pc-windows-msvc,        os: windows-11-arm, experimental: true }
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     continue-on-error: ${{ matrix.experimental }}
     defaults:
       run:
         working-directory: extractor
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: extractor
+          prefix-key: release-${{ matrix.target }}
 
-      - name: Install zig + cargo-zigbuild (Linux musl targets)
+      # Prebuilt cargo-zigbuild (zig bundled) from GitHub Releases — seconds
+      # instead of the ~5 min `cargo install` source build used before.
+      - name: Install cargo-zigbuild (Linux musl targets)
         if: runner.os == 'Linux'
-        run: |
-          pip3 install ziglang
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          cargo install cargo-zigbuild --locked
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
 
       - name: Read version
         id: ver
         shell: bash
-        run: echo "version=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*\"([^\"]+)\".*/\1/')" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')" >> "$GITHUB_OUTPUT"
 
       - name: Build release (Linux musl)
         if: runner.os == 'Linux'
@@ -73,9 +85,7 @@ jobs:
           NAME="hbs-extractor-${{ steps.ver.outputs.version }}-${{ matrix.target }}${EXT}"
           mkdir -p "$GITHUB_WORKSPACE/release-assets"
           cp "$SRC" "$GITHUB_WORKSPACE/release-assets/$NAME"
-          if command -v sha256sum >/dev/null 2>&1; then
-            (cd "$GITHUB_WORKSPACE/release-assets" && sha256sum "$NAME" > "$NAME.sha256")
-          fi
+          (cd "$GITHUB_WORKSPACE/release-assets" && sha256sum "$NAME" > "$NAME.sha256")
           ls -l "$GITHUB_WORKSPACE/release-assets"
 
       - uses: actions/upload-artifact@v4
@@ -91,12 +101,15 @@ jobs:
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: dashboard
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
       - run: bun install --frozen-lockfile
       - run: bun run build
       - name: Package dist
@@ -111,12 +124,16 @@ jobs:
     name: publish release
     needs: [build, dashboard-bundle]
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.head_branch == 'main')
+      always() &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'main')) &&
+      needs.build.result == 'success' &&
+      needs.dashboard-bundle.result == 'success'
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -125,31 +142,6 @@ jobs:
           pattern: asset-*
           merge-multiple: true
           path: release-assets
-
-      - name: Checksums and manifest
-        run: |
-          set -e
-          cd release-assets
-          rm -f SHA256SUMS manifest.json
-          sha256sum * > SHA256SUMS
-          VERSION="$(grep -m1 '^version' ../extractor/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
-          {
-            echo "{"
-            echo "  \"version\": \"$VERSION\","
-            echo "  \"commit\": \"${{ github.sha }}\","
-            echo "  \"files\": ["
-            files="$(ls | grep -vE '^(SHA256SUMS|manifest\.json)$')"
-            first=1
-            while IFS= read -r f; do
-              [ -z "$f" ] && continue
-              [ $first -eq 0 ] && echo ","
-              first=0
-              echo "    { \"name\": \"$f\", \"sha256\": \"$(sha256sum "$f" | cut -d' ' -f1)\", \"bytes\": $(stat -c %s "$f") }"
-            done <<< "$files"
-            echo "  ]"
-            echo "}"
-          } > manifest.json
-          cat manifest.json
 
       - name: Determine version and changelog
         id: changelog
@@ -170,7 +162,40 @@ jobs:
             echo
             echo "_Commit: \`${{ github.sha }}\`_"
           } > notes.md
-          echo "----- notes.md -----"; cat notes.md
+          cat notes.md
+
+      - name: Checksums and manifest
+        env:
+          VERSION: ${{ steps.changelog.outputs.version }}
+        run: |
+          set -e
+          cd release-assets
+          rm -f SHA256SUMS manifest.json
+          sha256sum * > SHA256SUMS
+          python3 - <<'PY'
+          import hashlib, json, os
+
+          files = sorted(
+              f for f in os.listdir(".")
+              if f not in ("SHA256SUMS", "manifest.json")
+          )
+          manifest = {
+              "version": os.environ["VERSION"],
+              "commit": os.environ["GITHUB_SHA"],
+              "files": [
+                  {
+                      "name": f,
+                      "sha256": hashlib.sha256(open(f, "rb").read()).hexdigest(),
+                      "bytes": os.path.getsize(f),
+                  }
+                  for f in files
+              ],
+          }
+          with open("manifest.json", "w") as fh:
+              json.dump(manifest, fh, indent=2)
+              fh.write("\n")
+          PY
+          cat manifest.json
 
       - name: Create or update the release
         env:

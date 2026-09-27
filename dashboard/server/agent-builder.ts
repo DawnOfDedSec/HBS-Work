@@ -43,7 +43,7 @@ export type BuildResult = {
   error?: string;
 };
 
-export const DEFAULT_REPO_URL = "https://github.com/DawnOfDedSec/HBS-Tool.git";
+export const DEFAULT_REPO_URL = "https://github.com/PotenFYR-Studios/HBS-Tool.git";
 
 const BUILD_LOCKS = new Map<string, Promise<BuildResult>>();
 
