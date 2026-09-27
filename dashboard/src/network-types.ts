@@ -15,6 +15,14 @@ export type NetworkVendor =
   | "ubiquiti"
   | "f5"
   | "sonicwall"
+  | "arista-eos"
+  | "huawei-vrp"
+  | "checkpoint-gaia"
+  | "mikrotik-routeros"
+  | "pfsense"
+  | "opnsense"
+  | "sophos-sfos"
+  | "watchguard"
   | "generic";
 
 export type NetworkDeviceType =

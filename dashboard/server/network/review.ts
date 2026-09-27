@@ -71,6 +71,8 @@ const EOS_MARKERS: Array<{ vendor: VendorId | "any"; match: RegExp; product: str
   { vendor: "cisco-wlc", match: /^[1-7]\./, product: "Cisco WLC AireOS", note: "8.0 and earlier releases are past end of support" },
 ];
 
+// IOS-like CLI family: Cisco platforms sharing the same hardening grammar.
+// Arista EOS is handled rule-by-rule (not all Cisco knobs exist on EOS).
 const CISCO_IOS_FAMILY: VendorId[] = ["cisco-ios", "cisco-nxos", "cisco-wlc-iosxe"];
 
 function lineAt(ctx: RuleContext, n: number | null | undefined): string | null {
@@ -310,7 +312,8 @@ const RULES: Rule[] = [
     references: [CIS_BENCH, NIST_AC],
     applies: (ctx) =>
       profileHasManagement(ctx.profile) &&
-      (isCiscoIosFamily(ctx.profile.vendor) || ctx.profile.vendor === "juniper-junos" || ctx.profile.vendor === "cisco-asa" || ctx.profile.vendor === "cisco-wlc"),
+      (isCiscoIosFamily(ctx.profile.vendor) || ctx.profile.vendor === "juniper-junos" || ctx.profile.vendor === "cisco-asa" || ctx.profile.vendor === "cisco-wlc" ||
+        ctx.profile.vendor === "huawei-vrp" || ctx.profile.vendor === "checkpoint-gaia" || ctx.profile.vendor === "mikrotik-routeros" || ctx.profile.vendor === "arista-eos"),
     evaluate: (ctx) => {
       const { profile } = ctx;
       if (profile.management.sshVersion === "1") {
@@ -473,7 +476,10 @@ const RULES: Rule[] = [
     description: "Without a minimum length policy, short passwords satisfy the device defaults and fall to brute force.",
     recommendation: "Set `security passwords min-length 15` (Cisco) or the platform equivalent, and rotate regularly.",
     references: [CIS_BENCH, NIST_IA],
-    applies: (ctx) => isCiscoIosFamily(ctx.profile.vendor),
+    applies: (ctx) =>
+      isCiscoIosFamily(ctx.profile.vendor) || ctx.profile.vendor === "juniper-junos" || ctx.profile.vendor === "cisco-asa" ||
+      ctx.profile.vendor === "fortinet" || ctx.profile.vendor === "checkpoint-gaia" || ctx.profile.vendor === "mikrotik-routeros" ||
+      ctx.profile.vendor === "huawei-vrp",
     evaluate: (ctx) => {
       const min = ctx.profile.management.minPasswordLength;
       if (min === null) return { status: "NonCompliant", evidence: [] };
@@ -608,7 +614,8 @@ const RULES: Rule[] = [
     recommendation: "Configure at least two internal NTP servers (or trusted public pool) on every infrastructure device.",
     references: [CIS_BENCH, NIST_AU],
     applies: (ctx) =>
-      ctx.profile.ntp.line !== null || isCiscoIosFamily(ctx.profile.vendor) || ctx.profile.vendor === "fortinet" || ctx.profile.vendor === "juniper-junos" || ctx.profile.vendor === "palo-alto",
+      ctx.profile.ntp.line !== null || isCiscoIosFamily(ctx.profile.vendor) || ctx.profile.vendor === "fortinet" || ctx.profile.vendor === "juniper-junos" || ctx.profile.vendor === "palo-alto" ||
+      ctx.profile.vendor === "huawei-vrp" || ctx.profile.vendor === "checkpoint-gaia" || ctx.profile.vendor === "mikrotik-routeros" || ctx.profile.vendor === "arista-eos",
     evaluate: (ctx) => {
       if (ctx.profile.ntp.servers.length > 0) {
         return { status: "Compliant", evidence: ev(ctx, [ctx.profile.ntp.line]) };
@@ -647,7 +654,7 @@ const RULES: Rule[] = [
     evaluate: (ctx) => {
       const permissive = ctx.profile.firewallRules.filter(
         (rule) =>
-          /accept|allow|permit/i.test(rule.action ?? "") &&
+          /accept|allow|permit|pass\b/i.test(rule.action ?? "") &&
           /any|all/i.test(rule.source ?? "") &&
           /any|all/i.test(rule.destination ?? "") &&
           /any|all/i.test(rule.service ?? ""),
@@ -991,7 +998,7 @@ const RULES: Rule[] = [
       "Shared PSKs cannot attribute traffic to users, survive staff departure, and leak with every device that holds them. 802.1X issues per-user credentials.",
     recommendation: "Move corporate SSIDs to WPA2/WPA3-Enterprise (RADIUS). Keep PSK only on segregated guest networks with periodic rotation.",
     references: [CIS_BENCH, NIST_IA],
-    applies: (ctx) => ctx.profile.wirelessLans.some((wlan) => wlan.psk) && ctx.profile.aaa.radiusHosts.length === 0,
+    applies: (ctx) => ctx.profile.wirelessLans.some((wlan) => wlan.psk),
     evaluate: (ctx) => {
       const psk = ctx.profile.wirelessLans.filter((wlan) => wlan.psk);
       return { status: "NonCompliant", evidence: ev(ctx, psk.map((wlan) => wlan.line)) };
@@ -1046,7 +1053,7 @@ const RULES: Rule[] = [
       "Cisco Discovery Protocol advertises platform, software version, and VLAN topology to anyone on the segment — free reconnaissance on user-facing or DMZ ports.",
     recommendation: "Disable CDP globally (`no cdp run`) and enable per-interface only on trusted infrastructure links if required.",
     references: [CIS_BENCH],
-    applies: (ctx) => isCiscoIosFamily(ctx.profile.vendor),
+    applies: (ctx) => isCiscoIosFamily(ctx.profile.vendor) || ctx.profile.vendor === "arista-eos",
     evaluate: (ctx) => {
       const cdp = ctx.profile.services.find((service) => service.name === "cdp");
       if (cdp) {
@@ -1075,6 +1082,136 @@ const RULES: Rule[] = [
       const marker = EOS_MARKERS.find((entry) => (entry.vendor === "any" || entry.vendor === ctx.profile.vendor) && entry.match.test(version));
       if (!marker) return { status: "Compliant", evidence: [] };
       return { status: "NonCompliant", evidence: [`${marker.product} ${version}: ${marker.note}.`] };
+    },
+  },
+  {
+    id: "NET-ROUT-001",
+    title: "Routing protocol authentication not configured (OSPF/BGP/EIGRP)",
+    severity: "High",
+    category: "Routing",
+    description:
+      "Dynamic routing neighbors without cryptographic authentication accept any peer on the segment. An attacker (or a misconfigured lab device) can inject routes, blackhole traffic, or become the default path — the same mechanism behind large-scale BGP hijack and OSPF rogue-router incidents.",
+    recommendation:
+      "Configure neighbor authentication on every routing adjacency: OSPF/EIGRP message-digest or HMAC-SHA key chains, BGP neighbor passwords (MD5) or GTSM/TTL-security, and prefer AES-keyed proposals where the platform supports them.",
+    references: [CIS_BENCH, "NIST SP 800-53 SC-8", CIS_V8],
+    applies: (ctx) => ctx.profile.routingProtocols.some((protocol) => /^(ospf|bgp|eigrp|rip|isis)$/i.test(protocol.protocol)),
+    evaluate: (ctx) => {
+      const unauthenticated = ctx.profile.routingProtocols.filter(
+        (protocol) => /^(ospf|bgp|eigrp|rip|isis)$/i.test(protocol.protocol) && protocol.authConfigured !== true,
+      );
+      if (unauthenticated.length > 0) {
+        return { status: "NonCompliant", evidence: ev(ctx, unauthenticated.map((protocol) => protocol.line)) };
+      }
+      return { status: "Compliant", evidence: ev(ctx, ctx.profile.routingProtocols.slice(0, 3).map((protocol) => protocol.line)) };
+    },
+  },
+  {
+    id: "NET-MGMT-012",
+    title: "SSH server uses weak key exchange or cipher parameters",
+    severity: "Medium",
+    category: "Management",
+    description:
+      "SSH DH groups below 2048 bits and CBC-mode/3DES/Arcfour cipher suites are practical targets for modern cryptanalysis and are flagged by every current scanner. Devices without an explicit `ip ssh dh min size` still negotiate 1024-bit groups on many platforms.",
+    recommendation:
+      "Set `ip ssh dh min size 2048` (or higher), pin `ip ssh server algorithm encryption` to strong AEAD suites (aes256-gcm, chacha20) and MACs to sha2-256/sha2-512; drop 3des-cbc, aes-*-cbc, arcfour, and sha1.",
+    references: [CIS_BENCH, "NIST SP 800-77", PCI_DSS],
+    applies: (ctx) => isCiscoIosFamily(ctx.profile.vendor) || ctx.profile.management.sshCiphers.length > 0 || ctx.profile.management.sshDhMinSize !== null,
+    evaluate: (ctx) => {
+      const weakCiphers = ctx.profile.management.sshCiphers.filter((cipher) => /3des|cbc|arcfour|blowfish|sha1\b/i.test(cipher));
+      const weakDh = ctx.profile.management.sshDhMinSize !== null && ctx.profile.management.sshDhMinSize < 2048;
+      const noDh = isCiscoIosFamily(ctx.profile.vendor) && ctx.profile.management.sshDhMinSize === null;
+      if (weakCiphers.length > 0) {
+        return { status: "NonCompliant", evidence: [weakCiphers.join(", ")] };
+      }
+      if (weakDh) {
+        return { status: "NonCompliant", evidence: [`ip ssh dh min size ${ctx.profile.management.sshDhMinSize}`] };
+      }
+      if (noDh) {
+        return { status: "NonCompliant", evidence: [] };
+      }
+      return { status: "Compliant", evidence: [] };
+    },
+  },
+  {
+    id: "NET-MGMT-013",
+    title: "No control-plane protection (CoPP/CPP) configured",
+    severity: "Medium",
+    category: "Management",
+    description:
+      "Without a control-plane policing policy, traffic floods aimed at the device itself (SYN floods, oversized pings, TTL-expiry attacks) consume CPU and can freeze management access — the standard prelude to attacks like the 2023-era router worm waves.",
+    recommendation:
+      "Define a CoPP/CPP policy classifying and rate-limiting management, routing, and exception traffic (`control-plane` + `service-policy input COPP`) and monitor drop counters for tuning.",
+    references: [CIS_BENCH, "NIST SP 800-53 SC-5"],
+    applies: (ctx) => isCiscoIosFamily(ctx.profile.vendor),
+    evaluate: (ctx) => {
+      const copp = ctx.profile.services.find((service) => /control plane protection/i.test(service.name));
+      if (copp?.enabled) return { status: "Compliant", evidence: ev(ctx, [copp.line]) };
+      return { status: "NonCompliant", evidence: [] };
+    },
+  },
+  {
+    id: "NET-SW-007",
+    title: "Edge (access) ports without BPDU guard and portfast",
+    severity: "Low",
+    category: "Switching",
+    description:
+      "User-facing access ports that lack portfast and BPDU guard let a rogue device participate in spanning tree or emit BPDUs, enabling topology manipulation and spanning-tree root capture on the segment.",
+    recommendation:
+      "Enable `spanning-tree portfast` and `spanning-tree bpduguard enable` on every access port (or globally via `spanning-tree portfast default` / `bpduguard default`), and keep trunk/uplink ports unprotected only where required.",
+    references: [CIS_BENCH, CIS_V8],
+    applies: (ctx) =>
+      ((isCiscoIosFamily(ctx.profile.vendor) || ctx.profile.vendor === "aruba-switch" || ctx.profile.vendor === "arista-eos") &&
+        ctx.profile.interfaces.some((iface) => iface.mode === "access" || iface.accessVlan !== null)),
+    evaluate: (ctx) => {
+      const globalBpdu = ctx.profile.services.find((service) => service.name === "global bpduguard")?.enabled === true;
+      const globalPortfast = ctx.profile.services.find((service) => service.name === "global portfast")?.enabled === true;
+      if (globalBpdu && globalPortfast) return { status: "Compliant", evidence: [] };
+      const accessPorts = ctx.profile.interfaces.filter((iface) => iface.mode === "access" || iface.accessVlan !== null);
+      const missing = accessPorts.filter(
+        (iface) => !(iface.portfast === true || globalPortfast) || !(iface.bpduGuard === true || globalBpdu),
+      );
+      if (missing.length > 0) {
+        return { status: "NonCompliant", evidence: ev(ctx, missing.slice(0, 8).map((iface) => iface.line)) };
+      }
+      return { status: "Compliant", evidence: [] };
+    },
+  },
+  {
+    id: "NET-LOG-003",
+    title: "Configuration change tracking (archive/log config) not enabled",
+    severity: "Low",
+    category: "Logging",
+    description:
+      "Without configuration archiving there is no who-changed-what audit trail on the device itself, so unauthorized or accidental changes cannot be reconstructed after an incident — a recurring finding in post-incident reviews.",
+    recommendation:
+      "Enable configuration archiving with `archive` → `log config` → `logging enable`, ship archives to central management, and review changes on every maintenance window.",
+    references: ["NIST SP 800-53 AU-9", CIS_BENCH],
+    applies: (ctx) => isCiscoIosFamily(ctx.profile.vendor),
+    evaluate: (ctx) => {
+      const archive = ctx.profile.services.find((service) => service.name === "config archive");
+      if (archive?.enabled) return { status: "Compliant", evidence: ev(ctx, [archive.line]) };
+      return { status: "NonCompliant", evidence: [] };
+    },
+  },
+  {
+    id: "NET-SVC-004",
+    title: "Legacy network config autoload (service config) enabled",
+    severity: "High",
+    category: "Services",
+    description:
+      "`service config` makes the device broadcast for and load a configuration file from the network at boot. Anyone answering on the segment can feed it a hostile configuration — an unauthenticated, network-triggered code path on the management plane.",
+    recommendation: "Disable it explicitly with `no service config` (and `no boot network` where present) and verify after the next reload.",
+    references: [CIS_BENCH],
+    applies: (ctx) => isCiscoIosFamily(ctx.profile.vendor),
+    evaluate: (ctx) => {
+      const autoload = ctx.profile.services.find((service) => service.name.startsWith("service config"));
+      if (autoload) {
+        return autoload.enabled
+          ? { status: "NonCompliant", evidence: ev(ctx, [autoload.line]) }
+          : { status: "Compliant", evidence: ev(ctx, [autoload.line]) };
+      }
+      // not configured at all: modern images default to disabled
+      return { status: "Compliant", evidence: [] };
     },
   },
 ];

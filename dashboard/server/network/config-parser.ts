@@ -1,4 +1,4 @@
-// Network device / firewall configuration parser.
+﻿// Network device / firewall configuration parser.
 //
 // Accepts raw configuration text (running-config, startup-config, set-style
 // exports, XML exports) from the major network platforms and normalizes it
@@ -6,7 +6,7 @@
 // dashboard UI consume.
 //
 // Design rules (mirroring the sealed-report pipeline):
-//   * never throws — a malformed/unrecognized config degrades to `generic`;
+//   * never throws â€” a malformed/unrecognized config degrades to `generic`;
 //   * every array is bounded; every string is sanitized and size-bounded;
 //   * secret values (passwords, PSKs, enable secrets, community strings used
 //     as credentials) are NEVER stored in clear form. Only the hash/storage
@@ -26,6 +26,14 @@ export type VendorId =
   | "ubiquiti"
   | "f5"
   | "sonicwall"
+  | "arista-eos"
+  | "huawei-vrp"
+  | "checkpoint-gaia"
+  | "mikrotik-routeros"
+  | "pfsense"
+  | "opnsense"
+  | "sophos-sfos"
+  | "watchguard"
   | "generic";
 
 export type DeviceType =
@@ -84,7 +92,7 @@ export type ParsedInterface = {
 
 export type ParsedVlan = { id: string; name: string | null; line: number };
 export type ParsedRoute = { destination: string; nextHop: string; line: number };
-export type ParsedRoutingProtocol = { protocol: string; processId: string | null; networks: string[]; line: number };
+export type ParsedRoutingProtocol = { protocol: string; processId: string | null; networks: string[]; authConfigured: boolean | null; line: number };
 
 export type ParsedUser = {
   name: string;
@@ -141,6 +149,10 @@ export type ParsedManagement = {
   minPasswordLength: number | null;
   mgmtHosts: string[];
   allowAccess: string[];
+  /** `ip ssh dh min size` value (Cisco); below 2048 is weak. */
+  sshDhMinSize: number | null;
+  /** SSH cipher/MAC algorithm names when the config pins them. */
+  sshCiphers: string[];
 };
 
 export type ParsedAclRule = { n: number; text: string; action: "permit" | "deny" | "other" };
@@ -250,6 +262,7 @@ export function classifyHash(token: string | null | undefined): string {
   const value = (token ?? "").trim();
   if (!value) return "unknown";
   if (/^\$1\$/.test(value)) return "MD5 crypt ($1$)";
+  if (/^\$2[aby]\$/.test(value)) return "BCRYPT ($2)";
   if (/^\$5\$/.test(value)) return "SHA-256 crypt ($5$)";
   if (/^\$6\$/.test(value)) return "SHA-512 crypt ($6$)";
   if (/^\$8\$/.test(value)) return "PBKDF2 (type 8)";
@@ -263,7 +276,7 @@ export function classifyHash(token: string | null | undefined): string {
 }
 
 const SECRET_KEYWORD_RE =
-  /\b(?:password|passwd|secret|psk|passphrase|encrypted-password|pre-shared-key|wpa-passphrase|plain-text-password|plaintext-password)\b/i;
+  /\b(?:password|passwd|secret|psk|psksecret|passphrase|encrypted-password|pre-shared-key|wpa-passphrase|plain-text-password|plaintext-password)\b/i;
 
 const SKIP_TOKENS = new Set([
   "0", "1", "2", "5", "6", "7", "8", "9", // hash-type indicators
@@ -272,7 +285,7 @@ const SKIP_TOKENS = new Set([
 
 /** Mask the value after a secret keyword in a config line, for evidence display. */
 export function redactLine(text: string): string {
-  // keep SNMP community lines readable — weak community names are the finding
+  // keep SNMP community lines readable â€” weak community names are the finding
   if (/\bsnmp-server community\b|\bsnmp community\b|\bservice snmp\b/i.test(text)) return text;
   let out = text;
   const keyword = SECRET_KEYWORD_RE.exec(out);
@@ -381,6 +394,46 @@ const SIGNATURES: Signature[] = [
     patterns: [/<config version=/im, /<sonicwall>/im, /<system[^>]*>\s*<product/i, /<admin[^>]*>/im],
   },
   {
+    vendor: "checkpoint-gaia",
+    weight: 6,
+    patterns: [/^set password-controls /im, /^set snmp (agent|community) /im, /^# Exported by /im, /^set interface \S+ ipv4-address /im, /^add ntp server /im, /^set clienv /im, /^add rba user /im],
+  },
+  {
+    vendor: "mikrotik-routeros",
+    weight: 5,
+    patterns: [/^# by RouterOS /im, /^\/ip service$/im, /^\/user add /im, /^\/interface ethernet/im, /^\/system identity$/im, /^\/ip address$/im],
+  },
+  {
+    vendor: "huawei-vrp",
+    weight: 5,
+    patterns: [/^sysname\s+\S+/im, /^undo /im, /^local-user\s+\S+\s+password/im, /^snmp-agent/im, /^telnet server enable/im, /^info-center loghost/im, /^ntp-service unicast-server/im, /^~$/im],
+  },
+  {
+    vendor: "arista-eos",
+    weight: 5,
+    patterns: [/^management api http-commands$/im, /^daemon TerminAttr/im, /^interface Management\d/im, /^! device: /im, /^sflow run$/im, /^spanning-tree mode (mstp|rstp)$/im],
+  },
+  {
+    vendor: "pfsense",
+    weight: 6,
+    patterns: [/^<pfsense>/im, /<lastchange>/im, /<dnsserver>/im, /<syslog>/im, /<ssh>[\s\S]{0,200}<enable\/>/im],
+  },
+  {
+    vendor: "opnsense",
+    weight: 6,
+    patterns: [/^<opnsense>/im, /<lastchange>/im, /<OPNsense>/im, /<syslog>[\s\S]{0,200}<remote>/im, /<system>\s*<hostname>/im],
+  },
+  {
+    vendor: "sophos-sfos",
+    weight: 6,
+    patterns: [/<Entities[\s>]/i, /<FirewallRule[\s>]/i, /<IPHost[\s>]/i, /<IPService[\s>]/i, /<TransactionID>/im],
+  },
+  {
+    vendor: "watchguard",
+    weight: 5,
+    patterns: [/<Firebox[\s>]/i, /<WatchGuard/i, /<Fireware[\s>]/i, /<Device-Configuration/i],
+  },
+  {
     vendor: "cisco-ios",
     weight: 4,
     patterns: [/^building configuration/i, /^version\s+1[25]\.\d/im, /^service password-encryption/im, /^interface (gigabitethernet|fastethernet|tenGigabitEthernet|vlan|serial|tunnel)/im, /^enable secret/im, /^spanning-tree mode/im, /^boot-start-marker/im, /^config-register\s+0x/i],
@@ -401,6 +454,14 @@ const VENDOR_LABELS: Record<VendorId, string> = {
   ubiquiti: "Ubiquiti EdgeOS/UniFi",
   f5: "F5 BIG-IP",
   sonicwall: "SonicWall",
+  "arista-eos": "Arista EOS",
+  "huawei-vrp": "Huawei VRP",
+  "checkpoint-gaia": "Check Point GAiA",
+  "mikrotik-routeros": "MikroTik RouterOS",
+  pfsense: "pfSense CE",
+  opnsense: "OPNsense",
+  "sophos-sfos": "Sophos Firewall (SFOS)",
+  watchguard: "WatchGuard Fireware",
   generic: "Generic / unrecognized",
 };
 
@@ -418,6 +479,14 @@ const DEFAULT_DEVICE_TYPE: Record<VendorId, DeviceType> = {
   ubiquiti: "unknown",
   f5: "load-balancer",
   sonicwall: "firewall",
+  "arista-eos": "switch",
+  "huawei-vrp": "unknown",
+  "checkpoint-gaia": "firewall",
+  "mikrotik-routeros": "router",
+  pfsense: "firewall",
+  opnsense: "firewall",
+  "sophos-sfos": "firewall",
+  watchguard: "firewall",
   generic: "unknown",
 };
 
@@ -471,6 +540,8 @@ function emptyProfile(vendor: VendorId): ParsedNetworkConfig {
       minPasswordLength: null,
       mgmtHosts: [],
       allowAccess: [],
+      sshDhMinSize: null,
+      sshCiphers: [],
     },
     acls: [],
     firewallRules: [],
@@ -500,6 +571,8 @@ function parseCiscoIosLike(text: string, vendor: VendorId): ParsedNetworkConfig 
   let inIsakmpPolicy = false;
   let bannerCapture: { kind: string; delimiter: string; buffer: string[] } | null = null;
   let pendingVlan: { id: string; name: string | null; line: number } | null = null;
+  let inControlPlane = false;
+  let inArchive = false;
 
   const findInterface = (name: string, line: number): ParsedInterface => {
     if (currentInterface && currentInterface.name === name) return currentInterface;
@@ -572,6 +645,8 @@ function parseCiscoIosLike(text: string, vendor: VendorId): ParsedNetworkConfig 
       currentRouting = null;
       currentLineType = null;
       inIsakmpPolicy = false;
+      inControlPlane = false;
+      inArchive = false;
       continue;
     }
 
@@ -643,7 +718,7 @@ function parseCiscoIosLike(text: string, vendor: VendorId): ParsedNetworkConfig 
     }
 
     // ---- vty / console ----
-    match = /^line\s+(con(?:sole)?\s*\d|vty\s+[\d\s]+)/i.exec(line);
+    match = /^line\s+(con(?:sole)?\s*\d|vty(?:\s+[\d\s]+)?)/i.exec(line);
     if (match) {
       currentInterface = null;
       currentAcl = null;
@@ -823,12 +898,14 @@ function parseCiscoIosLike(text: string, vendor: VendorId): ParsedNetworkConfig 
             : /admin|write|rw/i.test(match[3] ?? "")
               ? "rw"
               : "ro";
+      // `group <name>` is an NX-OS role group, not an ACL.
+      const acl = match[2].toUpperCase() === "GROUP" ? null : clean(match[3]);
       pushBounded(
         profile.snmp.communities,
         {
           value: clean(match[1]) ?? "unknown",
           access,
-          acl: clean(match[3]),
+          acl,
           line: n,
         },
         64,
@@ -863,6 +940,14 @@ function parseCiscoIosLike(text: string, vendor: VendorId): ParsedNetworkConfig 
 
     // ---- logging ----
     match = /^(?:logging host|logging)\s+(\d+\.\d+\.\d+\.\d+)/i.exec(line);
+    if (match) {
+      profile.logging.enabled = true;
+      const host = clean(match[1]);
+      if (host) pushBounded(profile.logging.hosts, host, 16);
+      if (profile.logging.line === null) profile.logging.line = n;
+      continue;
+    }
+    match = /^logging server\s+(\d+\.\d+\.\d+\.\d+)/i.exec(line); // NX-OS
     if (match) {
       profile.logging.enabled = true;
       const host = clean(match[1]);
@@ -905,8 +990,31 @@ function parseCiscoIosLike(text: string, vendor: VendorId): ParsedNetworkConfig 
       profile.management.sshVersion = match[1];
       continue;
     }
+    // SSH crypto hardening (CIS: DH >= 2048, no CBC/3DES/Arcfour).
+    match = /^ip ssh dh min size\s+(\d+)/i.exec(line);
+    if (match) {
+      profile.management.sshDhMinSize = Number(match[1]);
+      continue;
+    }
+    match = /^ip ssh server algorithm (?:encryption|mac)\s+(.+)$/i.exec(line);
+    if (match) {
+      for (const algo of match[1].split(/\s+/)) {
+        const name = clean(algo);
+        if (name && profile.management.sshCiphers.length < 32) profile.management.sshCiphers.push(name);
+      }
+      continue;
+    }
     if (/^crypto key generate rsa/i.test(line) || /show.*crypto key mypubkey/.test(lower)) {
       profile.management.sshEnabled = profile.management.sshEnabled ?? true;
+      continue;
+    }
+    if (/^ssh key (?:rsa|dsa)/i.test(line)) {
+      profile.management.sshEnabled = true;
+      continue;
+    }
+    if (/^management api http-commands$/i.test(line)) {
+      // EOS management API serves HTTPS; presence in the config means enabled
+      profile.management.httpsEnabled = true;
       continue;
     }
     if (vendor === "cisco-nxos" && /^feature telnet/i.test(line)) {
@@ -915,6 +1023,7 @@ function parseCiscoIosLike(text: string, vendor: VendorId): ParsedNetworkConfig 
       continue;
     }
     if (vendor === "cisco-nxos" && /^no feature telnet|^feature telnet\b.*\bremove/i.test(line)) {
+      profile.management.telnetEnabled = false;
       addService("telnet (nxos feature)", false, n);
       continue;
     }
@@ -941,7 +1050,7 @@ function parseCiscoIosLike(text: string, vendor: VendorId): ParsedNetworkConfig 
       currentInterface = null;
       currentAcl = null;
       currentLineType = null;
-      currentRouting = { protocol: match[1].toLowerCase(), processId: match[2] ?? null, networks: [], line: n };
+      currentRouting = { protocol: match[1].toLowerCase(), processId: match[2] ?? null, networks: [], authConfigured: false, line: n };
       pushBounded(profile.routingProtocols, currentRouting, MAX_ROUTING_PROTOCOLS);
       continue;
     }
@@ -951,6 +1060,61 @@ function parseCiscoIosLike(text: string, vendor: VendorId): ParsedNetworkConfig 
         currentRouting.networks.push(clean(match[1]) ?? "");
         continue;
       }
+      // Routing protocol authentication: OSPF area auth, EIGRP MD5/SHA, BGP
+      // neighbor passwords. Rogue-router/route-injection defenses.
+      if (/authentication (?:mode\s+)?(?:md5|message-digest|sha| hmac-sha)/i.test(line) || /^area\s+\S+\s+authentication\b/i.test(line)) {
+        currentRouting.authConfigured = true;
+        continue;
+      }
+      match = /^neighbor\s+\S+\s+password\s+\S+/i.exec(line);
+      if (match) {
+        currentRouting.authConfigured = true;
+        continue;
+      }
+    }
+
+    // ---- control-plane protection (CoPP) and config archive ----
+    if (/^control-plane$/i.test(line)) {
+      inControlPlane = true;
+      inArchive = false;
+      currentInterface = null;
+      currentLineType = null;
+      continue;
+    }
+    if (inControlPlane) {
+      match = /^service-policy (?:input|output)\s+\S+/i.exec(line);
+      if (match) addService("control plane protection (CoPP)", true, n);
+      continue;
+    }
+    if (/^archive$/i.test(line)) {
+      inArchive = true;
+      continue;
+    }
+    if (inArchive) {
+      if (/^log config$/i.test(line)) continue;
+      if (/^logging enable$/i.test(line)) addService("config archive", true, n);
+      continue;
+    }
+    // Legacy config autoload from the network (supply-chain exposure).
+    if (/^service config$/i.test(line)) {
+      addService("service config (network autoload)", true, n);
+      continue;
+    }
+    if (/^no service config$/i.test(line)) {
+      addService("service config (network autoload)", false, n);
+      continue;
+    }
+    if (/^ip bootp server$/i.test(line)) {
+      addService("bootp", true, n);
+      continue;
+    }
+    if (/^no ip bootp server$/i.test(line)) {
+      addService("bootp", false, n);
+      continue;
+    }
+    if (/^no service finger$/i.test(line)) {
+      addService("finger", false, n);
+      continue;
     }
 
     // ---- VLANs ----
@@ -1352,7 +1516,9 @@ function parseAsa(text: string): ParsedNetworkConfig {
     if (match) {
       profile.management.telnetEnabled = true;
       const src = clean(`${match[1]} ${match[2]}`);
+      const iface = clean(match[3]);
       if (src) profile.management.mgmtHosts.push(src);
+      if (src && iface) pushBounded(profile.management.allowAccess, `${iface}:${match[1]}`, 32);
       continue;
     }
     if (/^telnet timeout/i.test(line)) continue;
@@ -1397,9 +1563,9 @@ function parseAsa(text: string): ParsedNetworkConfig {
       continue;
     }
 
-    // logging
+    // logging â€” `logging host <interface> <ip>` (ASA) or `logging host <ip>`
     if (/^logging enable/i.test(line)) profile.logging.enabled = true;
-    match = /^logging host\s+(\S+)/i.exec(line);
+    match = /^logging host\s+(?:\S+\s+)?(\d+\.\d+\.\d+\.\d+)/i.exec(line);
     if (match) {
       profile.logging.enabled = true;
       const host = clean(match[1]);
@@ -1538,6 +1704,11 @@ function parseJunos(text: string): ParsedNetworkConfig {
     let match = /^set\s+system\s+host-name\s+(\S+)/i.exec(line);
     if (match) {
       profile.hostname = clean(match[1]);
+      continue;
+    }
+    match = /^set\s+version\s+(\S+)/i.exec(line) ?? /^version\s+(\S+?);?\s*$/i.exec(line);
+    if (match) {
+      profile.osVersion = clean(match[1]);
       continue;
     }
     if (/^set\s+system\s+root-authentication/i.test(line)) {
@@ -1722,7 +1893,7 @@ function parseJunos(text: string): ParsedNetworkConfig {
     if (match) {
       let proto = profile.routingProtocols.find((entry) => entry.protocol === match![1]);
       if (!proto) {
-        proto = { protocol: match[1], processId: null, networks: [], line: n };
+        proto = { protocol: match[1], processId: null, networks: [], authConfigured: null, line: n };
         pushBounded(profile.routingProtocols, proto, MAX_ROUTING_PROTOCOLS);
       }
       const area = /area\s+(\S+)/i.exec(match[2] ?? "")?.[1];
@@ -1972,9 +2143,15 @@ function parsePanos(text: string): ParsedNetworkConfig {
       continue;
     }
     if (/^set\s+deviceconfig\s+system\s+service\s+/i.test(line)) {
-      if (/telnet/.test(line.toLowerCase())) {
-        profile.management.telnetEnabled = / enable$/i.test(line) || !/ disable$/i.test(line);
-      }
+      // `set deviceconfig system service disable-telnet yes` / `disable-http yes`
+      const lower = line.toLowerCase();
+      if (/disable-telnet/.test(lower)) profile.management.telnetEnabled = !/\byes\b/.test(lower);
+      if (/disable-http/.test(lower)) profile.management.httpEnabled = !/\byes\b/.test(lower);
+      continue;
+    }
+    match = /^set\s+deviceconfig\s+setting\s+management\s+admin-lockout\s+failed-attempts\s+(\d+)\s+lockout-time\s+(\d+)/i.exec(line);
+    if (match) {
+      profile.management.loginBlockFor = `${match[1]} attempts / ${match[2]} min`;
       continue;
     }
     // interfaces
@@ -2023,55 +2200,53 @@ function parsePanos(text: string): ParsedNetworkConfig {
       }
       continue;
     }
-    // security rules
-    match = /^set\s+rulebase\s+security\s+rules\s+(\S+)\s+from\s+(.+)$/i.exec(line);
-    if (match) {
-      let rule = profile.firewallRules.find((entry) => entry.id === match![1]);
+    // security rules â€” PAN-OS exports one segment per line, but interactive
+    // `set` lines can pack several segments; split on the segment keywords.
+    const packedRule = /^set\s+rulebase\s+security\s+rules\s+\S+/i.test(line)
+      ? line.split(/\s+(?=from\s|to\s|source\s|destination\s|service\s|action\s|log-setting\s)/i)
+      : null;
+    if (packedRule && packedRule.length > 1) {
+      const idMatch = /^set\s+rulebase\s+security\s+rules\s+(\S+)/i.exec(packedRule[0]);
+      const ruleId = idMatch?.[1] ?? `pan-${n}`;
+      let rule = profile.firewallRules.find((entry) => entry.id === ruleId);
       if (!rule) {
-        rule = { id: match[1], name: clean(match[1]), srcIntf: null, dstIntf: null, source: null, destination: null, service: null, action: null, log: null, line: n };
+        rule = { id: ruleId, name: clean(ruleId), srcIntf: null, dstIntf: null, source: null, destination: null, service: null, action: null, log: null, line: n };
         pushBounded(profile.firewallRules, rule, MAX_FW_RULES);
       }
-      rule.srcIntf = clean(match[2].replace(/[\[\]]/g, ""));
-      continue;
-    }
-    match = /^set\s+rulebase\s+security\s+rules\s+(\S+)\s+to\s+(.+)$/i.exec(line);
-    if (match) {
-      let rule = profile.firewallRules.find((entry) => entry.id === match![1]);
-      if (!rule) {
-        rule = { id: match[1], name: clean(match[1]), srcIntf: null, dstIntf: null, source: null, destination: null, service: null, action: null, log: null, line: n };
-        pushBounded(profile.firewallRules, rule, MAX_FW_RULES);
+      for (const segment of packedRule.slice(1)) {
+        let segmentMatch = /^from\s+(.+)$/i.exec(segment);
+        if (segmentMatch) {
+          rule.srcIntf = clean(segmentMatch[1].replace(/[\[\]]/g, ""));
+          continue;
+        }
+        segmentMatch = /^to\s+(.+)$/i.exec(segment);
+        if (segmentMatch) {
+          rule.dstIntf = clean(segmentMatch[1].replace(/[\[\]]/g, ""));
+          continue;
+        }
+        segmentMatch = /^source\s+(.+)$/i.exec(segment);
+        if (segmentMatch) {
+          rule.source = clean(segmentMatch[1].replace(/[\[\]]/g, ""));
+          continue;
+        }
+        segmentMatch = /^destination\s+(.+)$/i.exec(segment);
+        if (segmentMatch) {
+          rule.destination = clean(segmentMatch[1].replace(/[\[\]]/g, ""));
+          continue;
+        }
+        segmentMatch = /^service\s+(.+)$/i.exec(segment);
+        if (segmentMatch) {
+          rule.service = clean(segmentMatch[1].replace(/[\[\]]/g, ""));
+          continue;
+        }
+        segmentMatch = /^action\s+(\S+)/i.exec(segment);
+        if (segmentMatch) {
+          rule.action = clean(segmentMatch[1]);
+          continue;
+        }
+        segmentMatch = /^log-setting\s+(\S+)/i.exec(segment);
+        if (segmentMatch) rule.log = true;
       }
-      rule.dstIntf = clean(match[2].replace(/[\[\]]/g, ""));
-      continue;
-    }
-    match = /^set\s+rulebase\s+security\s+rules\s+(\S+)\s+source\s+(.+)$/i.exec(line);
-    if (match) {
-      const rule = profile.firewallRules.find((entry) => entry.id === match![1]);
-      if (rule) rule.source = clean(match[2].replace(/[\[\]]/g, ""));
-      continue;
-    }
-    match = /^set\s+rulebase\s+security\s+rules\s+(\S+)\s+destination\s+(.+)$/i.exec(line);
-    if (match) {
-      const rule = profile.firewallRules.find((entry) => entry.id === match![1]);
-      if (rule) rule.destination = clean(match[2].replace(/[\[\]]/g, ""));
-      continue;
-    }
-    match = /^set\s+rulebase\s+security\s+rules\s+(\S+)\s+service\s+(.+)$/i.exec(line);
-    if (match) {
-      const rule = profile.firewallRules.find((entry) => entry.id === match![1]);
-      if (rule) rule.service = clean(match[2].replace(/[\[\]]/g, ""));
-      continue;
-    }
-    match = /^set\s+rulebase\s+security\s+rules\s+(\S+)\s+action\s+(\S+)/i.exec(line);
-    if (match) {
-      const rule = profile.firewallRules.find((entry) => entry.id === match![1]);
-      if (rule) rule.action = clean(match[2]);
-      continue;
-    }
-    match = /^set\s+rulebase\s+security\s+rules\s+(\S+)\s+log-setting\s+(\S+)/i.exec(line);
-    if (match) {
-      const rule = profile.firewallRules.find((entry) => entry.id === match![1]);
-      if (rule) rule.log = true;
       continue;
     }
     // NAT rules
@@ -2546,7 +2721,7 @@ function parseArubaSwitch(text: string): ParsedNetworkConfig {
         continue;
       }
       if (/^\s*ip address\s+(\S+)\s+(\S+)/i.test(trimmed)) {
-        // vlan L3 address — track on vlan pseudo-interface
+        // vlan L3 address â€” track on vlan pseudo-interface
         const ipMatch = /^\s*ip address\s+(\S+)\s+(\S+)/i.exec(line);
         const name = `vlan${currentVlan.id}`;
         let iface = profile.interfaces.find((entry) => entry.name === name);
@@ -3136,6 +3311,958 @@ export type ParseResult = {
   detectionScore: number;
 };
 
+// ---- Huawei VRP -----------------------------------------------------------------
+// `display current-configuration` output: `#` section separators, `sysname`,
+// `interface X` blocks with indented commands, `undo` negation, `local-user`
+// under `aaa`, `snmp-agent`, `info-center loghost`, `ntp-service`.
+
+function parseHuaweiVrp(text: string): ParsedNetworkConfig {
+  const lines = toLines(text);
+  const profile = emptyProfile("huawei-vrp");
+  profile.configLines = lines.length;
+
+  let currentInterface: ParsedInterface | null = null;
+  let inAaa = false;
+  let inPasswordPolicy = false;
+  let currentRouting: ParsedRoutingProtocol | null = null;
+
+  const blankInterface = (name: string, line: number): ParsedInterface => ({
+    name,
+    line,
+    description: null,
+    ipAddress: null,
+    adminEnabled: null,
+    mode: "unknown",
+    accessVlan: null,
+    nativeVlan: null,
+    allowedVlans: null,
+    aclIn: null,
+    aclOut: null,
+    portSecurity: null,
+    bpduGuard: null,
+    portfast: null,
+    stormControl: null,
+    speedDuplex: null,
+    nameif: null,
+    securityLevel: null,
+  });
+
+  for (const { n, text: line } of lines) {
+    if (!line || line === "#" || line === "return") {
+      currentInterface = null;
+      inPasswordPolicy = false;
+      if (/^#\s*$/.test(line)) inAaa = false;
+      continue;
+    }
+    if (/^!Software Version\s+(\S+)/i.test(line)) {
+      profile.osVersion = clean(/^!Software Version\s+(\S+)/i.exec(line)?.[1]);
+      continue;
+    }
+    if (/^display current-configuration/i.test(line) || /^<\S+>$/.test(line)) continue;
+
+    let match = /^sysname\s+(.+)$/i.exec(line);
+    if (match) {
+      profile.hostname = clean(match[1]);
+      continue;
+    }
+    match = /^vlan batch\s+(.+)$/i.exec(line);
+    if (match) {
+      for (const id of match[1].split(/\s+/).slice(0, 32)) {
+        pushBounded(profile.vlans, { id, name: null, line: n }, MAX_VLANS);
+      }
+      continue;
+    }
+    match = /^interface\s+(\S+)\s*$/i.exec(line);
+    if (match) {
+      currentInterface = blankInterface(match[1], n);
+      pushBounded(profile.interfaces, currentInterface, MAX_INTERFACES);
+      continue;
+    }
+    if (currentInterface) {
+      if (/^undo shutdown$/i.test(line)) {
+        currentInterface.adminEnabled = true;
+        continue;
+      }
+      if (/^shutdown$/i.test(line)) {
+        currentInterface.adminEnabled = false;
+        continue;
+      }
+      match = /^description\s+(.+)$/i.exec(line);
+      if (match) {
+        currentInterface.description = clean(match[1]);
+        continue;
+      }
+      match = /^ip address\s+(\S+)\s+(\S+)$/i.exec(line);
+      if (match) {
+        currentInterface.ipAddress = `${match[1]} ${match[2]}`;
+        currentInterface.mode = "routed";
+        continue;
+      }
+      match = /^port link-type\s+(\S+)$/i.exec(line);
+      if (match) {
+        currentInterface.mode = match[1].toLowerCase() === "trunk" ? "trunk" : match[1].toLowerCase() === "access" ? "access" : "l2";
+        continue;
+      }
+      match = /^port default vlan\s+(\d+)$/i.exec(line);
+      if (match) {
+        currentInterface.accessVlan = match[1];
+        if (currentInterface.mode === "unknown") currentInterface.mode = "access";
+        continue;
+      }
+      match = /^port trunk allow-pass vlan\s+(.+)$/i.exec(line);
+      if (match) {
+        currentInterface.allowedVlans = clean(match[1]);
+        currentInterface.mode = "trunk";
+        continue;
+      }
+      if (/^port trunk pvid vlan\s+/i.test(line)) {
+        currentInterface.nativeVlan = clean(/^port trunk pvid vlan\s+(\d+)/i.exec(line)?.[1]);
+        continue;
+      }
+      continue;
+    }
+
+    // management services
+    if (/^telnet server enable$/i.test(line)) {
+      profile.management.telnetEnabled = true;
+      continue;
+    }
+    if (/^telnet server enable$/i.test(line)) {
+      profile.management.telnetEnabled = true;
+      continue;
+    }
+    if (/^telnet server disable$/i.test(line)) {
+      profile.management.telnetEnabled = false;
+      continue;
+    }
+    if (/^undo telnet server/i.test(line)) {
+      profile.management.telnetEnabled = false;
+      continue;
+    }
+    if (/^stelnet server enable$/i.test(line) || /^ssh server enable$/i.test(line) || /^snetconf server enable$/i.test(line)) {
+      profile.management.sshEnabled = true;
+      profile.management.sshVersion = "2"; // VRP stelnet is SSHv2-only
+      continue;
+    }
+    if (/^undo stelnet server|undo ssh server enable/i.test(line)) {
+      profile.management.sshEnabled = false;
+      continue;
+    }
+    if (/^http server enable$/i.test(line)) {
+      profile.management.httpEnabled = true;
+      continue;
+    }
+    if (/^http server disable$/i.test(line)) {
+      profile.management.httpEnabled = false;
+      continue;
+    }
+    if (/^undo http server/i.test(line)) {
+      profile.management.httpEnabled = false;
+      continue;
+    }
+    if (/^http secure-server enable$/i.test(line)) {
+      profile.management.httpsEnabled = true;
+      continue;
+    }
+    match = /^ssh server cipher\s+(.+)$/i.exec(line);
+    if (match) {
+      for (const algo of match[1].split(":")) {
+        const name = clean(algo);
+        if (name && profile.management.sshCiphers.length < 32) profile.management.sshCiphers.push(name);
+      }
+      continue;
+    }
+    match = /^ntp-service unicast-server\s+(\S+)/i.exec(line);
+    if (match) {
+      const host = clean(match[1]);
+      if (host) pushBounded(profile.ntp.servers, host, 16);
+      if (profile.ntp.line === null) profile.ntp.line = n;
+      continue;
+    }
+    if (/^ntp-service authentication enable$/i.test(line)) {
+      profile.ntp.authenticated = true;
+      continue;
+    }
+    match = /^info-center loghost\s+(\S+)/i.exec(line);
+    if (match) {
+      const host = clean(match[1]);
+      if (host && !/^console$/i.test(host)) pushBounded(profile.logging.hosts, host, 16);
+      profile.logging.enabled = true;
+      continue;
+    }
+    match = /^snmp-agent community\s+(read|write)\s+(?:cipher\s+)?(\S+)/i.exec(line);
+    if (match) {
+      profile.snmp.enabled = true;
+      if (profile.snmp.line === null) profile.snmp.line = n;
+      pushBounded(
+        profile.snmp.communities,
+        { value: clean(match[2]) ?? "unknown", access: match[1].toLowerCase() === "write" ? "rw" : "ro", acl: null, line: n },
+        64,
+      );
+      continue;
+    }
+    if (/^snmp-agent group v3/i.test(line) || /^snmp-agent usm-user v3/i.test(line)) {
+      profile.snmp.enabled = true;
+      profile.snmp.v3Configured = true;
+      continue;
+    }
+    if (/^snmp-agent$/i.test(line)) {
+      profile.snmp.enabled = true;
+      if (profile.snmp.line === null) profile.snmp.line = n;
+      continue;
+    }
+
+    // aaa / users
+    if (/^aaa$/i.test(line)) {
+      inAaa = true;
+      profile.aaa.newModel = true;
+      profile.aaa.line = n;
+      continue;
+    }
+    if (inAaa && /^password-policy$/i.test(line)) {
+      inPasswordPolicy = true;
+      continue;
+    }
+    if (inPasswordPolicy) {
+      match = /^password min-length\s+(\d+)/i.exec(line);
+      if (match) {
+        profile.management.minPasswordLength = Number(match[1]);
+        inPasswordPolicy = false;
+        continue;
+      }
+      if (/^#/.test(line)) inPasswordPolicy = false;
+    }
+    match = /^local-user\s+(\S+)\s+password\s+(irreversible-cipher|cipher)\s+\S+/i.exec(line);
+    if (match) {
+      profile.users.push({
+        name: clean(match[1]) ?? "unknown",
+        role: null,
+        hashType: match[2].toLowerCase() === "cipher" ? "Huawei reversible cipher" : "Huawei irreversible cipher (hashed)",
+        line: n,
+      });
+      continue;
+    }
+    match = /^local-user\s+(\S+)\s+privilege level\s+(\d+)/i.exec(line);
+    if (match) {
+      const user = profile.users.find((entry) => entry.name === match![1]);
+      if (user) user.role = match[2] === "15" || match[2] === "3" ? "admin-level" : `level ${match[2]}`;
+      continue;
+    }
+    match = /^hwtacacs-server template\s+\S+/i.exec(line) ?? /^radius-server template\s+\S+/i.exec(line);
+    if (match) {
+      profile.aaa.newModel = true;
+      continue;
+    }
+    match = /^hwtacacs-server authentication\s+(\S+)/i.exec(line);
+    if (match) {
+      const host = clean(match[1]);
+      if (host) pushBounded(profile.aaa.tacacsHosts, host, 32);
+      continue;
+    }
+    match = /^radius-server authentication\s+(\S+)/i.exec(line);
+    if (match) {
+      const host = clean(match[1]);
+      if (host) pushBounded(profile.aaa.radiusHosts, host, 32);
+      continue;
+    }
+
+    // routing
+    match = /^ospf\s+(\S+)?/i.exec(line);
+    if (match) {
+      currentRouting = { protocol: "ospf", processId: match[1] ?? null, networks: [], authConfigured: false, line: n };
+      pushBounded(profile.routingProtocols, currentRouting, MAX_ROUTING_PROTOCOLS);
+      continue;
+    }
+    match = /^bgp\s+(\S+)?/i.exec(line);
+    if (match) {
+      currentRouting = { protocol: "bgp", processId: match[1] ?? null, networks: [], authConfigured: false, line: n };
+      pushBounded(profile.routingProtocols, currentRouting, MAX_ROUTING_PROTOCOLS);
+      continue;
+    }
+    if (currentRouting && /authentication-mode\s+(hmac-md5|hmac-sha|md5)/i.test(line)) {
+      currentRouting.authConfigured = true;
+      continue;
+    }
+    if (currentRouting && /^peer\s+\S+\s+password\s/i.test(line)) {
+      currentRouting.authConfigured = true;
+      continue;
+    }
+    match = /^ip route-static\s+(\S+)\s+(\S+)\s+(\S+)/i.exec(line);
+    if (match) {
+      pushBounded(profile.staticRoutes, { destination: match[1], nextHop: match[3], line: n }, MAX_ROUTES);
+      continue;
+    }
+  }
+
+  // device type heuristic: switching signals beat routing signals
+  if (profile.vlans.length > 0 || profile.interfaces.some((iface) => /Vlanif/i.test(iface.name))) {
+    profile.deviceType = "switch";
+  } else if (profile.routingProtocols.length > 0) {
+    profile.deviceType = "router";
+  }
+  return profile;
+}
+
+// ---- Check Point GAiA (clish) ----------------------------------------------------
+// `show configuration` / `save configuration` output: `set ...` / `add ...`
+// lines with `#` comments. The security policy lives on SmartConsole, so the
+// GAiA layer is about the OS hardening (users, services, interfaces, NTP).
+
+function parseCheckpointGaia(text: string): ParsedNetworkConfig {
+  const lines = toLines(text);
+  const profile = emptyProfile("checkpoint-gaia");
+  profile.configLines = lines.length;
+
+  const ifaceByName = (name: string, line: number): ParsedInterface => {
+    const existing = profile.interfaces.find((entry) => entry.name === name);
+    if (existing) return existing;
+    const created: ParsedInterface = {
+      name,
+      line,
+      description: null,
+      ipAddress: null,
+      adminEnabled: null,
+      mode: "routed",
+      accessVlan: null,
+      nativeVlan: null,
+      allowedVlans: null,
+      aclIn: null,
+      aclOut: null,
+      portSecurity: null,
+      bpduGuard: null,
+      portfast: null,
+      stormControl: null,
+      speedDuplex: null,
+      nameif: null,
+      securityLevel: null,
+    };
+    pushBounded(profile.interfaces, created, MAX_INTERFACES);
+    return created;
+  };
+
+  for (const { n, text: line } of lines) {
+    if (!line || line.startsWith("#")) continue;
+    let match = /^set hostname\s+(.+)$/i.exec(line);
+    if (match) {
+      profile.hostname = clean(match[1]);
+      continue;
+    }
+    match = /^set password-controls min-password-length\s+(\d+)/i.exec(line);
+    if (match) {
+      profile.management.minPasswordLength = Number(match[1]);
+      continue;
+    }
+    if (/^set password-controls complexity (?:1|2)$/i.test(line)) {
+      // complexity enabled â€” informational only
+      continue;
+    }
+    // users
+    match = /^set user\s+(\S+)\s+password-hash\s+(\S+)/i.exec(line);
+    if (match) {
+      profile.users.push({
+        name: clean(match[1]) ?? "unknown",
+        role: null,
+        hashType: classifyHash(match[2]),
+        line: n,
+      });
+      continue;
+    }
+    match = /^set user\s+(\S+)\s+(?:real-name|primary-group)\s+(.+)$/i.exec(line);
+    if (match) {
+      const user = profile.users.find((entry) => entry.name === match![1]);
+      if (user && /admin/i.test(match[2])) user.role = "admin";
+      continue;
+    }
+    match = /^add rba user\s+(\S+)\s+roles\s+(\S+)/i.exec(line);
+    if (match) {
+      let user = profile.users.find((entry) => entry.name === match![1]);
+      if (!user) {
+        user = { name: clean(match[1]) ?? "unknown", role: null, hashType: "unknown", line: n };
+        profile.users.push(user);
+      }
+      user.role = match[2].toLowerCase() === "adminrole" ? "admin" : clean(match[2]);
+      continue;
+    }
+    // services
+    if (/^set telnet-state on/i.test(line)) {
+      profile.management.telnetEnabled = true;
+      continue;
+    }
+    if (/^set telnet-state off/i.test(line)) {
+      profile.management.telnetEnabled = false;
+      continue;
+    }
+    if (/^set ssh server\b/i.test(line) || /^add ssh server\b/i.test(line)) {
+      profile.management.sshEnabled = true;
+      profile.management.sshVersion = "2"; // GAiA sshd is SSHv2-only
+      if (/permit-root-login (?:on|yes)/i.test(line)) {
+        // root SSH is tracked as a user-shaped finding via MGMT-004 semantics
+      }
+      continue;
+    }
+    match = /^set web (?:daemon-enable|ssl-port)\b/i.exec(line);
+    if (match) {
+      profile.management.httpsEnabled = /daemon-enable on/i.test(line) ? true : profile.management.httpsEnabled ?? true;
+      continue;
+    }
+    // snmp
+    if (/^set snmp agent on/i.test(line)) {
+      profile.snmp.enabled = true;
+      if (profile.snmp.line === null) profile.snmp.line = n;
+      continue;
+    }
+    if (/^set snmp agent off/i.test(line)) {
+      profile.snmp.enabled = false;
+      continue;
+    }
+    if (/^set snmp agent-version\s+V3/i.test(line)) {
+      profile.snmp.v3Configured = true;
+      continue;
+    }
+    match = /^set snmp community\s+(\S+)\s+(read-only|read-write)/i.exec(line);
+    if (match) {
+      profile.snmp.enabled = true;
+      if (profile.snmp.line === null) profile.snmp.line = n;
+      pushBounded(
+        profile.snmp.communities,
+        { value: clean(match[1]) ?? "unknown", access: match[2] === "read-write" ? "rw" : "ro", acl: null, line: n },
+        64,
+      );
+      continue;
+    }
+    // ntp
+    match = /^add ntp server address\s+(\S+)/i.exec(line);
+    if (match) {
+      const host = clean(match[1]);
+      if (host) pushBounded(profile.ntp.servers, host, 16);
+      continue;
+    }
+    if (/^set ntp active on/i.test(line)) continue;
+    if (/^set ntp authentication\b/i.test(line)) {
+      profile.ntp.authenticated = /on|true/i.test(line) ? true : false;
+      continue;
+    }
+    // syslog
+    match = /^add syslog log-server\s+\S+\s+address\s+(\S+)/i.exec(line);
+    if (match) {
+      const host = clean(match[1]);
+      if (host) pushBounded(profile.logging.hosts, host, 16);
+      profile.logging.enabled = true;
+      continue;
+    }
+    // aaa
+    match = /^(?:add|set) (?:tacacs|radius)-server.*address\s+(\S+)/i.exec(line);
+    if (match) {
+      const host = clean(match[1]);
+      if (host) {
+        pushBounded(/tacacs/i.test(line) ? profile.aaa.tacacsHosts : profile.aaa.radiusHosts, host, 32);
+        profile.aaa.newModel = true;
+      }
+      continue;
+    }
+    // interfaces
+    match = /^set interface\s+(\S+)\s+ipv4-address\s+(\S+)\s+mask-length\s+(\d+)/i.exec(line);
+    if (match) {
+      const iface = ifaceByName(match[1], n);
+      iface.ipAddress = `${match[2]}/${match[3]}`;
+      iface.mode = "routed";
+      continue;
+    }
+    match = /^set interface\s+(\S+)\s+(?:comments|description)\s+(.+)$/i.exec(line);
+    if (match) {
+      ifaceByName(match[1], n).description = clean(match[2]);
+      continue;
+    }
+    match = /^set interface\s+(\S+)\s+state\s+(on|off)/i.exec(line);
+    if (match) {
+      ifaceByName(match[1], n).adminEnabled = match[2] === "on";
+      continue;
+    }
+    // routes
+    match = /^set static-route\s+(\S+)\s+nexthop gateway ip\s+(\S+)/i.exec(line);
+    if (match) {
+      pushBounded(
+        profile.staticRoutes,
+        { destination: match[1] === "default" ? "0.0.0.0/0 (default)" : match[1], nextHop: clean(match[2]) ?? "?", line: n },
+        MAX_ROUTES,
+      );
+      continue;
+    }
+    // management hosts (allowed GUI clients)
+    match = /^add gui-client\s+(\S+)/i.exec(line) ?? /^set gui-client\s+\S+\s+ip-address\s+(\S+)/i.exec(line);
+    if (match) {
+      const host = clean(match[1]);
+      if (host) pushBounded(profile.management.mgmtHosts, host, 32);
+      continue;
+    }
+  }
+  return profile;
+}
+
+// ---- MikroTik RouterOS (.rsc export) ----------------------------------------------
+// Export grammar: `/path` menu declarations followed by `add key=value â€¦` /
+// `set [index|find] key=value â€¦` lines; `# by RouterOS x.y` header comments.
+
+function parseMikrotikQuoted(text: string): string {
+  const match = /^"(.*)"$/.exec(text.trim());
+  return (match ? match[1] : text.trim()).slice(0, MAX_STRING);
+}
+
+function parseMikrotik(text: string): ParsedNetworkConfig {
+  const lines = toLines(text);
+  const profile = emptyProfile("mikrotik-routeros");
+  profile.configLines = lines.length;
+  let path = "";
+
+  const addService = (name: string, enabled: boolean, line: number): void => {
+    const existing = profile.services.find((entry) => entry.name === name);
+    if (existing) {
+      existing.enabled = enabled;
+      existing.line = line;
+      return;
+    }
+    pushBounded(profile.services, { name, enabled, line }, MAX_SERVICES);
+  };
+
+  for (const { n, text: line } of lines) {
+    if (!line) continue;
+    if (line.startsWith("#")) {
+      const version = /^#\s*(?:apr|may|jun|jul|aug|sep|oct|nov|dec|jan|feb|mar)\/\d{2}\/\d{4}.*by RouterOS\s+(\S+)/i.exec(line) ?? /^#.*by RouterOS\s+(\S+)/i.exec(line);
+      if (version) profile.osVersion = clean(version[1]);
+      continue;
+    }
+    if (line.startsWith("/")) {
+      path = line.toLowerCase();
+      continue;
+    }
+    const tokens = line.match(/(?:[^\s"]+"[^"]*")|(?:[^\s"]+)/g) ?? [];
+    const action = tokens[0]?.toLowerCase();
+    const kv = new Map<string, string>();
+    const positionals: string[] = [];
+    for (let index = 1; index < tokens.length; index += 1) {
+      const token = tokens[index];
+      const separator = token.indexOf("=");
+      if (separator > 0) kv.set(token.slice(0, separator), parseMikrotikQuoted(token.slice(separator + 1)));
+      else positionals.push(token);
+    }
+
+    if (action === "set" || action === "add") {
+      // identity
+      if (path === "/system identity" && kv.has("name")) {
+        profile.hostname = clean(kv.get("name")) ?? profile.hostname;
+        continue;
+      }
+      if (path === "/system note" && kv.has("note")) {
+        if (kv.get("show-at-login") === "yes" || kv.has("note")) {
+          pushBounded(profile.banners, { kind: "login note", text: clean(kv.get("note")) ?? "", line: n }, MAX_BANNERS);
+        }
+        continue;
+      }
+      if (path === "/system clock" && kv.has("time-zone-name")) continue;
+      // users
+      if (path === "/user" && kv.has("name")) {
+        profile.users.push({
+          name: kv.get("name") ?? "unknown",
+          role: kv.get("group") ?? null,
+          hashType: kv.has("password") ? classifyHash(kv.get("password")) : "not exported (sensitive hidden)",
+          line: n,
+        });
+        continue;
+      }
+      if (path === "/user settings" && kv.has("minimum-password-length")) {
+        profile.management.minPasswordLength = Number(kv.get("minimum-password-length")) || null;
+        continue;
+      }
+      // services: `set telnet disabled=yes` (v6 positional, v7 numbers=)
+      if (path === "/ip service" && action === "set") {
+        const service = (positionals[0] ?? kv.get("numbers") ?? "").toLowerCase();
+        const disabled = kv.get("disabled") === "yes";
+        if (service) {
+          if (service === "telnet") profile.management.telnetEnabled = !disabled;
+          if (service === "ssh") {
+            profile.management.sshEnabled = !disabled;
+            profile.management.sshVersion = "2"; // RouterOS ssh is v2-only
+          }
+          if (service === "www") profile.management.httpEnabled = !disabled;
+          if (service === "www-ssl") profile.management.httpsEnabled = !disabled;
+          if (service === "api" || service === "api-ssl") continue;
+          addService(`${service} service`, !disabled, n);
+        }
+        continue;
+      }
+      if (path === "/ip service" && action === "add") continue;
+      // snmp
+      if (path === "/snmp" && action === "set") {
+        if (kv.get("enabled") === "yes") {
+          profile.snmp.enabled = true;
+          if (profile.snmp.line === null) profile.snmp.line = n;
+        }
+        continue;
+      }
+      if (path === "/snmp community" && action === "add" && kv.has("name")) {
+        profile.snmp.enabled = true;
+        if (profile.snmp.line === null) profile.snmp.line = n;
+        pushBounded(
+          profile.snmp.communities,
+          { value: kv.get("name") ?? "unknown", access: /write/i.test(kv.get("write-access") ?? "") ? "rw" : "ro", acl: null, line: n },
+          64,
+        );
+        continue;
+      }
+      // ntp
+      if (path === "/system ntp client" && kv.has("servers")) {
+        for (const server of (kv.get("servers") ?? "").split(",").slice(0, 16)) {
+          const host = clean(server);
+          if (host) pushBounded(profile.ntp.servers, host, 16);
+        }
+        continue;
+      }
+      if (path === "/system ntp client servers" && action === "add" && kv.has("address")) {
+        const host = clean(kv.get("address"));
+        if (host) pushBounded(profile.ntp.servers, host, 16);
+        continue;
+      }
+      // syslog
+      if (path === "/system logging action" && kv.has("remote")) {
+        const host = clean(kv.get("remote"));
+        if (host) pushBounded(profile.logging.hosts, host, 16);
+        profile.logging.enabled = true;
+        continue;
+      }
+      // radius
+      if (path === "/radius" && action === "add" && kv.has("address")) {
+        const host = clean(kv.get("address"));
+        if (host) pushBounded(profile.aaa.radiusHosts, host, 32);
+        profile.aaa.newModel = true;
+        continue;
+      }
+      // wireless security profiles
+      if (path.includes("security-profiles") && action === "add" && kv.has("name")) {
+        const authTypes = kv.get("authentication-types") ?? "";
+        pushBounded(
+          profile.wirelessLans,
+          {
+            ssid: kv.get("name") ?? "unknown",
+            profile: kv.get("name") ?? null,
+            authMode: authTypes || "unknown",
+            psk: kv.has("wpa2-pre-shared-key") || kv.has("wpa-pre-shared-key") || /psk/i.test(authTypes),
+            line: n,
+          },
+          MAX_WLANS,
+        );
+        continue;
+      }
+      // ipsec proposals
+      if (path === "/ip ipsec proposal" && action === "add" && kv.has("name")) {
+        pushBounded(
+          profile.vpns,
+          {
+            kind: "ipsec",
+            name: kv.get("name") ?? null,
+            encryption: (kv.get("enc-algorithms") ?? kv.get("encryption-algorithms") ?? "").split(",").map((entry) => entry.trim()).filter(Boolean),
+            auth: (kv.get("auth-algorithms") ?? "").split(",").map((entry) => entry.trim()).filter(Boolean),
+            dhGroup: kv.get("dh-group") ?? null,
+            preSharedKey: true,
+            aggressiveMode: false,
+            line: n,
+          },
+          MAX_VPNS,
+        );
+        continue;
+      }
+      // interfaces
+      if (path.startsWith("/interface") && kv.has("name")) {
+        const existing = profile.interfaces.find((entry) => entry.name === kv.get("name"));
+        if (!existing) {
+          pushBounded(
+            profile.interfaces,
+            {
+              name: kv.get("name") ?? "unknown",
+              line: n,
+              description: kv.get("comment") ?? null,
+              ipAddress: null,
+              adminEnabled: kv.get("disabled") === "yes" ? false : null,
+              mode: "unknown",
+              accessVlan: null,
+              nativeVlan: null,
+              allowedVlans: null,
+              aclIn: null,
+              aclOut: null,
+              portSecurity: null,
+              bpduGuard: null,
+              portfast: null,
+              stormControl: null,
+              speedDuplex: null,
+              nameif: null,
+              securityLevel: null,
+            },
+            MAX_INTERFACES,
+          );
+        }
+        continue;
+      }
+      // addresses
+      if (path === "/ip address" && action === "add" && kv.has("address")) {
+        const target = kv.get("interface") ?? "";
+        const iface = profile.interfaces.find((entry) => entry.name === target);
+        if (iface) {
+          iface.ipAddress = kv.get("address") ?? null;
+          iface.mode = "routed";
+        } else {
+          pushBounded(
+            profile.interfaces,
+            {
+              name: target || `addr${profile.interfaces.length + 1}`,
+              line: n,
+              description: null,
+              ipAddress: kv.get("address") ?? null,
+              adminEnabled: null,
+              mode: "routed",
+              accessVlan: null,
+              nativeVlan: null,
+              allowedVlans: null,
+              aclIn: null,
+              aclOut: null,
+              portSecurity: null,
+              bpduGuard: null,
+              portfast: null,
+              stormControl: null,
+              speedDuplex: null,
+              nameif: null,
+              securityLevel: null,
+            },
+            MAX_INTERFACES,
+          );
+        }
+        continue;
+      }
+      // firewall filter
+      if (path === "/ip firewall filter" && action === "add") {
+        const chain = kv.get("chain") ?? "unknown";
+        const actionValue = kv.get("action") ?? "unknown";
+        pushBounded(
+          profile.firewallRules,
+          {
+            id: `ros-${profile.firewallRules.length + 1}`,
+            name: kv.get("comment") ?? null,
+            srcIntf: kv.get("in-interface") ?? null,
+            dstIntf: kv.get("out-interface") ?? null,
+            source: kv.get("src-address") ?? "any",
+            destination: kv.get("dst-address") ?? "any",
+            service: kv.get("protocol")
+              ? [kv.get("protocol"), kv.get("dst-port")].filter(Boolean).join("/")
+              : kv.get("dst-port") ?? "any",
+            action: actionValue,
+            log: kv.get("log") === "yes",
+            line: n,
+          },
+          MAX_FW_RULES,
+        );
+        continue;
+      }
+      // static routes
+      if (path === "/ip route" && action === "add" && kv.has("dst-address")) {
+        pushBounded(
+          profile.staticRoutes,
+          { destination: kv.get("dst-address") ?? "?", nextHop: kv.get("gateway") ?? "?", line: n },
+          MAX_ROUTES,
+        );
+        continue;
+      }
+    }
+  }
+  return profile;
+}
+
+// ---- XML-based firewalls (pfSense / OPNsense / Sophos SFOS / WatchGuard) ----------
+// Extracted with bounded tag regexes â€” no full DOM, tolerant to attribute and
+// whitespace differences. pfSense/OPNsense `config.xml` is a stable documented
+// format; Sophos `Entities.xml` (from the selective backup tar) is parsed
+// best-effort for rules and admin settings.
+
+function xmlSlice(doc: string, tag: string, max = 200): string[] {
+  const out: string[] = [];
+  const re = new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`, "gi");
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(doc)) !== null && out.length < max) out.push(match[1]);
+  return out;
+}
+
+function xmlText(block: string, tag: string): string | null {
+  const match = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`, "i").exec(block) ?? new RegExp(`<${tag}[^>]*/>`, "i").exec(block);
+  if (!match) return null;
+  const value = match[1] ?? "";
+  return clean(value.replace(/<[^>]+>/g, "").trim());
+}
+
+function xmlHasEmptyTag(block: string, tag: string): boolean {
+  return new RegExp(`<${tag}\\s*/>`, "i").test(block);
+}
+
+function parseXmlFirewall(text: string, vendor: "pfsense" | "opnsense" | "sophos-sfos" | "watchguard"): ParsedNetworkConfig {
+  const doc = text.replace(/<!--[\s\S]*?-->/g, "");
+  const profile = emptyProfile(vendor);
+  profile.configLines = doc.split(/\r\n|\r|\n/).length;
+
+  if (vendor === "sophos-sfos") {
+    // Entities.xml: firewall rules with child elements.
+    for (const block of xmlSlice(doc, "FirewallRule", 512)) {
+      const networks = (tag: string): string | null => {
+        const group = new RegExp(`<${tag}>[\\s\\S]*?</${tag}>`, "i").exec(block);
+        if (!group) return null;
+        const items = xmlSlice(group[0], "Network").length > 0 ? xmlSlice(group[0], "Network") : xmlSlice(group[0], "Service");
+        return items.length > 0 ? items.map((entry) => clean(entry) ?? "unknown").join(",") : null;
+      };
+      pushBounded(
+        profile.firewallRules,
+        {
+          id: xmlText(block, "FirewallRule") ?? xmlText(block, "Name") ?? `sfos-${profile.firewallRules.length + 1}`,
+          name: xmlText(block, "Name"),
+          srcIntf: xmlText(block, "SourceZones"),
+          dstIntf: xmlText(block, "DestinationZones"),
+          source: networks("SourceNetworks") ?? "any",
+          destination: networks("DestinationNetworks") ?? "any",
+          service: networks("Services") ?? "any",
+          action: (xmlText(block, "Action") ?? "unknown").toLowerCase(),
+          log: /true/i.test(xmlText(block, "EnableLogging") ?? ""),
+          line: profile.firewallRules.length + 1,
+        },
+        MAX_FW_RULES,
+      );
+    }
+    // administrative settings, when present in the export
+    const minLen = xmlText(doc, "PasswordComplexity");
+    if (minLen && /^\d+$/.test(minLen)) profile.management.minPasswordLength = Number(minLen);
+    return profile;
+  }
+
+  // pfSense / OPNsense config.xml share the same core layout.
+  const hostname = xmlText(doc, "hostname");
+  profile.hostname = hostname;
+  profile.osVersion = xmlText(doc, "version");
+  const domain = xmlText(doc, "domain");
+  if (hostname && domain) profile.uptime = null;
+
+  // system settings
+  const systemBlock = new RegExp(`<system>([\\s\\S]*?)</system>`, "i").exec(doc)?.[1] ?? doc;
+  if (xmlHasEmptyTag(systemBlock, "enable") && /<ssh>/i.test(systemBlock)) profile.management.sshEnabled = true;
+  if (/<webgui>[\s\S]*?<protocol>https<\/protocol>/i.test(doc)) profile.management.httpsEnabled = true;
+  if (/<webgui>[\s\S]*?<protocol>http<\/protocol>/i.test(doc)) profile.management.httpEnabled = true;
+  const rocommunity = xmlText(systemBlock, "rocommunity") ?? xmlText(doc, "rocommunity");
+  if (rocommunity || xmlHasEmptyTag(systemBlock, "snmpdenable") || /<snmpd>[\s\S]*?<enable\/>/.test(doc)) {
+    profile.snmp.enabled = true;
+    if (profile.snmp.line === null) profile.snmp.line = 1;
+    if (rocommunity) {
+      pushBounded(profile.snmp.communities, { value: rocommunity, access: "ro", acl: null, line: 1 }, 64);
+    }
+  }
+  const timeservers = xmlText(systemBlock, "timeservers");
+  if (timeservers) {
+    for (const server of timeservers.split(/\s+/).slice(0, 16)) {
+      const host = clean(server);
+      if (host) pushBounded(profile.ntp.servers, host, 16);
+    }
+  }
+  const remote = xmlText(doc, "remoteserver") ?? xmlText(doc, "nvsremote") ?? xmlText(doc, "remote");
+  if (remote) {
+    const host = clean(remote.split(":")[0]);
+    if (host) pushBounded(profile.logging.hosts, host, 16);
+    profile.logging.enabled = true;
+  }
+  for (const userBlock of xmlSlice(systemBlock, "user", 512)) {
+    const name = xmlText(userBlock, "name");
+    if (!name) continue;
+    const password = xmlText(userBlock, "password") ?? xmlText(userBlock, "bcrypt-hash") ?? xmlText(userBlock, "password-hash");
+    profile.users.push({
+      name,
+      role: xmlText(userBlock, "scope") ?? (xmlHasEmptyTag(userBlock, "priv") ? "user" : null),
+      hashType: password ? classifyHash(password) : "no password stored",
+      line: profile.users.length + 1,
+    });
+  }
+
+  // interfaces
+  const interfacesBlock = new RegExp(`<interfaces>([\\s\\S]*?)</interfaces>`, "i").exec(doc)?.[1] ?? "";
+  for (const [index, block] of xmlSlice(interfacesBlock, "wan", 16).concat(xmlSlice(interfacesBlock, "lan", 16)).entries()) {
+    const name = index === 0 ? "wan" : "lan";
+    pushBounded(
+      profile.interfaces,
+      {
+        name,
+        line: index + 1,
+        description: xmlText(block, "descr"),
+        ipAddress: xmlText(block, "ipaddr") ?? (xmlHasEmptyTag(block, "dhcp") ? "dhcp" : null),
+        adminEnabled: null,
+        mode: "routed",
+        accessVlan: null,
+        nativeVlan: null,
+        allowedVlans: null,
+        aclIn: null,
+        aclOut: null,
+        portSecurity: null,
+        bpduGuard: null,
+        portfast: null,
+        stormControl: null,
+        speedDuplex: null,
+        nameif: null,
+        securityLevel: null,
+      },
+      MAX_INTERFACES,
+    );
+  }
+  for (const [index, block] of xmlSlice(interfacesBlock, "opt", 64).entries()) {
+    pushBounded(
+      profile.interfaces,
+      {
+        name: xmlText(block, "descr") ?? `opt${index + 1}`,
+        line: 100 + index,
+        description: xmlText(block, "descr"),
+        ipAddress: xmlText(block, "ipaddr"),
+        adminEnabled: null,
+        mode: "routed",
+        accessVlan: null,
+        nativeVlan: null,
+        allowedVlans: null,
+        aclIn: null,
+        aclOut: null,
+        portSecurity: null,
+        bpduGuard: null,
+        portfast: null,
+        stormControl: null,
+        speedDuplex: null,
+        nameif: null,
+        securityLevel: null,
+      },
+      MAX_INTERFACES,
+    );
+  }
+
+  // firewall rules
+  const filterBlock = new RegExp(`<filter>([\\s\\S]*?)</filter>`, "i").exec(doc)?.[1] ?? "";
+  for (const block of xmlSlice(filterBlock, "rule", 1024)) {
+    const type = (xmlText(block, "type") ?? "unknown").toLowerCase();
+    const sourceAny = /<source>[\s\S]*?<any\s*\/>[\s\S]*?<\/source>/i.test(block) || xmlHasEmptyTag(block, "source");
+    const destinationAny = /<destination>[\s\S]*?<any\s*\/>[\s\S]*?<\/destination>/i.test(block) || xmlHasEmptyTag(block, "destination");
+    pushBounded(
+      profile.firewallRules,
+      {
+        id: xmlText(block, "tracker") ?? `pf-${profile.firewallRules.length + 1}`,
+        name: xmlText(block, "descr"),
+        srcIntf: xmlText(block, "interface"),
+        dstIntf: null,
+        source: sourceAny ? "any" : xmlText(block, "source") ?? "any",
+        destination: destinationAny ? "any" : xmlText(block, "destination") ?? "any",
+        service: xmlText(block, "destination") ? xmlText(block, "port") ?? "any" : "any",
+        action: type,
+        log: xmlHasEmptyTag(block, "log"),
+        line: profile.firewallRules.length + 1,
+      },
+      MAX_FW_RULES,
+    );
+  }
+  return profile;
+}
+
 /**
  * Parse any network/firewall configuration text into the normalized profile.
  * Never throws: unrecognized content yields a `generic` profile.
@@ -3181,6 +4308,24 @@ export function parseNetworkConfig(text: string, filename?: string): ParseResult
       case "sonicwall":
         profile = parseSonicwall(bounded);
         break;
+      case "arista-eos":
+        profile = parseCiscoIosLike(bounded, "arista-eos");
+        break;
+      case "huawei-vrp":
+        profile = parseHuaweiVrp(bounded);
+        break;
+      case "checkpoint-gaia":
+        profile = parseCheckpointGaia(bounded);
+        break;
+      case "mikrotik-routeros":
+        profile = parseMikrotik(bounded);
+        break;
+      case "pfsense":
+      case "opnsense":
+      case "sophos-sfos":
+      case "watchguard":
+        profile = parseXmlFirewall(bounded, detection.vendor);
+        break;
       default:
         profile = parseGeneric(bounded);
     }
@@ -3190,7 +4335,7 @@ export function parseNetworkConfig(text: string, filename?: string): ParseResult
     profile.vendorLabel = VENDOR_LABELS.generic;
   }
   if (!profile.hostname && filename) {
-    // Fall back to the file name (without extension) as display identity — but
+    // Fall back to the file name (without extension) as display identity â€” but
     // never from generic export names, which would collapse unrelated
     // hostname-less devices into one identity downstream.
     const base = filename.replace(/\.(cfg|conf|config|txt|dump|log)$/i, "").slice(0, 64);
