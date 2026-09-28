@@ -10,9 +10,21 @@ type Props = { onAuthed: (user: AuthUser) => void };
 type FieldErrors = { username?: string; password?: string };
 
 const FEATURES: Array<{ icon: typeof ShieldCheck; title: string; detail: string }> = [
-  { icon: ShieldCheck, title: "Signed evidence", detail: "Tamper-evident scan reports with full provenance." },
-  { icon: KeyRound, title: "Scoped access", detail: "Role-gated users, issuance keys, and audit trails." },
-  { icon: Lock, title: "Private by default", detail: "Cookies stay same-origin; nothing leaves your environment." },
+  {
+    icon: ShieldCheck,
+    title: "368 hardening testcases",
+    detail: "Read-only scans on Linux and Windows; the target writes exactly one sealed report.",
+  },
+  {
+    icon: KeyRound,
+    title: "One key per issuance",
+    detail: "Reports are sealed to an X25519 key only this dashboard can open.",
+  },
+  {
+    icon: Lock,
+    title: "Argon2id, peppered",
+    detail: "Hashes use 64 MiB and a secret kept outside the database.",
+  },
 ];
 
 /** Sign-in screen with inline validation and explicit error states. */
@@ -52,7 +64,7 @@ export function Login({ onAuthed }: Props) {
   }
 
   return (
-    <div className="hbs-mesh flex min-h-screen items-center justify-center bg-canvas p-4">
+    <div className="hbs-grid flex min-h-screen items-center justify-center bg-canvas p-4">
       <div className="grid w-full max-w-4xl overflow-hidden rounded-panel border border-hairline bg-surface shadow-overlay lg:grid-cols-[1.05fr_1fr]">
         <aside className="hidden flex-col justify-between gap-10 border-r border-hairline bg-canvas-elevated p-8 lg:flex">
           <div>
@@ -152,12 +164,12 @@ export function Login({ onAuthed }: Props) {
             />
 
             <Button type="submit" variant="primary" size="lg" block loading={busy}>
-              {busy ? "Signing in…" : "Sign in"}
+              {busy ? "Signing inâ€¦" : "Sign in"}
             </Button>
           </form>
 
           <p className="mt-6 flex items-center gap-2 text-2xs text-ink-subtle">
-            Press <Kbd>⌘</Kbd> <Kbd>K</Kbd> inside the console to jump anywhere.
+            Press <Kbd>âŒ˜</Kbd> <Kbd>K</Kbd> inside the console to jump anywhere.
           </p>
         </main>
       </div>

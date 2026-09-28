@@ -343,11 +343,16 @@
     background-clip: content-box;
   }
 
-  /* Subtle scanline/mesh backdrop used behind auth and empty screens. */
-  .hbs-mesh {
+  /* Graph-paper backdrop for auth and empty screens. A measured hairline grid,
+     not a gradient blob: the console is an instrument, so the surface reads as
+     ruled paper and stays quiet in both themes. */
+  .hbs-grid {
+    background-color: var(--color-canvas);
     background-image:
-      radial-gradient(circle at 15% 10%, color-mix(in srgb, var(--color-accent) 14%, transparent), transparent 42%),
-      radial-gradient(circle at 85% 0%, color-mix(in srgb, var(--color-low) 10%, transparent), transparent 38%);
+      linear-gradient(to right, color-mix(in srgb, var(--color-hairline) 60%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in srgb, var(--color-hairline) 60%, transparent) 1px, transparent 1px);
+    background-size: 28px 28px;
+    background-position: center;
   }
 
   .hbs-divider {

@@ -44,8 +44,8 @@ function passwordStrength(password: string): { score: number; label: string; ton
 }
 
 /**
- * First-run wizard: welcome → administrator account (with a password-strength
- * meter) → done. Creates the initial super admin via `api.setup`.
+ * First-run wizard: welcome â†’ administrator account (with a password-strength
+ * meter) â†’ done. Creates the initial super admin via `api.setup`.
  */
 export function Setup({ onAuthed }: Props) {
   const toast = useToast();
@@ -90,7 +90,7 @@ export function Setup({ onAuthed }: Props) {
   }
 
   return (
-    <div className="hbs-mesh flex min-h-screen items-center justify-center bg-canvas p-4">
+    <div className="hbs-grid flex min-h-screen items-center justify-center bg-canvas p-4">
       <div className="w-full max-w-xl rounded-panel border border-hairline bg-surface p-6 shadow-overlay sm:p-8">
         <div className="flex items-center gap-2.5">
           <span className="flex h-9 w-9 items-center justify-center rounded-control bg-accent-soft text-accent">
@@ -252,7 +252,7 @@ export function Setup({ onAuthed }: Props) {
                   Back
                 </Button>
                 <Button type="submit" variant="primary" loading={busy}>
-                  {busy ? "Creating…" : "Create administrator"}
+                  {busy ? "Creatingâ€¦" : "Create administrator"}
                 </Button>
               </div>
             </form>
