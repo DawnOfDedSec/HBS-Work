@@ -142,6 +142,9 @@ jobs:
       - name: Build the SPA + embedded asset bundle
         run: bun run build
       - name: Compile the standalone server
+        # bash on every runner: the Windows job would otherwise run this
+        # backslash-continued, $VAR-quoted script under PowerShell.
+        shell: bash
         run: |
           VERSION="${{ steps.ver.outputs.version }}"
           bun x --bun bun build --compile --minify --sourcemap=none \
@@ -248,7 +251,15 @@ jobs:
           PY
           echo "desktop app version: $VERSION"
 
+      - name: Add the second macOS target (universal build)
+        if: matrix.name == 'macos'
+        shell: bash
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
       - name: Build the desktop app bundles
+        # bash on every runner: the version/target logic below is shell script,
+        # and PowerShell does not parse $VAR assignments or backslash breaks.
+        shell: bash
         run: |
           ARGS="build"
           if [ -n "${{ matrix.targets }}" ]; then
@@ -265,6 +276,7 @@ jobs:
         run: |
           set -e
           mkdir -p "$GITHUB_WORKSPACE/release-assets"
+          # find -exec keeps the arm64 deb/rpm filenames distinct on collection.
           find target/release/bundle -maxdepth 4 -type f \
             \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \
                -o -name '*.dmg' -o -name '*.exe' -o -name '*.msi' \) \
