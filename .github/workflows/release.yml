@@ -278,10 +278,12 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/release-assets"
           # Search all of target: a --target build (the macOS universal dmg)
           # lands in target/<triple>/release/bundle, not target/release/bundle.
-          # The extension filter keeps the scan precise.
-          find target -maxdepth 6 -type f \
+          # Restrict to bundle directories and to installer extensions, or the
+          # scan also sweeps up target/release/build/*/build-script-build.exe
+          # and the raw unbundled binaries.
+          find target -maxdepth 6 -type f -path '*/release/bundle/*' \
             \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \
-               -o -name '*.dmg' -o -name '*.exe' -o -name '*.msi' \) \
+               -o -name '*.dmg' -o -name '*.msi' -o -name '*-setup.exe' \) \
             -exec cp {} "$GITHUB_WORKSPACE/release-assets/" \;
           ls -l "$GITHUB_WORKSPACE/release-assets"
 
