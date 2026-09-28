@@ -18,7 +18,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde_json::json;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -284,7 +284,7 @@ impl AppState {
             }
         }
         let server = find_server(self).ok_or_else(|| {
-            "dashboard not installed. Run the HBS installer first: https://github.com/PotenFYR-Studios/HBS-Tool#install".to_string()
+            "the dashboard engine is missing - use Install engine to fetch it, or re-run the HBS installer".to_string()
         })?;
         let mut cmd = if server.ends_with("bun") || server.ends_with("bun.exe") {
             let mut c = Command::new(&server);
@@ -373,13 +373,6 @@ impl AppState {
             );
         }
         self.ensure_started()
-    }
-
-    /// True when this shell can actually restart the engine: it either owns the
-    /// child process or a service unit manages it. When false, the user has to
-    /// restart via the tray, and the UI should say so instead of pretending.
-    fn can_restart(&self) -> bool {
-        self.child.lock().unwrap().is_some() || self.service_exists()
     }
 
     /// Hand the child to the OS and return - used by "Quit (keep server)".
@@ -570,103 +563,162 @@ fn find_cli(state: &AppState) -> Option<PathBuf> {
     None
 }
 
-// ------------------------------------------------------- settings (sealed)
-// The dashboard owns the AEAD config format, so the shell calls the engine's
-// headless config CLI instead of reimplementing the crypto in Rust.
+// ------------------------------------------------------ engine provisioning
+// The desktop installers ship only the shell. The engine is one release asset
+// per platform (install.ps1/install.sh use the same names), so when the shell
+// starts without one it fetches the matching gzip, verifies the SHA-256 from
+// manifest.json, and unpacks it into <root>/bin. This is why a standalone
+// "HBS.Console_x64-setup.exe" install still ends up with a working dashboard.
 
-fn config_command(
-    state: &AppState,
-    extra: &[String],
-) -> Result<(PathBuf, Vec<String>, PathBuf), String> {
-    let server = find_server(state)
-        .ok_or_else(|| "dashboard not installed - run the HBS installer first".to_string())?;
-    let mut args: Vec<String> = Vec::new();
-    let cwd;
-    if server.ends_with("bun") || server.ends_with("bun.exe") {
-        args.push("run".into());
-        args.push("server/index.ts".into());
-        cwd = state.app_dir().join("dashboard");
-    } else {
-        cwd = state.data_dir();
-    }
-    args.extend(extra.iter().cloned());
-    Ok((server, args, cwd))
+const RELEASE_BASE_DEFAULT: &str = "https://github.com/PotenFYR-Studios/HBS-Tool/releases";
+
+fn release_base() -> String {
+    std::env::var("HBS_RELEASE_URL").unwrap_or_else(|_| RELEASE_BASE_DEFAULT.to_string())
 }
 
-fn run_config_cli(state: &AppState, extra: &[String]) -> Result<serde_json::Value, String> {
-    let (server, args, cwd) = config_command(state, extra)?;
-    let mut cmd = Command::new(&server);
-    cmd.args(&args).current_dir(&cwd);
-    for (k, v) in state.server_env() {
-        cmd.env(k, v);
+fn http_client() -> Result<reqwest::blocking::Client, String> {
+    reqwest::blocking::Client::builder()
+        // We read the releases/latest redirect ourselves; no API, no rate limit.
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(180))
+        .user_agent("hbs-console-desktop")
+        .build()
+        .map_err(|e| format!("http client: {e}"))
+}
+
+fn is_musl_host() -> bool {
+    if std::path::Path::new("/etc/alpine-release").exists() {
+        return true;
     }
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-    }
-    let out = cmd
+    std::process::Command::new("ldd")
+        .arg("--version")
         .output()
-        .map_err(|e| format!("could not run {}: {e}", server.display()))?;
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let payload = stdout
-        .lines()
-        .rev()
-        .find(|line| line.trim_start().starts_with('{'))
-        .unwrap_or("");
-    if payload.trim().is_empty() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        return Err(format!("the engine returned no settings ({})", stderr.trim()));
+        .map(|out| {
+            let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
+            text.push_str(&String::from_utf8_lossy(&out.stderr));
+            text.contains("musl")
+        })
+        .unwrap_or(false)
+}
+
+/// Release asset target triple for this machine, matching the installers.
+fn engine_target() -> Option<&'static str> {
+    match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("windows", "x86_64") => Some("bun-windows-x64"),
+        ("linux", "x86_64") => Some(if is_musl_host() { "bun-linux-x64-musl" } else { "bun-linux-x64" }),
+        ("linux", "aarch64") => Some(if is_musl_host() { "bun-linux-arm64-musl" } else { "bun-linux-arm64" }),
+        ("macos", "x86_64") => Some("bun-darwin-x64"),
+        ("macos", "aarch64") => Some("bun-darwin-arm64"),
+        _ => None,
     }
-    serde_json::from_str(payload.trim()).map_err(|e| format!("unreadable settings response: {e}"))
+}
+
+fn resolve_tag(client: &reqwest::blocking::Client, base: &str) -> Result<String, String> {
+    if let Ok(tag) = std::env::var("HBS_RELEASE_TAG") {
+        if !tag.trim().is_empty() {
+            return Ok(tag.trim().to_string());
+        }
+    }
+    let response = client
+        .get(format!("{base}/latest"))
+        .send()
+        .map_err(|e| format!("could not reach {base}: {e}"))?;
+    let location = response
+        .headers()
+        .get("location")
+        .and_then(|value| value.to_str().ok())
+        .ok_or_else(|| "the release redirect carried no location".to_string())?;
+    location
+        .trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .filter(|tag| !tag.is_empty())
+        .map(|tag| tag.to_string())
+        .ok_or_else(|| "could not parse the release tag".to_string())
+}
+
+#[derive(serde::Deserialize)]
+struct ManifestFile {
+    name: String,
+    sha256: String,
+}
+
+#[derive(serde::Deserialize)]
+struct ReleaseManifest {
+    version: String,
+    files: Vec<ManifestFile>,
+}
+
+fn engine_asset<'a>(manifest: &'a ReleaseManifest, target: &str) -> Option<&'a ManifestFile> {
+    let wanted = format!("hbs-server-{}-{}.gz", manifest.version, target);
+    manifest.files.iter().find(|file| file.name == wanted)
+}
+
+fn provision_engine(state: &AppState) -> Result<PathBuf, String> {
+    if let Some(existing) = find_server(state) {
+        return Ok(existing);
+    }
+    let target = engine_target().ok_or_else(|| {
+        format!(
+            "no prebuilt engine for {}/{} - use the HBS installer",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        )
+    })?;
+    let base = release_base();
+    let client = http_client()?;
+    let tag = resolve_tag(&client, &base)?;
+    state.log(&format!("provisioning engine from release {tag} ({target})"));
+
+    let manifest: ReleaseManifest = client
+        .get(format!("{base}/download/{tag}/manifest.json"))
+        .send()
+        .and_then(|response| response.error_for_status())
+        .map_err(|e| format!("could not read the release manifest: {e}"))?
+        .json()
+        .map_err(|e| format!("the release manifest is malformed: {e}"))?;
+
+    let asset = engine_asset(&manifest, target)
+        .ok_or_else(|| format!("release {tag} has no engine asset for {target}"))?;
+
+    let bytes = client
+        .get(format!("{base}/download/{tag}/{}", asset.name))
+        .send()
+        .and_then(|response| response.error_for_status())
+        .map_err(|e| format!("could not download {}: {e}", asset.name))?
+        .bytes()
+        .map_err(|e| format!("could not read {}: {e}", asset.name))?;
+
+    use sha2::{Digest, Sha256};
+    let digest = hex::encode(Sha256::digest(&bytes));
+    if digest != asset.sha256.to_lowercase() {
+        return Err(format!("checksum mismatch for {} - download corrupted", asset.name));
+    }
+
+    let mut unpacked = Vec::with_capacity(bytes.len() * 3);
+    flate2::read::GzDecoder::new(&bytes[..])
+        .read_to_end(&mut unpacked)
+        .map_err(|e| format!("could not unpack {}: {e}", asset.name))?;
+
+    let exe = if cfg!(target_os = "windows") { "hbs-server.exe" } else { "hbs-server" };
+    std::fs::create_dir_all(state.bin_dir()).map_err(|e| e.to_string())?;
+    let dest = state.bin_dir().join(exe);
+    let temp = state.bin_dir().join(format!("{exe}.{}.tmp", std::process::id()));
+    std::fs::write(&temp, &unpacked).map_err(|e| format!("could not write {}: {e}", temp.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&temp, std::fs::Permissions::from_mode(0o755));
+    }
+    std::fs::rename(&temp, &dest).map_err(|e| format!("could not install {}: {e}", dest.display()))?;
+    state.log(&format!("engine installed: {}", dest.display()));
+    Ok(dest)
 }
 
 #[tauri::command]
-fn read_settings(state: tauri::State<AppState>) -> Result<serde_json::Value, String> {
-    run_config_cli(&state, &["--print-config".to_string()])
-}
-
-#[tauri::command]
-fn save_settings(
-    app: AppHandle,
-    state: tauri::State<AppState>,
-    settings: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    std::fs::create_dir_all(state.data_dir()).map_err(|e| e.to_string())?;
-    let request = state
-        .data_dir()
-        .join(format!("config-request-{}.json", std::process::id()));
-    std::fs::write(&request, settings.to_string()).map_err(|e| e.to_string())?;
-    let result = run_config_cli(
-        &state,
-        &["--apply-config".to_string(), request.to_string_lossy().into_owned()],
-    );
-    let _ = std::fs::remove_file(&request);
-    let value = result?;
-    if value.get("ok").and_then(|v| v.as_bool()) != Some(true) {
-        return Ok(value);
-    }
-    state.reload_port();
-    let can_restart = state.can_restart();
-    // Restart in the background so the command returns at once and the shell
-    // stays responsive while the engine rebinds.
-    if can_restart {
-        let handle = app.clone();
-        std::thread::spawn(move || {
-            let state = handle.state::<AppState>();
-            match state.restart() {
-                Ok(()) => state.log("settings applied - engine restarted"),
-                Err(e) => state.log(&format!("settings saved but restart failed: {e}")),
-            }
-        });
-    } else {
-        state.log("settings saved - waiting for an external restart");
-    }
-    let mut out = value;
-    if let Some(object) = out.as_object_mut() {
-        object.insert("restarting".into(), serde_json::Value::Bool(can_restart));
-    }
-    Ok(out)
+fn install_engine(state: tauri::State<AppState>) -> Result<serde_json::Value, String> {
+    let path = provision_engine(&state)?;
+    Ok(json!({ "ok": true, "server": path.to_string_lossy() }))
 }
 
 // ------------------------------------------------------------------ actions
@@ -1120,6 +1172,13 @@ fn main() {
             thread::spawn(move || {
                 let state = bg.state::<AppState>();
                 let already = state.server_up();
+                // A standalone app install (NSIS/MSI/dmg) has no engine yet.
+                // Fetch it once, before the first start attempt.
+                if !already && find_server(&state).is_none() {
+                    if let Err(e) = provision_engine(&state) {
+                        state.log(&format!("engine provisioning failed: {e}"));
+                    }
+                }
                 match state.ensure_started() {
                     Ok(()) => {
                         set_tooltip(&bg, format!("HBS Console - running (port {})", state.port()));
@@ -1184,10 +1243,54 @@ fn main() {
             open_path,
             autostart_state,
             set_autostart,
-            read_settings,
-            save_settings,
+            install_engine,
             app_info
         ])
         .run(tauri::generate_context!())
         .expect("error while running HBS Console");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn engine_asset_uses_the_installer_asset_name() {
+        let manifest = ReleaseManifest {
+            version: "1.2.3".into(),
+            files: vec![
+                ManifestFile {
+                    name: "hbs-server-1.2.3-bun-windows-x64.gz".into(),
+                    sha256: "aa".into(),
+                },
+                ManifestFile {
+                    name: "hbs-server-1.2.3-bun-linux-x64.gz".into(),
+                    sha256: "bb".into(),
+                },
+            ],
+        };
+        assert_eq!(engine_asset(&manifest, "bun-windows-x64").unwrap().sha256, "aa");
+        assert_eq!(engine_asset(&manifest, "bun-linux-x64").unwrap().sha256, "bb");
+        assert!(engine_asset(&manifest, "bun-darwin-arm64").is_none());
+    }
+
+    /// Proves the whole download -> SHA-256 -> gunzip -> install path against
+    /// the published release. Network-bound, so opt in with
+    /// `cargo test -- --ignored` when a release has just been cut.
+    #[test]
+    #[ignore = "network: hits the published GitHub release"]
+    fn provisions_the_published_engine() {
+        let root = std::env::temp_dir().join(format!("hbs-provision-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let state = AppState {
+            root: root.clone(),
+            port: Mutex::new(3000),
+            child: Mutex::new(None),
+        };
+        let path = provision_engine(&state).expect("provisioning failed");
+        assert!(path.is_file(), "engine not written: {}", path.display());
+        let bytes = std::fs::read(&path).unwrap();
+        assert!(bytes.len() > 1_000_000, "engine suspiciously small: {}", bytes.len());
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }

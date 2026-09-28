@@ -7,15 +7,20 @@ local server. No Electron: it uses the OS webview (~10 MB installed).
 
 ## What it does
 
-- Starts the dashboard (Bun + `server/index.ts`) if nothing is listening yet,
-  and stops only what it started.
+- Opens the dashboard itself in the native window: the app window **is** the
+  console, not a control panel.
+- If no engine is present (a standalone `HBS.Console_x64-setup.exe` / `.dmg` /
+  `.deb` install ships only the shell), fetches the matching `hbs-server` asset
+  from the release, verifies its SHA-256 against `manifest.json`, and unpacks
+  it into `<root>/bin` before the first start.
 - Tray menu: **Open HBS Console** (embedded window), **Open in browser**,
   start / stop / restart, **View logs**, **Open data folder**, **Update HBS**,
   **Launch at login**, **Quit (keep server running)** and
-  **Quit and stop server**.
+  **Quit and stop server**. Lifecycle lives here and in the `hbs` CLI.
 - Closing the window keeps HBS in the tray; the tray icon is the control point.
-- Shell screen (shown when the dashboard is not answering) reports status,
-  surfaces errors, and can open the logs or the data folder.
+- A minimal fallback screen (only when the engine cannot start) reports status,
+  offers Retry (which provisions then starts), and can open the logs or data
+  folder.
 - If the dashboard is managed by systemd/launchd (from `install.sh`), the tray
   controls that unit instead of spawning a second server.
 
