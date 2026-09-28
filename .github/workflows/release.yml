@@ -155,10 +155,14 @@ jobs:
         run: |
           set -e
           VERSION="${{ steps.ver.outputs.version }}"
+          # Bun appends .exe on Windows, but the ASSET name must not: install.ps1
+          # (and the desktop shell) look for hbs-server-<version>-<target>.gz on
+          # every platform. Only the source path carries the .exe.
           NAME="hbs-server-$VERSION-${{ matrix.target }}"
-          case "${{ matrix.target }}" in *windows*) NAME="$NAME.exe";; esac
+          SRC="$NAME"
+          case "${{ matrix.target }}" in *windows*) SRC="$NAME.exe";; esac
           mkdir -p "$GITHUB_WORKSPACE/release-assets"
-          gzip -9 -c "$NAME" > "$GITHUB_WORKSPACE/release-assets/$NAME.gz"
+          gzip -9 -c "$SRC" > "$GITHUB_WORKSPACE/release-assets/$NAME.gz"
           ls -l "$GITHUB_WORKSPACE/release-assets"
       - uses: actions/upload-artifact@v4
         with:
