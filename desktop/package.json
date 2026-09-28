@@ -1,0 +1,14 @@
+{
+  "name": "hbs-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "HBS Console desktop shell (Tauri 2): tray icon, native window, launch-at-login.",
+  "scripts": {
+    "dev": "bunx --bun @tauri-apps/cli@^2 dev",
+    "build": "bunx --bun @tauri-apps/cli@^2 build",
+    "check": "cargo check --manifest-path Cargo.toml"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

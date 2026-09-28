@@ -369,7 +369,7 @@ export function Users({ role: providedRole }: { role?: AdminRole | null } = {}) 
           open={creating}
           onClose={() => setCreating(false)}
           title="Create user"
-          description="New accounts start with the selected role and an argon2id password hash."
+          description="New accounts start with the selected role and a salted Argon2id hash. Passwords follow the same policy as the setup wizard."
           footer={
             <>
               <Button variant="secondary" onClick={() => setCreating(false)}>
@@ -389,6 +389,7 @@ export function Users({ role: providedRole }: { role?: AdminRole | null } = {}) 
               autoComplete="new-password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
+              hint="At least 12 characters, or a longer passphrase."
               required
             />
             <Select

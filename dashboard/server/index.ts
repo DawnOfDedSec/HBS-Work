@@ -21,6 +21,7 @@ import { streamSSE } from "hono/streaming";
 
 import { networkInterfaces } from "node:os";
 import { USAGE, isExposed, parseServerOptions } from "./options";
+import { embeddedFile, embeddedIndexHtml, hasEmbeddedDist } from "./embedded-dist";
 
 const parsed = parseServerOptions(process.argv, process.env);
 if (!parsed.ok) {
@@ -38,26 +39,112 @@ export const db = openDb(dbPath);
 const version = runMigrations(db);
 console.log(`hbs-dashboard database schema version ${version}`);
 
-// First-run bootstrap: create and print the initial super_admin. Only when the
-// server is the entrypoint (not when the module is imported by tests).
-if (import.meta.main && process.env.HBS_BOOTSTRAP_ADMIN !== "false") {
+// First-run administrator. By default nothing is created here: the console
+// shows its setup wizard (POST /api/auth/setup) so the operator picks their own
+// username and password. Unattended installs opt in with
+// HBS_BOOTSTRAP_ADMIN=true (+ HBS_ADMIN_USERNAME / HBS_ADMIN_PASSWORD), which
+// prints the generated credentials once. Only when the server is the entrypoint
+// (not when the module is imported by tests).
+const bootstrapMode = process.env.HBS_BOOTSTRAP_ADMIN?.trim();
+const bootstrapRequested =
+  bootstrapMode === "true" || (bootstrapMode !== "false" && !!process.env.HBS_ADMIN_PASSWORD?.trim());
+if (import.meta.main && bootstrapRequested) {
   const { ensureBootstrapAdmin } = await import("./bootstrap");
   const created = await ensureBootstrapAdmin(db);
   if (created) {
     const rule = "=".repeat(72);
     console.log(rule);
-    console.log("  HBS dashboard - first-run superuser created");
+    console.log("  HBS dashboard - superuser created (HBS_BOOTSTRAP_ADMIN)");
     console.log(`  username: ${created.username}`);
     console.log(`  password: ${created.password}`);
     console.log("  Store these credentials securely and change the password after sign-in.");
-    console.log("  (Set HBS_BOOTSTRAP_ADMIN=false to skip this; HBS_ADMIN_USERNAME /");
-    console.log("   HBS_ADMIN_PASSWORD override the generated values.)");
+    console.log("  To use the in-console setup wizard instead, unset HBS_BOOTSTRAP_ADMIN.");
     console.log(rule);
+  }
+} else if (import.meta.main) {
+  const users = (db.query("SELECT COUNT(*) AS count FROM users").get() as { count: number }).count;
+  if (users === 0) {
+    console.log("HBS dashboard: no administrator yet - open the console to run the setup wizard.");
   }
 }
 
 const app = new Hono();
 const MAX_RAW_BODY = 64 * 1024 * 1024;
+
+// --- hardening: headers, no-store on the API, cross-origin writes ------------
+// HBS is a local/LAN console with cookie sessions, so these close the cheap
+// attack classes (clickjacking, MIME sniffing, referrer leaks, XSS payload
+// hosting) without a proxy in front. HBS_DISABLE_SECURITY_HEADERS=true turns
+// them off for an exotic deployment, HBS_DISABLE_ORIGIN_CHECK=true for a proxy
+// that rewrites Origin.
+const distDir = resolve(import.meta.dir, "..", "dist");
+
+const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+// Same-machine origins are trusted: Vite's dev proxy and local reverse proxies
+// keep the browser's Origin while talking to the API on another port.
+const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
+
+/** The built shell carries one inline theme-guard script; allow exactly it. */
+function contentSecurityPolicy(): string {
+  const hashes: string[] = [];
+  try {
+    // Standalone binaries carry the shell embedded; repo checkouts read dist/.
+    const html = embeddedIndexHtml() ?? readFileSync(join(distDir, "index.html"), "utf8");
+    for (const match of html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)) {
+      const body = match[1];
+      if (body.trim()) {
+        hashes.push(`'sha256-${new Bun.CryptoHasher("sha256").update(body).digest("base64")}'`);
+      }
+    }
+  } catch {
+    // No build output (dev server or API-only run): keep scripts same-origin.
+  }
+  const scriptSrc = hashes.length > 0 ? `'self' ${hashes.join(" ")}` : "'self' 'unsafe-inline'";
+  return (
+    "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; " +
+    `object-src 'none'; script-src ${scriptSrc}; style-src 'self' 'unsafe-inline'; ` +
+    "img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:"
+  );
+}
+
+app.use("*", async (c, next) => {
+  await next();
+  if (process.env.HBS_DISABLE_SECURITY_HEADERS?.trim() === "true") return;
+  c.res.headers.set("content-security-policy", contentSecurityPolicy());
+  c.res.headers.set("x-content-type-options", "nosniff");
+  c.res.headers.set("x-frame-options", "DENY");
+  c.res.headers.set("referrer-policy", "no-referrer");
+  c.res.headers.set("cross-origin-opener-policy", "same-origin");
+  c.res.headers.set("cross-origin-resource-policy", "same-origin");
+  c.res.headers.set("permissions-policy", "camera=(), microphone=(), geolocation=(), usb=(), payment=()");
+  // Authenticated payloads must never sit in a shared/browser cache.
+  if (c.req.path.startsWith("/api/")) c.res.headers.set("cache-control", "no-store");
+  const forwarded = c.req.header("x-forwarded-proto")?.split(",", 1)[0]?.trim();
+  if (c.req.url.startsWith("https://") || forwarded === "https") {
+    c.res.headers.set("strict-transport-security", "max-age=31536000");
+  }
+});
+
+app.use("*", async (c, next) => {
+  if (UNSAFE_METHODS.has(c.req.method) && process.env.HBS_DISABLE_ORIGIN_CHECK?.trim() !== "true") {
+    const origin = c.req.header("origin");
+    if (origin && !LOCAL_ORIGIN.test(origin)) {
+      let originHost: string | null = null;
+      try {
+        originHost = new URL(origin).host;
+      } catch {
+        originHost = null;
+      }
+      const allowed = [c.req.header("host"), c.req.header("x-forwarded-host")].filter(
+        (value): value is string => !!value,
+      );
+      if (!originHost || !allowed.includes(originHost)) {
+        return c.json({ error: "cross-origin request rejected" }, 403);
+      }
+    }
+  }
+  await next();
+});
 configureIngest({ db, dataRoot: process.env.HBS_DATA_ROOT });
 
 function bearer(header: string | undefined): string {
@@ -153,18 +240,35 @@ registerAdminRoutes(app, db, campaignAuth, {
 registerExportRoutes(app, db, campaignAuth);
 
 // --- built SPA (production) -------------------------------------------------
-// `bun run build` emits dashboard/dist; serve it at `/` with an SPA fallback
-// so deep links work, while leaving /api/* to the API (and its 404s) alone.
-const distDir = resolve(import.meta.dir, "..", "dist");
+// Two sources, preferred in this order: assets embedded in a standalone
+// server binary (`bun build --compile`, see tools/embed-dist.ts) or
+// dashboard/dist on disk (repo checkouts). Both keep /api/* with the API (and
+// its 404s); both fall back to the SPA shell so deep links work.
 const indexHtml = join(distDir, "index.html");
-if (existsSync(indexHtml)) {
+if (hasEmbeddedDist()) {
+  const serveFromBundle = (path: string): Response | null => {
+    const file = embeddedFile(path);
+    if (!file) return null;
+    return new Response(file.body, { headers: { "content-type": file.contentType } });
+  };
+  app.on("GET", ["/assets/*", "/fonts/*"], (c) => {
+    // Self-hosted fonts live in public/fonts, so Vite emits them to
+    // dist/fonts. Serving only /assets/* meant every font request fell
+    // through to the SPA fallback, got the HTML shell back, and the browser
+    // quietly used the OS default face - in production only, since `bun run
+    // dev` lets Vite serve public/ itself. Guarded by server/static.test.ts.
+    return serveFromBundle(c.req.path.slice(1)) ?? c.notFound();
+  });
+  app.get("*", (c, next) => {
+    if (c.req.path.startsWith("/api/")) return next();
+    return (
+      serveFromBundle(c.req.path.slice(1)) ??
+      serveFromBundle("index.html") ??
+      c.notFound()
+    );
+  });
+} else if (existsSync(indexHtml)) {
   app.use("/assets/*", serveStatic({ root: distDir }));
-  // Self-hosted fonts live in public/fonts, so Vite emits them to
-  // dist/fonts. Serving only /assets/* meant every font request fell
-  // through to the SPA fallback below, got the HTML shell back, and the
-  // browser quietly used the OS default face - in production only, since
-  // `bun run dev` lets Vite serve public/ itself. Guarded by
-  // server/static.test.ts.
   app.use("/fonts/*", serveStatic({ root: distDir }));
   app.get("*", (c, next) => {
     if (c.req.path.startsWith("/api/")) return next();

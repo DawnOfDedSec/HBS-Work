@@ -30,6 +30,7 @@ jobs:
       extractor: ${{ steps.filter.outputs.extractor }}
       dashboard: ${{ steps.filter.outputs.dashboard }}
       docs: ${{ steps.filter.outputs.docs }}
+      desktop: ${{ steps.filter.outputs.desktop }}
       workflows: ${{ steps.filter.outputs.workflows }}
     steps:
       - uses: actions/checkout@v7
@@ -44,6 +45,12 @@ jobs:
               - 'dashboard/**'
             docs:
               - 'docs/**'
+            desktop:
+              - 'desktop/**'
+              - 'scripts/install-desktop.*'
+              - 'scripts/uninstall.*'
+              - 'scripts/install.*'
+              - 'scripts/tray-*'
             workflows:
               - '.github/workflows/**'
 
@@ -195,6 +202,52 @@ jobs:
       - run: bunx tsc --noEmit
       - run: bun run build
 
+  desktop:
+    name: desktop app (shells + scripts)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    needs: changes
+    if: >-
+      needs.changes.outputs.desktop == 'true' ||
+      needs.changes.outputs.workflows == 'true' ||
+      github.event_name != 'pull_request'
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop
+          prefix-key: desktop-validate
+      - name: Linux bundling dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev
+      - name: cargo check (shell)
+        run: cargo check
+      # tauri.conf.json and its icons are a single source of truth: a broken
+      # config or a missing icon breaks every platform build, so fail here.
+      - name: validate tauri.conf.json and icons
+        run: |
+          set -e
+          node -e "const c=require('./tauri.conf.json'); if(!c.productName||!c.identifier) process.exit(1); console.log('config ok:', c.productName, c.identifier)"
+          for f in $(node -e "console.log(require('./tauri.conf.json').bundle.icon.join(' '))"); do
+            test -f "$f" || { echo "missing icon: $f"; exit 1; }
+          done
+      - name: shell/CLI script syntax
+        working-directory: .
+        run: |
+          set -e
+          for f in scripts/install.sh scripts/install-desktop.sh scripts/hbs scripts/tray-linux.sh scripts/tray-macos.sh; do
+            bash -n "$f" && echo "ok: $f"
+          done
+
   docs:
     name: docs build
     runs-on: ubuntu-24.04
@@ -217,7 +270,7 @@ jobs:
 
   summary:
     name: CI summary
-    needs: [checks, windows, linux, dashboard, docs]
+    needs: [checks, windows, linux, dashboard, desktop, docs]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -228,10 +281,12 @@ jobs:
           echo "windows:       ${{ needs.windows.result }}"
           echo "linux:         ${{ needs.linux.result }}"
           echo "dashboard:     ${{ needs.dashboard.result }}"
+          echo "desktop:       ${{ needs.desktop.result }}"
           echo "docs:          ${{ needs.docs.result }}"
           failed=0
           for r in "${{ needs.windows.result }}" "${{ needs.linux.result }}" \
-                   "${{ needs.dashboard.result }}" "${{ needs.docs.result }}"; do
+                   "${{ needs.dashboard.result }}" "${{ needs.desktop.result }}" \
+                   "${{ needs.docs.result }}"; do
             [ "$r" = "failure" ] && failed=1
           done
           if [ "$failed" -ne 0 ]; then

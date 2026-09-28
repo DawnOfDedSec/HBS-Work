@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { openDb, runMigrations } from "./db";
 import { ensureBootstrapAdmin } from "./bootstrap";
+import { verifyPassword } from "./password";
 
 function freshDb() {
   const db = openDb(":memory:");
@@ -25,7 +26,7 @@ describe("first-run admin bootstrap", () => {
     expect(row.role).toBe("super_admin");
     expect(row.active).toBe(1);
     expect(row.password_hash).not.toContain(created!.password);
-    expect(await Bun.password.verify(created!.password, row.password_hash)).toBeTrue();
+    expect(await verifyPassword(created!.password, row.password_hash)).toBeTrue();
 
     // Second call is a no-op.
     expect(await ensureBootstrapAdmin(db)).toBeNull();

@@ -24,7 +24,7 @@ export const DOC_SECTIONS: DocSection[] = [
       {
         type: 'text',
         content:
-          'The dashboard runs on the machine you manage scans from (a workstation or server) and stores all data locally. The installers set it up as a background service and print the console address when done:',
+          'The dashboard runs on the machine you manage scans from (a workstation or server) and stores all data locally. Nothing else is required: the console engine ships as a single prebuilt binary - no Bun, Node, Rust or admin rights needed. The installer downloads the right asset for your OS and architecture, verifies its checksum, sets it up as a background service and prints the console address when done:',
       },
       {
         type: 'code',
@@ -44,10 +44,23 @@ export const DOC_SECTIONS: DocSection[] = [
           'Open http://127.0.0.1:3000 on the machine running the dashboard. To reach it from another computer, start it with --host and open http://<dashboard-ip>:3000; add TLS (HBS_TLS_CERT / HBS_TLS_KEY) for anything beyond your LAN.',
       },
       {
+        type: 'text',
+        content:
+          'The installer runs a short wizard first (arrow keys, Enter accepts each suggestion): what to install (full - engine + tray + shortcuts + desktop app; dashboard only; or desktop app only), install location, dashboard port, desktop shortcut, start at login, and tray icon. Every question has a flag (--mode full|dashboard|desktop, --desktop-icon, --autostart, --tray, --desktop-app, -y for non-interactive installs) and the same wizard runs on Windows, macOS and Linux. HBS then behaves like any installed application: application-menu / Start-menu entry, desktop icon, tray icon, launch-at-login. Uninstall with hbs uninstall (--purge also deletes data) or Settings > Apps on Windows.',
+      },
+      {
+        type: 'list',
+        items: [
+          'Control it any time with: hbs start|stop|restart|status|logs|open|app|tray|autostart|update.',
+          'Uninstall with: hbs uninstall (add --purge to delete the data too), or Settings > Apps on Windows.',
+          'Upgrading never touches your data: reports and the database live in the data directory, not the app directory.',
+        ],
+      },
+      {
         type: 'note',
         tone: 'info',
         content:
-          'On first launch the server creates a superuser account and prints its credentials once in the terminal or service log. Sign in with those and change the password under Admin → Users; after that everything happens in the browser.',
+          'On first launch the console opens its setup wizard: you choose the superuser username and password there, and it signs you in. The desktop app opens the same wizard. Nothing is created for you, so there is no generated password to copy.',
       },
       { type: 'h2', content: '2. Create a campaign and generate an extractor' },
       {
@@ -296,10 +309,19 @@ bun run build && bun server/index.ts   # production single-process`,
       {
         type: 'list',
         items: [
-          'If no users exist, the server creates a super_admin and prints its credentials once in the CLI (random 20-char password).',
-          'Disable with HBS_BOOTSTRAP_ADMIN=false → use the /setup wizard instead.',
-          'Override with HBS_ADMIN_USERNAME / HBS_ADMIN_PASSWORD.',
+          'No account is created for you: the console opens its first-run wizard (Welcome → Administrator → Finish) where you choose the superuser username and password. The desktop app opens the same wizard.',
+          'Unattended installs: HBS_BOOTSTRAP_ADMIN=true creates a super_admin from HBS_ADMIN_USERNAME / HBS_ADMIN_PASSWORD (otherwise a random 20-char password) and prints it once in the CLI.',
           'Roles: super_admin (all), auditor (campaigns, issuances, ingest, treatment, exports), viewer (read-only).',
+        ],
+      },
+      { type: 'h2', content: 'Hardening & endpoint security' },
+      {
+        type: 'list',
+        items: [
+          'Passwords: Argon2id (64 MiB, 3 passes, per-hash salt) peppered with a secret kept outside the database - a leaked database alone verifies nothing.',
+          'Sessions: tokens stored hashed; cookie HttpOnly + SameSite=Lax + Secure under TLS; cross-origin writes rejected; API responses no-store.',
+          'Browser: strict Content-Security-Policy, with the single inline theme-guard script allowed by hash rather than unsafe-inline.',
+          'Endpoints: read-only scans, no admin rights, no injection, no credential or LSASS access, no packet capture, no obfuscation - allowlisting recipes for Defender, CrowdStrike, SentinelOne, Cortex XDR and Gatekeeper are in docs/security/edr-compatibility.md.',
         ],
       },
       { type: 'h2', content: 'Workflow' },
@@ -403,7 +425,7 @@ GET    /api/export/campaign/:id?format=…`,
       {
         type: 'text',
         content:
-          'Sealed reports provide confidentiality and integrity under modern, audited cryptography (X25519, HKDF-SHA256, ChaCha20-Poly1305 or AES-256-GCM) assuming the dashboard\'s private keys stay protected, the OS RNG is sound, and endpoint memory is secure. We make no "unbreakable" claim. The extractor binary contains only a public key and cannot decrypt anything; a binary cannot be encrypted while still executable, so its logic remains reverse-engineerable despite stripping and obfuscation.',
+          'Sealed reports provide confidentiality and integrity under modern, audited cryptography (X25519, HKDF-SHA256, ChaCha20-Poly1305 or AES-256-GCM) assuming the dashboard\'s private keys stay protected, the OS RNG is sound, and endpoint memory is secure. We make no "unbreakable" claim. The extractor binary contains only a public key and cannot decrypt anything; a binary cannot be encrypted while still executable, so its logic remains reverse-engineerable even though release builds are stripped. HBS deliberately ships no packer and no string obfuscation - that keeps endpoint security products from scoring it as malicious.',
       },
     ],
   },

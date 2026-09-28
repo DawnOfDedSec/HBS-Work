@@ -2,6 +2,8 @@ import type { Database } from "bun:sqlite";
 import { Hono } from "hono";
 import { normalizeUsername, parseAllowedCampaigns, requireAuth, requireRole, type AuthEnv, type UserRole } from "./auth";
 
+import { assessPassword, hashPassword } from "./password";
+
 const roles = new Set<UserRole>(["super_admin", "auditor", "viewer"]);
 type MutableUser = { username?: unknown; password?: unknown; role?: unknown; active?: unknown; allowedCampaigns?: unknown };
 
@@ -77,7 +79,9 @@ export function createUserRoutes(db: Database): Hono<AuthEnv> {
     if (!username || !input.password || typeof role !== "string" || !roles.has(role as UserRole)) {
       return c.json({ error: "invalid user" }, 400);
     }
-    const passwordHash = await Bun.password.hash(input.password, { algorithm: "argon2id" });
+    const verdict = assessPassword(input.password, username);
+    if (!verdict.ok) return c.json({ error: `weak password: ${verdict.reason}` }, 400);
+    const passwordHash = await hashPassword(input.password);
     const restriction = parseCampaignRestriction(input.allowedCampaigns);
     if (restriction instanceof Error) return c.json({ error: restriction.message }, 400);
     const timestamp = isoNow();
@@ -105,7 +109,7 @@ export function createUserRoutes(db: Database): Hono<AuthEnv> {
     const id = userId(c.req.param("id"));
     const input = await body(c);
     if (!id || !input) return c.json({ error: "invalid request" }, 400);
-    const current = db.query("SELECT id, role, active FROM users WHERE id = ?").get(id) as { id: number; role: UserRole; active: number } | null;
+    const current = db.query("SELECT id, username, role, active FROM users WHERE id = ?").get(id) as { id: number; username: string; role: UserRole; active: number } | null;
     if (!current) return c.json({ error: "user not found" }, 404);
 
     const role = input.role === undefined ? current.role : input.role;
@@ -120,7 +124,9 @@ export function createUserRoutes(db: Database): Hono<AuthEnv> {
     let passwordHash: string | null = null;
     if (input.password !== undefined) {
       if (typeof input.password !== "string" || !input.password) return c.json({ error: "invalid password" }, 400);
-      passwordHash = await Bun.password.hash(input.password, { algorithm: "argon2id" });
+      const verdict = assessPassword(input.password, current.username);
+      if (!verdict.ok) return c.json({ error: `weak password: ${verdict.reason}` }, 400);
+      passwordHash = await hashPassword(input.password);
     }
     const currentAllowedRawValue = currentAllowedRaw(db, id);
     let restriction: number[] | null;
@@ -154,7 +160,7 @@ export function createUserRoutes(db: Database): Hono<AuthEnv> {
   app.delete("/api/users/:id", (c) => {
     const id = userId(c.req.param("id"));
     if (!id) return c.json({ error: "invalid user id" }, 400);
-    const current = db.query("SELECT id, role, active FROM users WHERE id = ?").get(id) as { id: number; role: UserRole; active: number } | null;
+    const current = db.query("SELECT id, username, role, active FROM users WHERE id = ?").get(id) as { id: number; username: string; role: UserRole; active: number } | null;
     if (!current) return c.json({ error: "user not found" }, 404);
     if (current.role === "super_admin" && current.active && activeSuperAdmins(db) <= 1) {
       return c.json({ error: "cannot deactivate last active super_admin" }, 409);

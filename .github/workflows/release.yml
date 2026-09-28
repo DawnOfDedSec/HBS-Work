@@ -102,6 +102,67 @@ jobs:
           path: release-assets/*
           if-no-files-found: error
 
+  server-bundle:
+    name: server (${{ matrix.target }})
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+    strategy:
+      fail-fast: false
+      matrix:
+        # Standalone dashboard servers: Bun runtime + built SPA embedded in one
+        # executable, cross-compiled for every supported OS/arch. These are what
+        # the installers download - end users never install Bun or Node.
+        include:
+          - { target: bun-linux-x64,        os: ubuntu-24.04 }
+          - { target: bun-linux-arm64,      os: ubuntu-24.04 }
+          - { target: bun-linux-x64-musl,   os: ubuntu-24.04 }
+          - { target: bun-linux-arm64-musl, os: ubuntu-24.04 }
+          - { target: bun-darwin-x64,       os: macos-latest }
+          - { target: bun-darwin-arm64,     os: macos-latest }
+          - { target: bun-windows-x64,      os: windows-2022 }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: Read version
+        id: ver
+        shell: bash
+        run: |
+          VERSION="$(grep -m1 '^version' ../extractor/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Build the SPA + embedded asset bundle
+        run: bun run build
+      - name: Compile the standalone server
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          bun x --bun bun build --compile --minify --sourcemap=none \
+            --target ${{ matrix.target }} \
+            --outfile "hbs-server-$VERSION-${{ matrix.target }}" server/index.ts
+      - name: Package (gzip; installers decompress natively)
+        shell: bash
+        run: |
+          set -e
+          VERSION="${{ steps.ver.outputs.version }}"
+          NAME="hbs-server-$VERSION-${{ matrix.target }}"
+          case "${{ matrix.target }}" in *windows*) NAME="$NAME.exe";; esac
+          mkdir -p "$GITHUB_WORKSPACE/release-assets"
+          gzip -9 -c "$NAME" > "$GITHUB_WORKSPACE/release-assets/$NAME.gz"
+          ls -l "$GITHUB_WORKSPACE/release-assets"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: asset-server-${{ matrix.target }}
+          path: ${{ github.workspace }}/release-assets/*
+          if-no-files-found: error
+
   dashboard-bundle:
     name: build (dashboard bundle)
     if: >-
@@ -128,15 +189,102 @@ jobs:
           path: hbs-dashboard-dist.tar.gz
           if-no-files-found: error
 
+  desktop-bundles:
+    name: desktop app (${{ matrix.name }})
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux,       os: ubuntu-24.04,      targets: "",                         experimental: false }
+          - { name: linux-arm64, os: ubuntu-24.04-arm,  targets: "deb,rpm",                  experimental: false }
+          - { name: windows,     os: windows-2022,      targets: "",                         experimental: false }
+          - { name: macos,       os: macos-latest,      targets: "",                         experimental: false }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    continue-on-error: ${{ matrix.experimental }}
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop
+          prefix-key: desktop-${{ matrix.name }}
+
+      - name: Linux bundling dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
+            patchelf libgtk-3-dev libssl-dev rpm file
+
+      - name: Sync version from the extractor
+        shell: bash
+        run: |
+          set -e
+          VERSION="$(grep -m1 '^version' ../extractor/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          sed -i.bak -E "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml && rm -f Cargo.toml.bak
+          python3 - "$VERSION" <<'PY'
+          import json, sys
+          version = sys.argv[1]
+          with open("tauri.conf.json") as fh:
+              conf = json.load(fh)
+          conf["version"] = version
+          with open("tauri.conf.json", "w") as fh:
+              json.dump(conf, fh, indent=2)
+              fh.write("\n")
+          PY
+          echo "desktop app version: $VERSION"
+
+      - name: Build the desktop app bundles
+        run: |
+          ARGS="build"
+          if [ -n "${{ matrix.targets }}" ]; then
+            ARGS="$ARGS --bundles ${{ matrix.targets }}"
+          fi
+          if [ "${{ matrix.name }}" = "macos" ]; then
+            # One universal dmg runs natively on Apple Silicon and Intel.
+            ARGS="$ARGS --target universal-apple-darwin"
+          fi
+          bun x --bun "@tauri-apps/cli@^2" $ARGS
+
+      - name: Collect bundles
+        shell: bash
+        run: |
+          set -e
+          mkdir -p "$GITHUB_WORKSPACE/release-assets"
+          find target/release/bundle -maxdepth 4 -type f \
+            \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \
+               -o -name '*.dmg' -o -name '*.exe' -o -name '*.msi' \) \
+            -exec cp {} "$GITHUB_WORKSPACE/release-assets/" \;
+          ls -l "$GITHUB_WORKSPACE/release-assets"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: asset-desktop-${{ matrix.name }}
+          path: release-assets/*
+          if-no-files-found: error
+
   release:
     name: publish release
-    needs: [build, dashboard-bundle]
+    needs: [build, server-bundle, dashboard-bundle, desktop-bundles]
     if: >-
       always() &&
       (github.event_name == 'workflow_dispatch' ||
        (github.event.workflow_run.conclusion == 'success' &&
         github.event.workflow_run.head_branch == 'main')) &&
       needs.build.result == 'success' &&
+      needs.server-bundle.result == 'success' &&
       needs.dashboard-bundle.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 10

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
 import { openDb, runMigrations } from "./db";
+import { verifyPassword } from "./password";
 import { createAuthRoutes, hashToken, type AuthEnv } from "./auth";
 import { createUserRoutes } from "./users";
 
@@ -45,31 +46,56 @@ describe("auth routes", () => {
     expect(user.username).toBe("admin");
     expect(user.role).toBe("super_admin");
     expect(user.password_hash).toStartWith("$argon2id$");
-    expect(await Bun.password.verify("correct horse battery staple", user.password_hash)).toBe(true);
+    expect(await verifyPassword("correct horse battery staple", user.password_hash)).toBe(true);
 
     const rawToken = cookie.slice("hbs_session=".length);
     const stored = db.query("SELECT token_hash FROM sessions").get() as { token_hash: string };
     expect(stored.token_hash).toBe(hashToken(rawToken));
     expect(stored.token_hash).not.toBe(rawToken);
 
-    const second = await app.request("/api/auth/setup", json("POST", { username: "other", password: "password" }));
+    const second = await app.request("/api/auth/setup", json("POST", { username: "other", password: "correct-horse-battery-42" }));
     expect(second.status).toBe(409);
+  });
+
+  it("refuses a weak password for the first administrator", async () => {
+    const { app, db } = testApp();
+    const weak = await app.request(
+      "/api/auth/setup",
+      json("POST", { username: "admin", password: "password123" }),
+    );
+    expect(weak.status).toBe(400);
+    const body = await weak.json() as { error: string };
+    expect(body.error).toStartWith("weak password:");
+    expect((db.query("SELECT COUNT(*) AS count FROM users").get() as { count: number }).count).toBe(0);
+
+    // A password that merely restates the username is refused as well.
+    const echoesUser = await app.request(
+      "/api/auth/setup",
+      json("POST", { username: "operator", password: "operator-passphrase-1" }),
+    );
+    expect(echoesUser.status).toBe(400);
+
+    const strong = await app.request(
+      "/api/auth/setup",
+      json("POST", { username: "operator", password: "correct horse battery staple" }),
+    );
+    expect(strong.status).toBe(201);
   });
 
   it("marks HTTPS session cookies Secure", async () => {
     const { app } = testApp();
-    const response = await app.request("https://localhost/api/auth/setup", json("POST", { username: "admin", password: "password" }));
+    const response = await app.request("https://localhost/api/auth/setup", json("POST", { username: "admin", password: "correct-horse-battery-42" }));
     expect(response.headers.get("set-cookie")).toContain("Secure");
   });
 
   it("verifies login, returns status, and invalidates logout", async () => {
     const { app, db } = testApp();
-    await setup(app, "Admin", "right-password");
+    await setup(app, "Admin", "right-passphrase-123");
 
     const wrong = await app.request("/api/auth/login", json("POST", { username: "ADMIN", password: "wrong" }));
     expect(wrong.status).toBe(401);
 
-    const login = await app.request("/api/auth/login", json("POST", { username: " ADMIN ", password: "right-password" }));
+    const login = await app.request("/api/auth/login", json("POST", { username: " ADMIN ", password: "right-passphrase-123" }));
     expect(login.status).toBe(200);
     const cookie = sessionCookie(login);
     const status = await app.request("/api/auth/status", { headers: { cookie } });
@@ -114,22 +140,22 @@ describe("user administration", () => {
     const { cookie: adminCookie } = await setup(app);
     const created = await app.request("/api/users", json("POST", {
       username: "Auditor",
-      password: "audit-password",
+      password: "quarterly-review-2026",
       role: "auditor",
     }, { cookie: adminCookie }));
     expect(created.status).toBe(201);
     expect((await created.json()).user).toMatchObject({ id: 2, username: "auditor", role: "auditor", active: true });
 
-    const login = await app.request("/api/auth/login", json("POST", { username: "auditor", password: "audit-password" }));
+    const login = await app.request("/api/auth/login", json("POST", { username: "auditor", password: "quarterly-review-2026" }));
     const auditorCookie = sessionCookie(login);
     expect((await app.request("/api/users", { headers: { cookie: auditorCookie } })).status).toBe(403);
 
-    const reset = await app.request("/api/users/2", json("PATCH", { password: "new-password", role: "viewer" }, { cookie: adminCookie }));
+    const reset = await app.request("/api/users/2", json("PATCH", { password: "new-passphrase-123", role: "viewer" }, { cookie: adminCookie }));
     expect(reset.status).toBe(200);
-    expect((await app.request("/api/auth/login", json("POST", { username: "auditor", password: "new-password" }))).status).toBe(200);
+    expect((await app.request("/api/auth/login", json("POST", { username: "auditor", password: "new-passphrase-123" }))).status).toBe(200);
 
     expect((await app.request("/api/users/2", { method: "DELETE", headers: { cookie: adminCookie } })).status).toBe(204);
-    expect((await app.request("/api/auth/login", json("POST", { username: "auditor", password: "new-password" }))).status).toBe(401);
+    expect((await app.request("/api/auth/login", json("POST", { username: "auditor", password: "new-passphrase-123" }))).status).toBe(401);
   });
 
   it("never deactivates or demotes last active super_admin", async () => {

@@ -1,81 +1,288 @@
 #!/usr/bin/env bash
 # HBS Console control CLI (Linux/macOS). Installed as `hbs` by scripts/install.sh.
 #
-#   hbs start|stop|restart|status|logs|update|open|uninstall
-set -euo pipefail
+#   hbs start|stop|restart|status|logs|open|app|tray|autostart|update|uninstall
+#
+#   start/stop/restart   control the dashboard (systemd user unit, launchd
+#                        agent, or a plain background process)
+#   status               one-line health report
+#   logs                 follow the server log
+#   open                 open the dashboard in your browser
+#   app                  open the HBS Console desktop app (falls back to browser)
+#   tray                 start the tray / menu-bar helper
+#   autostart on|off     start HBS at login (tray + service)
+#   update               pull the latest app and restart
+#   uninstall [--purge]  remove HBS (--purge also deletes the data)
+set -uo pipefail
 
 HBS_HOME="${HBS_HOME:-$HOME/.hbs}"
-APP_DIR="$HBS_HOME/app"
-DATA_DIR="$HBS_HOME/data"
-BIN_DIR="$HOME/.local/bin"
+APP_DIR="${HBS_APP_DIR:-$HBS_HOME/app}"
+DATA_DIR="${HBS_DATA_DIR:-$HBS_HOME/data}"
+BIN_DIR="$HBS_HOME/bin"
+LOCAL_BIN="$HOME/.local/bin"
 SERVICE="hbs"
 PLIST_LABEL="net.hbs.dashboard"
 IS_LINUX=0; IS_MAC=0
 [[ "$(uname -s)" == "Linux" ]] && IS_LINUX=1
 [[ "$(uname -s)" == "Darwin" ]] && IS_MAC=1
 
+if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+  B=$'\033[1m'; D=$'\033[2m'; R=$'\033[0m'
+  G=$'\033[38;5;114m'; Y=$'\033[38;5;221m'; E=$'\033[38;5;203m'; C=$'\033[38;5;117m'
+else
+  B=""; D=""; R=""; G=""; Y=""; E=""; C=""
+fi
+ok()   { printf '  %s✔%s %s\n' "$G" "$R" "$*"; }
+warn() { printf '  %s!%s %s\n' "$Y" "$R" "$*"; }
+err()  { printf '  %s✖%s %s\n' "$E" "$R" "$*" >&2; }
+
 cmd="${1:-status}"
-shift || true
+shift 2>/dev/null || true
+
+port() {
+  if [[ -f "$DATA_DIR/hbs.env" ]]; then
+    local p; p="$(grep -E '^PORT=' "$DATA_DIR/hbs.env" | cut -d= -f2 | tr -d '[:space:]')"
+    [[ -n "$p" ]] && { printf '%s' "$p"; return; }
+  fi
+  printf '%s' "${PORT:-3000}"
+}
+url() { printf 'http://127.0.0.1:%s' "$(port)"; }
+server_up() { curl -fsS -o /dev/null --max-time 2 "$(url)" 2>/dev/null; }
+# True while the dashboard still has no administrator: the console then shows
+# its first-run setup wizard instead of a login form.
+setup_pending() {
+  command -v curl >/dev/null 2>&1 || return 1
+  curl -fsS --max-time 2 "$(url)/api/auth/status" 2>/dev/null | grep -q '"initialized":false'
+}
+has_systemd() { [[ $IS_LINUX -eq 1 ]] && command -v systemctl >/dev/null 2>&1 && systemctl --user status >/dev/null 2>&1; }
+has_launchd() { [[ $IS_MAC -eq 1 ]]; }
+
+server_cmd() {
+  # The engine: standalone binary first, Bun-from-source as the fallback.
+  if [[ -x "$BIN_DIR/hbs-server" ]]; then
+    printf '%s' "$BIN_DIR/hbs-server"
+  elif command -v bun >/dev/null 2>&1 && [[ -f "$APP_DIR/dashboard/server/index.ts" ]]; then
+    printf '%s' "bun"
+  else
+    return 1
+  fi
+}
 
 service_action() {
   local action="$1"
-  if [[ $IS_LINUX -eq 1 ]] && command -v systemctl >/dev/null 2>&1 && systemctl --user status >/dev/null 2>&1; then
+  if has_systemd; then
     systemctl --user "$action" "$SERVICE"
-  elif [[ $IS_MAC -eq 1 ]]; then
+  elif has_launchd; then
+    local plist="$HOME/Library/LaunchAgents/$PLIST_LABEL.plist"
     case "$action" in
-      start)   launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/$PLIST_LABEL.plist" 2>/dev/null || launchctl kickstart -k "gui/$(id -u)/$PLIST_LABEL" ;;
+      start)   launchctl bootstrap "gui/$(id -u)" "$plist" 2>/dev/null || launchctl kickstart -k "gui/$(id -u)/$PLIST_LABEL" ;;
       stop)    launchctl bootout "gui/$(id -u)/$PLIST_LABEL" ;;
-      restart) launchctl bootout "gui/$(id -u)/$PLIST_LABEL" 2>/dev/null || true; launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/$PLIST_LABEL.plist" ;;
-      *) launchctl print "gui/$(id -u)/$PLIST_LABEL" | head -20 ;;
+      restart) launchctl bootout "gui/$(id -u)/$PLIST_LABEL" 2>/dev/null || true; launchctl bootstrap "gui/$(id -u)" "$plist" ;;
+      *)       launchctl print "gui/$(id -u)/$PLIST_LABEL" | head -20 ;;
     esac
   else
-    # no systemd/launchd (containers, bare shells): manage a plain background process
     local pidfile="$DATA_DIR/server.pid"
+    local srv; srv="$(server_cmd)" || { echo "HBS is not installed - run the installer first"; return 1; }
     case "$action" in
       start)
-        [[ -f "$pidfile" ]] && kill -0 "$(cat "$pidfile")" 2>/dev/null && { echo "already running (pid $(cat "$pidfile"))"; return 0; }
-        (cd "$APP_DIR/dashboard" && HBS_DATA_ROOT="$DATA_DIR" PORT="${PORT:-3000}" nohup "$(command -v bun)" run server/index.ts >> "$DATA_DIR/server.log" 2>&1 & echo $! > "$pidfile")
+        if [[ -f "$pidfile" ]] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then echo "already running (pid $(cat "$pidfile"))"; return 0; fi
+        mkdir -p "$DATA_DIR"
+        if [[ "$srv" == *hbs-server* ]]; then
+          (cd "$DATA_DIR" && HBS_DATA_ROOT="$DATA_DIR" PORT="$(port)" nohup "$srv" >> "$DATA_DIR/server.log" 2>&1 & echo $! > "$pidfile")
+        else
+          (cd "$APP_DIR/dashboard" && HBS_DATA_ROOT="$DATA_DIR" PORT="$(port)" nohup "$srv" run server/index.ts >> "$DATA_DIR/server.log" 2>&1 & echo $! > "$pidfile")
+        fi
         sleep 1; echo "started (pid $(cat "$pidfile"))" ;;
       stop)
-        [[ -f "$pidfile" ]] && kill "$(cat "$pidfile")" 2>/dev/null && rm -f "$pidfile" && echo "stopped." || echo "not running." ;;
-      restart) "$0" stop || true; "$0" start ;;
+        if [[ -f "$pidfile" ]] && kill "$(cat "$pidfile")" 2>/dev/null; then rm -f "$pidfile"; echo "stopped."; else echo "not running."; fi ;;
+      restart) "$0" stop >/dev/null 2>&1 || true; "$0" start ;;
       status)
-        [[ -f "$pidfile" ]] && kill -0 "$(cat "$pidfile")" 2>/dev/null && echo "running (pid $(cat "$pidfile"))" || echo "not running." ;;
-      *) echo "action $action unsupported without systemd" ;;
+        if [[ -f "$pidfile" ]] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then echo "running (pid $(cat "$pidfile"))"; else echo "not running."; fi ;;
+      *) echo "action $action unsupported without a service manager" ;;
     esac
   fi
 }
 
-port() {
-  [[ -f "$DATA_DIR/hbs.env" ]] && grep -E '^PORT=' "$DATA_DIR/hbs.env" | cut -d= -f2 || echo 3000
+ensure_started() {
+  if server_up; then return 0; fi
+  service_action start >/dev/null 2>&1 || true
+  for _ in $(seq 1 40); do server_up && return 0; sleep 0.25; done
+  return 1
+}
+
+# ------------------------------------------------------------- desktop app
+desktop_app() {
+  local c
+  for c in /usr/bin/hbs-console /usr/local/bin/hbs-console "$BIN_DIR/HBS-Console.AppImage" "$HOME/.local/bin/HBS-Console.AppImage"; do
+    [[ -x "$c" ]] && { printf '%s' "$c"; return 0; }
+  done
+  for c in "$HOME/Applications/HBS Console.app" "/Applications/HBS Console.app"; do
+    [[ -d "$c" ]] && { printf '%s' "$c"; return 0; }
+  done
+  return 1
+}
+
+launch_app() {
+  local app; app="$(desktop_app)" || return 1
+  if [[ "$app" == *.app ]]; then
+    open -a "$app"
+  else
+    # Tauri binaries may live outside the session's env; detach so `hbs` returns.
+    nohup "$app" >/dev/null 2>&1 &
+  fi
+  return 0
+}
+
+tray_script() {
+  for c in "$HBS_HOME/installer/tray-macos.sh" "$HBS_HOME/installer/tray-linux.sh" \
+           "$BIN_DIR/hbs-tray" "$HBS_HOME/tray-macos.sh" "$HBS_HOME/tray-linux.sh" \
+           "$APP_DIR/scripts/tray-macos.sh" "$APP_DIR/scripts/tray-linux.sh"; do
+    if [[ $IS_MAC -eq 1 && "$c" == *linux* && "$c" != *hbs-tray* ]]; then continue; fi
+    if [[ $IS_LINUX -eq 1 && "$c" == *macos* ]]; then continue; fi
+    [[ -x "$c" ]] && { printf '%s' "$c"; return 0; }
+  done
+  return 1
+}
+
+autostart_on() {
+  if has_systemd; then
+    systemctl --user enable "$SERVICE" >/dev/null 2>&1 && ok "dashboard starts at login (systemd)" || warn "could not enable the service"
+  fi
+  if [[ $IS_MAC -eq 1 ]]; then
+    local plist="$HOME/Library/LaunchAgents/$PLIST_LABEL.plist"
+    if [[ -f "$plist" ]]; then
+      /usr/libexec/PlistBuddy -c "Set :RunAtLoad true" "$plist" >/dev/null 2>&1 \
+        || /usr/libexec/PlistBuddy -c "Add :RunAtLoad bool true" "$plist" >/dev/null 2>&1 || true
+      launchctl bootout "gui/$(id -u)/$PLIST_LABEL" >/dev/null 2>&1 || true
+      launchctl bootstrap "gui/$(id -u)" "$plist" >/dev/null 2>&1 || true
+      ok "dashboard starts at login (launchd)"
+    else
+      warn "no LaunchAgent found - re-run the installer"
+    fi
+  fi
+  mkdir -p "$HOME/.config/autostart"
+  cat > "$HOME/.config/autostart/hbs-console.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=HBS Console tray
+Comment=Background dashboard server and tray icon for HBS Console
+Exec=$BIN_DIR/hbs tray
+Terminal=false
+X-GNOME-Autostart-enabled=true
+EOF
+  ok "tray starts with your session"
+}
+
+autostart_off() {
+  if has_systemd; then
+    systemctl --user disable "$SERVICE" >/dev/null 2>&1 && ok "dashboard no longer starts at login (systemd)" || true
+  fi
+  if [[ $IS_MAC -eq 1 ]]; then
+    local plist="$HOME/Library/LaunchAgents/$PLIST_LABEL.plist"
+    if [[ -f "$plist" ]]; then
+      /usr/libexec/PlistBuddy -c "Set :RunAtLoad false" "$plist" >/dev/null 2>&1 || true
+      launchctl bootout "gui/$(id -u)/$PLIST_LABEL" >/dev/null 2>&1 || true
+      launchctl bootstrap "gui/$(id -u)" "$plist" >/dev/null 2>&1 || true
+      ok "dashboard no longer starts at login (launchd)"
+    fi
+  fi
+  rm -f "$HOME/.config/autostart/hbs-console.desktop"
+  ok "tray autostart removed"
 }
 
 case "$cmd" in
-  start)   service_action start;   echo "HBS started: http://127.0.0.1:$(port)" ;;
-  stop)    service_action stop;    echo "HBS stopped." ;;
-  restart) service_action restart; echo "HBS restarted: http://127.0.0.1:$(port)" ;;
-  status)  service_action status ;;
-  logs)
-    if [[ $IS_LINUX -eq 1 ]]; then journalctl --user -u "$SERVICE" -f --no-pager
-    else tail -f "$DATA_DIR/server.log" 2>/dev/null || echo "no log file (launchd logs to system)"; fi ;;
-  open)
-    url="http://127.0.0.1:$(port)"
-    if [[ $IS_LINUX -eq 1 ]]; then xdg-open "$url"
-    else open "$url"; fi ;;
-  update)
-    log() { printf '[hbs] %s\n' "$*"; }
-    if [[ -d "$APP_DIR/.git" ]]; then
-      git -C "$APP_DIR" fetch origin --quiet
-      git -C "$APP_DIR" reset --hard origin/main --quiet
-      (cd "$APP_DIR/dashboard" && bun install --quiet)
-      service_action restart
-      log "updated and restarted."
+  start)   service_action start;   ok "HBS started: $(url)" ;;
+  stop)    service_action stop;    ok "HBS stopped." ;;
+  restart) service_action restart; ok "HBS restarted: $(url)" ;;
+  status)
+    if server_up; then
+      ok "${C}running${R} - $(url)"
+      printf '    %sinstall%s %s\n' "$D" "$R" "$HBS_HOME"
+      printf '    %sdata%s    %s\n' "$D" "$R" "$DATA_DIR"
+      desktop_app >/dev/null && printf '    %sdesktop app installed%s\n' "$D" "$R"
+      setup_pending && warn "setup pending - create the administrator account in the console"
+    elif [[ -f "$DATA_DIR/server.pid" ]] && kill -0 "$(cat "$DATA_DIR/server.pid")" 2>/dev/null; then
+      warn "process running but not answering on $(url)"
     else
-      echo "app was not installed via git; re-run the installer to update." >&2; exit 1
+      warn "not running - start it with 'hbs start'"
+    fi ;;
+  logs)
+    if has_systemd; then journalctl --user -u "$SERVICE" -f --no-pager
+    else tail -f "$DATA_DIR/server.log" 2>/dev/null || err "no log file at $DATA_DIR/server.log"; fi ;;
+  open)
+    ensure_started || true
+    if [[ $IS_LINUX -eq 1 ]]; then xdg-open "$(url)" >/dev/null 2>&1 || err "could not open a browser"
+    else open "$(url)" 2>/dev/null || err "could not open a browser"; fi ;;
+  app)
+    ensure_started || true
+    if launch_app; then
+      ok "HBS Console desktop app opened."
+    else
+      note_desktop="Install the optional desktop app with: hbs install-app"
+      if [[ $IS_LINUX -eq 1 ]]; then xdg-open "$(url)" >/dev/null 2>&1 || err "could not open a browser"
+      else open "$(url)" 2>/dev/null || err "could not open a browser"; fi
+      ok "Opened the dashboard in your browser."
+      printf '    %s%s%s\n' "$D" "$note_desktop" "$R"
+    fi ;;
+  tray)
+    if ts="$(tray_script)"; then "$ts" "$@" ; else warn "no tray helper installed - re-run the installer with --tray"; fi ;;
+  install-app)
+    ensure_started || true
+    if [[ -x "$HBS_HOME/installer/install-desktop.sh" ]]; then
+      exec bash "$HBS_HOME/installer/install-desktop.sh" --dir "$HBS_HOME" --port "$(port)"
+    elif [[ -x "$APP_DIR/scripts/install-desktop.sh" ]]; then
+      exec bash "$APP_DIR/scripts/install-desktop.sh" --dir "$HBS_HOME" --port "$(port)"
+    else
+      err "no desktop-app installer found - re-run the HBS installer"; exit 1
+    fi ;;
+  autostart)
+    case "${1:-status}" in
+      on)  autostart_on ;;
+      off) autostart_off ;;
+      *)   if has_systemd && systemctl --user is-enabled "$SERVICE" >/dev/null 2>&1; then ok "autostart: on (systemd)"; else
+             [[ -f "$HOME/.config/autostart/hbs-console.desktop" ]] && ok "autostart: on (tray)" || warn "autostart: off"
+           fi ;;
+    esac ;;
+  update)
+    printf '  %s▸%s updating…\n' "$C" "$R"
+    # Binary installs update by re-running the staged installer: it fetches
+    # the latest release assets and re-wires everything in place.
+    if [[ -x "$HBS_HOME/installer/install.sh" ]]; then
+      bash "$HBS_HOME/installer/install.sh" --yes || { err "update failed"; exit 1; }
+      ok "Updated: $(url)"
+    elif [[ -d "$APP_DIR/.git" ]]; then
+      git -C "$APP_DIR" fetch origin --quiet && git -C "$APP_DIR" reset --hard origin/main --quiet || { err "update failed"; exit 1; }
+      if command -v bun >/dev/null 2>&1; then (cd "$APP_DIR/dashboard" && bun install --quiet && bun run build) || { err "build failed"; exit 1; }; fi
+      if [[ -x "$BIN_DIR/hbs-server" ]] && command -v bun >/dev/null 2>&1; then
+        (cd "$APP_DIR/dashboard" && bun build --compile --minify --sourcemap=none server/index.ts --outfile "$BIN_DIR/hbs-server") || { err "server compile failed"; exit 1; }
+      fi
+      service_action restart >/dev/null 2>&1 || true
+      ok "Updated and restarted: $(url)"
+    else
+      err "no updater found - re-run the installer to update"; exit 1
     fi ;;
   uninstall)
-    echo "run the installer with --uninstall (add --purge to remove data):"
-    echo "  bash $APP_DIR/scripts/install.sh --uninstall [--purge]" ;;
+    if [[ -f "$HBS_HOME/installer/install.sh" ]]; then
+      exec bash "$HBS_HOME/installer/install.sh" --uninstall "$@"
+    elif [[ -f "$APP_DIR/scripts/install.sh" ]]; then
+      exec bash "$APP_DIR/scripts/install.sh" --uninstall "$@"
+    else
+      err "installer not found; remove $HBS_HOME manually or re-run install.sh --uninstall"; exit 1
+    fi ;;
   *)
-    echo "usage: hbs {start|stop|restart|status|logs|update|open|uninstall}" ;;
+    cat <<'USAGE'
+usage: hbs {start|stop|restart|status|logs|open|app|tray|install-app|autostart|update|uninstall}
+
+  start|stop|restart      control the dashboard server
+  status                  health summary
+  logs                    follow the server log
+  open                    open the dashboard in your browser
+  app                     open the HBS Console desktop app (browser fallback)
+  tray                    start the tray / menu-bar helper
+  install-app             install the HBS Console desktop app
+  autostart on|off|status start HBS at login
+  update                  download the latest release and restart
+  uninstall [--purge]     remove HBS (--purge deletes the data too)
+USAGE
+    ;;
 esac

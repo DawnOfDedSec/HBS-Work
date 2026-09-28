@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { Hono, type MiddlewareHandler } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
+import { assessPassword, hashPassword, verifyPassword } from "./password";
 
 export type UserRole = "super_admin" | "auditor" | "viewer";
 export type AuthUser = {
@@ -193,7 +194,11 @@ export function createAuthRoutes(db: Database, options: AuthOptions = {}): Hono<
     }
     const input = await credentials(c);
     if (!input) return c.json({ error: "username and password required" }, 400);
-    const passwordHash = await Bun.password.hash(input.password, { algorithm: "argon2id" });
+    // The first administrator is the most valuable account in the install, so
+    // the wizard's rules are enforced server-side, not only in the browser.
+    const verdict = assessPassword(input.password, input.username);
+    if (!verdict.ok) return c.json({ error: `weak password: ${verdict.reason}` }, 400);
+    const passwordHash = await hashPassword(input.password);
     const timestamp = now();
     try {
       const result = db.transaction(() => {
@@ -230,7 +235,7 @@ export function createAuthRoutes(db: Database, options: AuthOptions = {}): Hono<
     const user = db.query(`
       SELECT id, username, password_hash, role, active FROM users WHERE username = ?
     `).get(input.username) as (UserRow & { password_hash: string }) | null;
-    const valid = !!user && !!user.active && await Bun.password.verify(input.password, user.password_hash);
+    const valid = !!user && !!user.active && await verifyPassword(input.password, user.password_hash);
     if (!valid) {
       if (failure) failure.count += 1;
       else failures.set(key, { count: 1, firstAt: timestamp });

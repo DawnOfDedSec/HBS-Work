@@ -1,0 +1,5 @@
+# Tauri 2 desktop shell
+/target/
+/gen/
+/dist/
+node_modules/

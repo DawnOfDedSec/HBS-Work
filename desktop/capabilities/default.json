@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "HBS Console shell: invoke app commands (status, start/stop, autostart) from the shell page.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

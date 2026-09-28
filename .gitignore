@@ -13,3 +13,7 @@ CLAUDE.md
 # Playwright run artifacts
 dashboard/test-results/
 dashboard/playwright-report/
+
+# Standalone-build artifacts
+dashboard/server/dist.embedded.generated.ts
+dashboard/dist-bin/

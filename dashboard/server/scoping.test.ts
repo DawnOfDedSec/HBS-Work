@@ -41,7 +41,7 @@ async function setupAdmin(app: Hono): Promise<string> {
   const response = await app.request("/api/auth/setup", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ username: "admin", password: "admin-password" }),
+    body: JSON.stringify({ username: "admin", password: "correct-horse-battery-42" }),
   });
   expect(response.status).toBe(201);
   return sessionCookie(response);
@@ -127,7 +127,7 @@ describe("campaign access scoping", () => {
     const created = await app.request("/api/users", {
       method: "POST",
       headers: { "content-type": "application/json", cookie: adminCookie },
-      body: JSON.stringify({ username: "scoped", password: "user-password", role: "auditor", allowedCampaigns: [1, 3] }),
+      body: JSON.stringify({ username: "scoped", password: "quarterly-review-2026", role: "auditor", allowedCampaigns: [1, 3] }),
     });
     expect(created.status).toBe(201);
     expect(((await created.json()) as any).user.allowedCampaigns).toEqual([1, 3]);
@@ -139,7 +139,7 @@ describe("campaign access scoping", () => {
     const invalid = await app.request("/api/users", {
       method: "POST",
       headers: { "content-type": "application/json", cookie: adminCookie },
-      body: JSON.stringify({ username: "bad", password: "password", allowedCampaigns: ["nope"] }),
+      body: JSON.stringify({ username: "bad", password: "another-passphrase-123", allowedCampaigns: ["nope"] }),
     });
     expect(invalid.status).toBe(400);
   });
@@ -150,7 +150,7 @@ describe("campaign access scoping", () => {
     const created = await app.request("/api/users", {
       method: "POST",
       headers: { "content-type": "application/json", cookie: adminCookie },
-      body: JSON.stringify({ username: "bossy", password: "user-password", role: "super_admin" }),
+      body: JSON.stringify({ username: "bossy", password: "quarterly-review-2026", role: "super_admin" }),
     });
     const id = ((await created.json()) as any).user.id as number;
     const patched = await app.request(`/api/users/${id}`, {
@@ -168,7 +168,7 @@ describe("campaign access scoping", () => {
     await app.request("/api/users", {
       method: "POST",
       headers: { "content-type": "application/json", cookie: adminCookie },
-      body: JSON.stringify({ username: "scoped", password: "user-password", role: "auditor", allowedCampaigns: [] }),
+      body: JSON.stringify({ username: "scoped", password: "quarterly-review-2026", role: "auditor", allowedCampaigns: [] }),
     });
     const allowed = seedCampaign("Allowed");
     const other = seedCampaign("Other");
@@ -183,7 +183,7 @@ describe("campaign access scoping", () => {
       body: JSON.stringify({ allowedCampaigns: [allowed] }),
     });
 
-    const scopedCookie = await login(app, "scoped", "user-password");
+    const scopedCookie = await login(app, "scoped", "quarterly-review-2026");
     const listed = await app.request("/api/campaigns", { headers: { cookie: scopedCookie } });
     const campaigns = (await listed.json()) as Array<{ id: number }>;
     expect(campaigns.some((entry) => entry.id === allowed)).toBe(true);
@@ -206,9 +206,9 @@ describe("campaign access scoping", () => {
     await app.request("/api/users", {
       method: "POST",
       headers: { "content-type": "application/json", cookie: adminCookie },
-      body: JSON.stringify({ username: "scoped", password: "user-password", role: "auditor", allowedCampaigns: [allowed] }),
+      body: JSON.stringify({ username: "scoped", password: "quarterly-review-2026", role: "auditor", allowedCampaigns: [allowed] }),
     });
-    const scopedCookie = await login(app, "scoped", "user-password");
+    const scopedCookie = await login(app, "scoped", "quarterly-review-2026");
 
     const scoped = await app.request("/api/findings?source=network", { headers: { cookie: scopedCookie } });
     expect(scoped.status).toBe(200);

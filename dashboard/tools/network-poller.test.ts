@@ -25,7 +25,7 @@ const VALID_JSON = JSON.stringify({
 const OPTIONS: PollerOptions = {
   dashboardUrl: "http://dashboard.test",
   username: "poller",
-  password: "poller-password",
+  password: "poller-passphrase-123",
 };
 
 describe("devices file parsing", () => {

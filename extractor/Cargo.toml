@@ -26,7 +26,6 @@ hex = "0.4"
 clap = { version = "4", features = ["derive"] }
 indicatif = "0.17"
 console = "0.15"
-obfstr = "0.4"
 anyhow = "1"
 ureq = { version = "2", features = ["tls"] }
 libc = "0.2"

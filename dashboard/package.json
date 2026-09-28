@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "bun run ./server/index.ts",
-    "build": "vite build",
+    "build": "vite build && bun run tools/embed-dist.ts",
+    "compile": "bun run build && bun build --compile --minify --sourcemap=none server/index.ts --outfile dist-bin/hbs-server",
     "test": "bun test"
   },
   "dependencies": {

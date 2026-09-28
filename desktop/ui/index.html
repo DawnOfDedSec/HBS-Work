@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HBS Console</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="glow" aria-hidden="true"></div>
+
+  <main class="shell">
+    <header class="brand">
+      <img class="logo" src="icon.png" alt="" width="56" height="56" />
+      <div>
+        <h1>HBS Console</h1>
+        <p class="tagline">Host baseline security reviews · read-only scans · sealed reports</p>
+      </div>
+    </header>
+
+    <section class="card status-card" aria-live="polite">
+      <div class="status-row">
+        <span class="dot" id="dot" data-state="unknown"></span>
+        <div>
+          <strong id="statusLabel">Checking the dashboard…</strong>
+          <span class="muted" id="statusDetail">one moment</span>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="primary" id="btnOpen">
+          <span>Open HBS Console</span>
+        </button>
+        <button class="ghost" id="btnBrowser">Open in browser</button>
+      </div>
+    </section>
+
+    <section class="grid">
+      <button class="tile" id="btnStart">
+        <span class="tile-title">Start dashboard</span>
+        <span class="tile-sub">run the local server</span>
+      </button>
+      <button class="tile" id="btnRestart">
+        <span class="tile-title">Restart</span>
+        <span class="tile-sub">reload after an update</span>
+      </button>
+      <button class="tile" id="btnLogs">
+        <span class="tile-title">View logs</span>
+        <span class="tile-sub">server.log, first-run credentials</span>
+      </button>
+      <button class="tile" id="btnData">
+        <span class="tile-title">Open data folder</span>
+        <span class="tile-sub">database &amp; sealed reports</span>
+      </button>
+    </section>
+
+    <section class="card pref-row">
+      <label class="switch">
+        <input type="checkbox" id="autostart" />
+        <span class="track" aria-hidden="true"><span class="knob"></span></span>
+        <span>
+          <strong>Launch at login</strong>
+          <span class="muted">keeps HBS one click away in the tray</span>
+        </span>
+      </label>
+      <button class="ghost small" id="btnQuit">Quit HBS</button>
+    </section>
+
+    <p class="note" id="note" hidden></p>
+
+    <footer class="meta">
+      <span id="metaVersion">HBS Console</span>
+      <span id="metaRoot" class="muted"></span>
+      <span id="metaBun" class="muted"></span>
+    </footer>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

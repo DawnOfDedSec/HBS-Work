@@ -93,6 +93,8 @@ identically in Rust and TypeScript: the **sealed-report envelope** and the
 
 ## Platform support
 
+**Extractor** (scan agent, ships per target host):
+
 | Target | Arch | Status |
 |---|---|---|
 | `x86_64-unknown-linux-musl` | amd64 Linux | Required (fully static musl) |
@@ -100,6 +102,14 @@ identically in Rust and TypeScript: the **sealed-report envelope** and the
 | `x86_64-pc-windows-msvc` | amd64 Windows | Required (static CRT for containers) |
 | `aarch64-pc-windows-msvc` | arm64 Windows | Stretch |
 | `armv7-unknown-linux-musleabihf` | 32-bit armv7 Linux | Stretch |
+
+**Console** (dashboard engine + desktop app, ships per dashboard host - zero
+runtime prerequisites on every one of them):
+
+| Component | Platforms |
+|---|---|
+| `hbs-server` engine | linux x64 + arm64 (glibc and musl), macOS Intel + Apple Silicon, Windows x64 (arm64 under emulation) |
+| HBS Console desktop app | Windows x64 (NSIS/MSI), Linux x64 + arm64 (deb/rpm, AppImage on x64), macOS universal `.dmg` (Intel + Apple Silicon) |
 
 - **Linux families:** Debian/Ubuntu, RHEL/CentOS/Rocky/Alma, SUSE, Arch, Alpine,
   Amazon Linux - kernel ≥ 3.10. Tested across 13 distro versions.
@@ -109,8 +119,8 @@ identically in Rust and TypeScript: the **sealed-report envelope** and the
   that cannot exist in a container (Secure Boot, TPM, bootloader, kernel
   modules, host firewall, separate-partition layout) report `NotApplicable`
   with a reason instead of failing.
-- Other OSes (macOS, BSD, Solaris/AIX) and non-x86/arm architectures are not
-  targeted.
+- Other OSes (BSD, Solaris/AIX) are not targeted for the console; the
+  extractor's musl builds cover most exotic Linux targets.
 
 ---
 
@@ -125,13 +135,31 @@ command-line knowledge is required beyond copy-paste.
 The dashboard runs on the machine you manage scans from (your workstation or a
 server). It stores all data locally; nothing leaves your network.
 
+**Zero prerequisites.** The console engine ships as a single prebuilt native
+binary per OS and architecture - you do not need Bun, Node, Rust, a compiler
+or admin rights. The installer downloads the right asset from the project's
+GitHub releases, verifies its SHA-256 checksum, and wires everything in:
+Start-menu entry, desktop shortcut, tray icon, launch-at-login.
+
 ```bash
-# Linux / macOS (installs Bun if missing, then the dashboard as a service)
+# Linux / macOS - interactive setup wizard (arrow keys), or pipe it in CI
 curl -fsSL https://raw.githubusercontent.com/PotenFYR-Studios/HBS-Tool/main/scripts/install.sh | bash
 
-# Windows (PowerShell: installs Bun if missing, the dashboard, and a tray icon)
+# Windows (PowerShell) - the same wizard
 irm https://raw.githubusercontent.com/PotenFYR-Studios/HBS-Tool/main/scripts/install.ps1 | iex
 ```
+
+The wizard asks **what to install** first (arrow keys / number keys, Enter
+accepts the suggestion):
+
+1. **Full install** (recommended) - console engine + tray + shortcuts + the
+   HBS Console desktop app.
+2. **Dashboard only** - the web console + tray; no desktop app.
+3. **Desktop app only** - the native app plus its engine; the app owns the
+   tray and shortcuts.
+
+Every question also has a flag (`--mode full|dashboard|desktop` /
+`-Mode`), so the same installer runs unattended with `-y` / `-Yes`.
 
 Both scripts print the console address when done. By default it is:
 
@@ -141,11 +169,60 @@ Both scripts print the console address when done. By default it is:
   same network. Add TLS with `--tls-cert` / `--tls-key` for anything beyond
   your LAN.
 
-**First sign-in:** on the very first launch the server creates a superuser
-account and prints its username and password **once** in the terminal (or the
-service log). Open the console, sign in with those, and change the password
-under **Admin → Users**. That account can then invite `auditor` and `viewer`
-users; you never need the terminal again.
+**First sign-in:** nothing is pre-created - no generated password to copy. Open
+the console and its first-run wizard (Welcome → Administrator → Finish) asks you
+to choose the superuser username and password, then signs you in. That account
+can invite `auditor` and `viewer` users; you never need the terminal again. The
+desktop app shows the same wizard, and opens it automatically on a fresh
+install. Unattended installs can create the account from the environment
+instead: `HBS_BOOTSTRAP_ADMIN=true` with `HBS_ADMIN_USERNAME` /
+`HBS_ADMIN_PASSWORD`.
+
+#### What the installer asks
+
+Interactive runs show a short wizard (Enter accepts the suggested value) and
+every answer has a flag, so unattended installs stay possible:
+
+| Question | Default | Flags (sh / ps1) |
+|---|---|---|
+| What to install (full / dashboard / desktop app) | full | `--mode` / `-Mode` |
+| Install location | `~/.hbs` / `%LOCALAPPDATA%\HBS` | `--dir` / `-InstallDir` |
+| Dashboard port | `3000` | `--port` / `-Port` |
+| Create a desktop shortcut | yes (except desktop mode) | `--desktop-icon` / `--no-desktop-icon` |
+| Start HBS automatically at login | yes | `--autostart` / `--no-autostart` |
+| Install the tray icon | yes (except desktop mode) | `--tray` / `--no-tray` |
+| Install the HBS Console desktop app | yes (except dashboard mode) | `--desktop-app` / `--no-desktop-app` |
+| Start it now | yes | `--no-start` / `-NoStart` |
+
+Other useful flags: `--tag vX.Y.Z` pins a release, `--from-source` builds from
+a git checkout instead (the only path that needs Bun), and `--uninstall` /
+`-Uninstall` removes everything (`--purge` also deletes the data). Uninstall
+from the console with `hbs uninstall`, or on Windows through
+**Settings → Apps → HBS Console (dashboard)**, like any other program.
+
+#### Desktop app & tray
+
+Every install mode leaves HBS installed like a real application: an
+application-menu / Start-menu entry, a desktop icon (asked in the wizard), a
+tray icon and launch-at-login (both optional).
+
+- **HBS Console** (Tauri 2 shell, `desktop/`) opens the dashboard in a native
+  window and keeps a tray / menu-bar icon with: open console, open in browser,
+  start, stop, restart, view logs, open data folder, update, launch-at-login
+  and quit (with or without stopping the server).
+- Closing the window keeps HBS in the tray; **Quit** leaves the server
+  running, **Quit and stop server** stops it.
+- It ships as a real installer per platform: NSIS/MSI on Windows, `.deb`,
+  `.rpm` and `.AppImage` on Linux (x64 and arm64), and one universal `.dmg`
+  for both Intel and Apple Silicon Macs - all published as release assets by
+  the `release` workflow.
+- No Electron: ~10 MB, uses the OS webview, and the same dashboard is still
+  reachable at `http://127.0.0.1:3000` from any browser on the machine.
+- Install it later any time with `hbs install-app`.
+
+Dashboard-only mode still gets a tray (Windows: a native PowerShell tray,
+Linux: `yad` based, macOS: `hbs app` + the menu-bar helper) and the same
+`hbs start|stop|restart|logs` controls.
 
 Prefer not to install anything yet? From a source clone:
 
@@ -239,10 +316,11 @@ Every page supports light/dark theme, CSV/Excel/PDF/Word export, and the
 
 The installers register a background service (systemd user unit on Linux,
 LaunchAgent on macOS, tray icon + startup shortcut on Windows), so the console
-comes back after reboot. To update later, re-run the same install command: it
-refreshes the app in place and keeps all data. Uninstall with `--uninstall`
-(`--purge` to also wipe data). Manual start/stop: `hbs start`, `hbs stop`,
-`hbs status` (Linux/macOS) or the tray icon menu (Windows).
+comes back after reboot. To update later: `hbs update` (downloads the latest
+release in place) or re-run the same install command - all data is kept.
+Uninstall with `--uninstall` (`--purge` to also wipe data). Manual start/stop:
+`hbs start`, `hbs stop`, `hbs status` (Linux/macOS) or the tray icon menu
+(Windows).
 
 ---
 
@@ -353,10 +431,12 @@ bun run build && bun server/index.ts
 
 ### First run & users
 
-- If no users exist, the server creates a `super_admin` and **prints its
-  credentials once in the CLI** (random 20-char password).
-  - Disable with `HBS_BOOTSTRAP_ADMIN=false` → use the `/setup` wizard instead.
-  - Override with `HBS_ADMIN_USERNAME` / `HBS_ADMIN_PASSWORD`.
+- No account is created for you: the console opens its first-run wizard
+  (Welcome → Administrator → Finish) where you choose the superuser username and
+  password. The desktop app opens the same wizard on a fresh install.
+  - Unattended installs: `HBS_BOOTSTRAP_ADMIN=true` creates a `super_admin` from
+    `HBS_ADMIN_USERNAME` / `HBS_ADMIN_PASSWORD` (otherwise a random 20-char
+    password) and prints it once in the CLI.
 - Roles: `super_admin` (all, incl. users/keys/backup/diagnostic), `auditor`
   (campaigns, issuances, ingest, treatment, exports), `viewer` (read-only).
 
@@ -606,8 +686,31 @@ cryptography (X25519, HKDF-SHA256, ChaCha20-Poly1305 or AES-256-GCM) **assuming*
 the dashboard's private keys stay protected, the OS RNG is sound, and endpoint
 memory is secure. We make no "unbreakable" claim. The extractor binary contains
 only a **public** key and cannot decrypt anything; a binary cannot be encrypted
-while still executable, so its logic remains reverse-engineerable despite
-stripping and obfuscation.
+while still executable, so its logic remains reverse-engineerable even though
+release builds are stripped. HBS deliberately ships no packer and no string
+obfuscation: that keeps endpoint security products from scoring the binary as
+malicious, and it costs nothing because the logic is public anyway.
+
+### Hardening you can rely on
+
+- **Credential storage** - passwords are Argon2id hashes (64 MiB, 3 passes,
+  per-hash random salt) peppered with a secret kept outside the database, so a
+  leaked database alone verifies and cracks nothing. Session tokens are stored
+  hashed; cookies are `HttpOnly`, `SameSite=Lax`, `Secure` under TLS.
+  See [SECURITY.md](SECURITY.md#credential-storage).
+- **First-run setup** - no account and no password is generated or printed for
+  you. The console's setup wizard creates the first administrator, and the same
+  password policy is enforced server-side. Unattended installs opt in
+  explicitly with `HBS_BOOTSTRAP_ADMIN=true`.
+- **Endpoint security** - read-only scans, no admin rights, no injection, no
+  credential or LSASS access, no packet capture, no kernel components, no
+  obfuscation, no silent updates. Allowlisting recipes for Defender, Defender
+  for Endpoint, CrowdStrike, SentinelOne, Cortex XDR, Sophos, Gatekeeper and
+  SELinux/AppArmor are in
+  [docs/security/edr-compatibility.md](docs/security/edr-compatibility.md).
+- **Browser hardening** - strict Content-Security-Policy (the single inline
+  theme-guard script is allowed by hash), `no-store` on every API response,
+  cross-origin write rejection, and login rate limiting.
 
 ---
 
@@ -639,6 +742,25 @@ issuance.
 
 **Push fails but the scan succeeded.** The local report is kept; upload it
 manually. Tokens come only from `HBS_PUSH_TOKEN` or `--push-token-file`.
+
+**No tray icon on Linux.** The tray helper needs `yad` (`sudo apt install yad`)
+and a notification-area aware desktop (GNOME needs the AppIndicator extension,
+KDE, XFCE and Cinnamon work out of the box). The optional desktop app ships its
+own tray and needs no `yad`.
+
+**`hbs app` opens the browser instead of the desktop app.** The Tauri bundle
+was not installed (it is optional). `install-desktop.sh` /`install-desktop.ps1`
+installs it from the latest release; on machines without a bundle for that
+platform use `--from-source` / `-FromSource` (needs Rust + Bun).
+
+**macOS: "HBS Console is damaged" after installing the desktop app.** Release
+builds are ad-hoc signed, not notarised: right-click the app → **Open**, or run
+`xattr -dr com.apple.quarantine "/Applications/HBS Console.app"`. The
+installer already does this for the `.dmg` it installs.
+
+**How do I uninstall completely?** `hbs uninstall` (keeps your reports) or
+`hbs uninstall --purge` / `hbs.ps1 uninstall -Purge` (deletes the data too).
+Windows also lists **HBS Console** in **Settings → Apps**.
 
 **A check shows `DegradedPartial`.** Every fallback was unavailable/denied. The
 report's `missingData` lists the exhausted sources - that is expected on hosts
@@ -675,10 +797,16 @@ extractor/           Rust crate (lib + `hbs-extractor` binary)
   src/checks/        LIN-*, WIN-*, GEN-INV, GEN-SRV modules + registry
   src/{crypto,keyslot,model,report,context,evidence,metadata,platform}.rs
 dashboard/           Bun + Hono backend (`server/`) + Vite/React SPA (`src/`)
+desktop/             HBS Console desktop app (Tauri 2 shell: tray, window, icons)
 fixtures/            Cross-language crypto/keyslot vectors
-scripts/             Build + validation harnesses (see table above)
+scripts/             Build + validation harnesses, and the installers:
+  install.sh|ps1       interactive setup wizard (service, tray, shortcuts, uninstall)
+  install-desktop.*    optional Tauri desktop app (release bundle or from source)
+  uninstall.ps1        standalone Windows uninstaller (Settings > Apps entry)
+  hbs|hbs.ps1          control CLI: start|stop|restart|status|logs|open|app|tray|autostart|update|uninstall
+  tray-windows.ps1 / tray-linux.sh / tray-macos.sh
 docs/                Documentation site (GitHub Pages, hbs-tool.docs.potenfyr.in)
-.github/workflows/   validate.yml, release.yml, docs-pages.yml
+.github/workflows/   validate.yml, release.yml (incl. desktop bundles), docs-pages.yml
 ```
 
 ## Docs & links

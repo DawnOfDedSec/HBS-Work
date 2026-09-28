@@ -1,71 +1,255 @@
-﻿# HBS Console control CLI for Windows. Installed as `hbs` by scripts/install.ps1.
+# HBS Console control CLI for Windows. Installed as `hbs` by scripts/install.ps1.
 #
-#   hbs start|stop|restart|status|logs|open|update|tray
+#   hbs start|stop|restart|status|logs|open|app|tray|autostart|update|uninstall
+#
+#   start/stop/restart   control the dashboard server
+#   status               health summary
+#   logs                 tail the server log
+#   open                 open the dashboard in your browser
+#   app                  open the HBS Console desktop app (browser fallback)
+#   tray                 start the tray icon + hidden background server
+#   autostart on|off     start HBS at login
+#   update               pull the latest app and restart
+#   uninstall [-Purge]   remove HBS (-Purge also deletes the data)
 param(
-  [Parameter(Position = 0)]
-  [string]$Command = "status"
+  [Parameter(Position = 0)][string]$Command = "status",
+  [Parameter(Position = 1)][string]$Arg = "",
+  [switch]$Purge
 )
 
 $ErrorActionPreference = "Stop"
-$InstallDir = if ($env:HBS_INSTALL_DIR) { $env:HBS_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA "HBS" }
+$InstallDir = if ($env:HBS_INSTALL_DIR) {
+  $env:HBS_INSTALL_DIR
+} else {
+  $derived = if ($PSScriptRoot) { Split-Path $PSScriptRoot -Parent } else { $null }
+  if ($derived -and (Test-Path (Join-Path $derived "data"))) { $derived } else { Join-Path $env:LOCALAPPDATA "HBS" }
+}
 $AppDir = Join-Path $InstallDir "app"
 $DataDir = Join-Path $InstallDir "data"
-$ScriptsDir = Join-Path $InstallDir "scripts"
+$BinDir = Join-Path $InstallDir "bin"
+# The installer stages its control scripts under <root>\installer; older
+# installs used <root>\scripts. Accept both.
+$ScriptsDir = if (Test-Path (Join-Path $InstallDir "installer\hbs.ps1")) { Join-Path $InstallDir "installer" } else { Join-Path $InstallDir "scripts" }
 $PidFile = Join-Path $DataDir "server.pid"
 $LogFile = Join-Path $DataDir "server.log"
+$AutostartLnk = Join-Path ([Environment]::GetFolderPath("Startup")) "HBS Console Tray.lnk"
 
-function Get-EnvPort { if (Test-Path (Join-Path $DataDir "hbs.env")) { return (Get-Content (Join-Path $DataDir "hbs.env") | Select-String "^PORT=") -replace "^PORT=", "" } return "3000" }
+function Get-EnvPort {
+  $envFile = Join-Path $DataDir "hbs.env"
+  if (Test-Path $envFile) {
+    $line = Get-Content $envFile | Select-String "^PORT=" | Select-Object -First 1
+    if ($line) { return (($line -replace "^PORT=", "").Trim()) }
+  }
+  return "3000"
+}
 function Server-Running { return (Test-Path $PidFile) -and (Get-Process -Id (Get-Content $PidFile) -ErrorAction SilentlyContinue) }
+function Server-Up {
+  try {
+    $r = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$(Get-EnvPort)" -TimeoutSec 2 -ErrorAction Stop
+    return $r.StatusCode -eq 200
+  } catch { return $false }
+}
+# True while the dashboard still has no administrator: the console then shows
+# its first-run setup wizard instead of a login form.
+function Setup-Pending {
+  try {
+    $status = Invoke-RestMethod -Uri "http://127.0.0.1:$(Get-EnvPort)/api/auth/status" -TimeoutSec 2 -ErrorAction Stop
+    return ($status.initialized -eq $false)
+  } catch { return $false }
+}
+function Write-Ok([string]$m) { Write-Host "  v $m" -ForegroundColor Green }
+function Write-Warn([string]$m) { Write-Host "  ! $m" -ForegroundColor Yellow }
+function Write-Err([string]$m) { Write-Host "  x $m" -ForegroundColor Red }
+
+# Resolves the real bun.exe. A PATH entry can hold a non-executable `bun`
+# shim (npm global bin, scoop), which Start-Process rejects with
+# "%1 is not a valid Win32 application".
+function Get-BunExe {
+  foreach ($candidate in @((Join-Path $env:USERPROFILE ".bun\bin\bun.exe"), (Join-Path $InstallDir "bin\bun.exe"))) {
+    if (Test-Path $candidate) { return $candidate }
+  }
+  $exe = Get-Command bun.exe -CommandType Application -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+  if ($exe) { return $exe.Source }
+  $fallback = Get-Command bun -ErrorAction SilentlyContinue |
+    Where-Object { $_.Source -match "\.exe$" } | Select-Object -First 1
+  if ($fallback) { return $fallback.Source }
+  return $null
+}
 
 function Start-Server {
-  if (Server-Running) { Write-Host "[hbs] already running (pid $(Get-Content $PidFile))" -ForegroundColor Yellow; return }
-  if (-not (Get-Command bun -ErrorAction SilentlyContinue)) { $env:Path = "$env:USERPROFILE\.bun\bin;$env:Path" }
+  if (Server-Running) { Write-Warn "already running (pid $(Get-Content $PidFile))"; return }
+  $serverExe = Join-Path $BinDir "hbs-server.exe"
+  $workdir = $DataDir
+  $argList = @()
+  if (-not (Test-Path $serverExe)) {
+    $bunExe = Get-BunExe
+    if (-not $bunExe) {
+      $env:Path = "$env:USERPROFILE\.bun\bin;$env:Path"
+      $bunExe = Get-BunExe
+    }
+    if (-not $bunExe) { Write-Err "engine not found - re-run the installer"; return }
+    $serverExe = $bunExe
+    $workdir = Join-Path $AppDir "dashboard"
+    $argList = @("run", "server/index.ts")
+  }
+  # The server reads PORT from its environment (or --port); without this the
+  # configured port would be ignored and it would bind 3000 instead.
   $env:HBS_DATA_ROOT = $DataDir
-  $proc = Start-Process -FilePath "bun" -ArgumentList "run", "server/index.ts" `
-    -WorkingDirectory (Join-Path $AppDir "dashboard") -WindowStyle Hidden `
-    -RedirectStandardOutput $LogFile -RedirectStandardError (Join-Path $DataDir "server.err.log") `
-    -PassThru
+  $env:PORT = Get-EnvPort
+  # Start-Process rejects an empty -ArgumentList ("contains a null value"),
+  # so only pass it when the engine actually needs arguments.
+  $startArgs = @{ FilePath = $serverExe; WorkingDirectory = $workdir; WindowStyle = "Hidden";
+    RedirectStandardOutput = $LogFile; RedirectStandardError = (Join-Path $DataDir "server.err.log"); PassThru = $true }
+  if ($argList.Count -gt 0) { $startArgs.ArgumentList = $argList }
+  $proc = Start-Process @startArgs
   Set-Content -Encoding ASCII $PidFile $proc.Id
-  Start-Sleep -Seconds 2
-  Write-Host "[hbs] started (pid $($proc.Id)): http://127.0.0.1:$(Get-EnvPort)"
+  for ($i = 0; $i -lt 40; $i++) { if (Server-Up) { break }; Start-Sleep -Milliseconds 250 }
+  Write-Ok "started (pid $($proc.Id)): http://127.0.0.1:$(Get-EnvPort)"
 }
 
 function Stop-Server {
   if (Server-Running) {
-    $pidValue = Get-Content $PidFile
-    Stop-Process -Id $pidValue -Force -ErrorAction SilentlyContinue
-    Write-Host "[hbs] stopped (pid $pidValue)"
-  } else {
-    Write-Host "[hbs] not running" -ForegroundColor Yellow
-  }
+    $p = Get-Content $PidFile
+    Stop-Process -Id $p -Force -ErrorAction SilentlyContinue
+    Write-Ok "stopped (pid $p)"
+  } else { Write-Warn "not running" }
   Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
 }
 
-switch ($Command) {
+function Get-DesktopApp {
+  # NSIS writes InstallLocation wrapped in quotes - strip them before using it.
+  $key = Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue |
+    Where-Object { $_.DisplayName -eq "HBS Console" -and $_.Publisher -eq "PotenFYR Studios" -and $_.InstallLocation } |
+    Select-Object -First 1
+  $candidates = @()
+  if ($key -and $key.InstallLocation) { $candidates += (Join-Path ($key.InstallLocation.Trim('"')) "hbs-console.exe") }
+  $candidates += (Join-Path $env:LOCALAPPDATA "HBS Console\hbs-console.exe")
+  $candidates += (Join-Path $env:LOCALAPPDATA "Programs\HBS Console\hbs-console.exe")
+  foreach ($c in $candidates) { if (Test-Path $c) { return $c } }
+  return $null
+}
+
+function Open-Dashboard { Start-Process "http://127.0.0.1:$(Get-EnvPort)" }
+
+switch ($Command.ToLower()) {
   "start"   { Start-Server }
   "stop"    { Stop-Server }
   "restart" { Stop-Server; Start-Server }
-  "status" {
-    if (Server-Running) { Write-Host "[hbs] running (pid $(Get-Content $PidFile)): http://127.0.0.1:$(Get-EnvPort)" -ForegroundColor Green }
-    else { Write-Host "[hbs] not running" -ForegroundColor Yellow }
+  "status"  {
+    if (Server-Up) {
+      Write-Ok "running - http://127.0.0.1:$(Get-EnvPort)"
+      Write-Host "    install $InstallDir" -ForegroundColor DarkGray
+      Write-Host "    data    $DataDir" -ForegroundColor DarkGray
+      $app = Get-DesktopApp
+      if ($app) { Write-Host "    desktop app: $app" -ForegroundColor DarkGray }
+      if (Setup-Pending) { Write-Warn "setup pending - create the administrator account in the console" }
+    } elseif (Server-Running) {
+      Write-Warn "process running but not answering on http://127.0.0.1:$(Get-EnvPort)"
+    } else {
+      Write-Warn "not running - start it with 'hbs start'"
+    }
   }
   "logs" {
-    if (Test-Path $LogFile) { Get-Content $LogFile -Tail 60 }
-    else { Write-Host "[hbs] no log file yet at $LogFile" -ForegroundColor Yellow }
+    if (Test-Path $LogFile) { Get-Content $LogFile -Tail 80 -Wait }
+    else { Write-Warn "no log file yet at $LogFile" }
   }
-  "open"    { Start-Process "http://127.0.0.1:$(Get-EnvPort)" }
+  "open" { Open-Dashboard }
+  "app" {
+    if (-not (Server-Up)) { Start-Server | Out-Null }
+    $app = Get-DesktopApp
+    if ($app) {
+      Start-Process $app
+      Write-Ok "HBS Console desktop app opened."
+    } else {
+      Open-Dashboard
+      Write-Ok "Opened the dashboard in your browser."
+      Write-Host ("    Install the optional desktop app with: powershell -File `"" + (Join-Path $AppDir "scripts\install-desktop.ps1") + "`"") -ForegroundColor DarkGray
+    }
+  }
   "tray" {
-    Start-Process powershell -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", (Join-Path $ScriptsDir "tray-windows.ps1")
-    Write-Host "[hbs] tray icon started - look for the shield icon in the system tray"
+    $tray = Join-Path $ScriptsDir "tray-windows.ps1"
+    if (-not (Test-Path $tray)) { $tray = Join-Path $AppDir "scripts\tray-windows.ps1" }
+    if (Test-Path $tray) {
+      Start-Process powershell -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", $tray
+      Write-Ok "tray icon started - look for the HBS icon in the system tray"
+    } else { Write-Err "tray script not found - re-run the installer" }
+  }
+  "install-app" {
+    if (-not (Server-Up)) { Start-Server | Out-Null }
+    $di = Join-Path $ScriptsDir "install-desktop.ps1"
+    if (-not (Test-Path $di)) { $di = Join-Path $AppDir "scripts\install-desktop.ps1" }
+    if (Test-Path $di) {
+      & powershell -NoProfile -ExecutionPolicy Bypass -File $di -InstallDir $InstallDir -Port (Get-EnvPort) -Yes
+      if ($LASTEXITCODE -eq 0) { Write-Ok "HBS Console desktop app installed." }
+    } else { Write-Err "no desktop-app installer found - re-run the HBS installer" }
+  }
+  "autostart" {
+    switch ($Arg.ToLower()) {
+      "on" {
+        $tray = Join-Path $ScriptsDir "tray-windows.ps1"
+        if (-not (Test-Path $tray)) { $tray = Join-Path $AppDir "scripts\tray-windows.ps1" }
+        $shell = New-Object -ComObject WScript.Shell
+        $lnk = $shell.CreateShortcut($AutostartLnk)
+        $lnk.TargetPath = "powershell.exe"
+        $lnk.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$tray`""
+        $lnk.WorkingDirectory = $InstallDir
+        $lnk.Description = "Starts the HBS Console background server at login"
+        $lnk.Save()
+        Write-Ok "tray starts with Windows"
+      }
+      "off" {
+        Remove-Item $AutostartLnk -Force -ErrorAction SilentlyContinue
+        Write-Ok "autostart removed"
+      }
+      default {
+        if (Test-Path $AutostartLnk) { Write-Ok "autostart: on" } else { Write-Warn "autostart: off" }
+      }
+    }
   }
   "update" {
-    if (Test-Path (Join-Path $AppDir ".git")) {
+    Write-Host "  > updating..." -ForegroundColor Cyan
+    # Binary installs update by re-running the staged installer: it fetches
+    # the latest release assets and re-wires everything in place.
+    $installer = Join-Path $ScriptsDir "install.ps1"
+    if (Test-Path $installer) {
+      & powershell -NoProfile -ExecutionPolicy Bypass -File $installer -Yes
+      if ($LASTEXITCODE -eq 0) { Write-Ok "updated." } else { Write-Err "update failed" }
+    } elseif (Test-Path (Join-Path $AppDir ".git")) {
       git -C $AppDir fetch origin main --quiet
       git -C $AppDir reset --hard origin/main --quiet
-      Push-Location (Join-Path $AppDir "dashboard"); bun install --quiet; Pop-Location
-      Stop-Server; Start-Server
-      Write-Host "[hbs] updated and restarted."
-    } else { Write-Host "[hbs] app was not installed via git; re-run the installer to update." -ForegroundColor Yellow }
+      Push-Location (Join-Path $AppDir "dashboard"); bun install --quiet; bun run build; Pop-Location
+      $exe = Join-Path $BinDir "hbs-server.exe"
+      if (Test-Path (Join-Path $AppDir "dashboard\server\index.ts")) {
+        Push-Location (Join-Path $AppDir "dashboard"); bun run compile; Pop-Location
+        $built = Join-Path $AppDir "dashboard\dist-bin\hbs-server.exe"
+        if (Test-Path $built) { Copy-Item $built $exe -Force }
+      }
+      Stop-Server | Out-Null; Start-Server
+      Write-Ok "updated and restarted."
+    } else { Write-Err "no updater found - re-run the installer to update" }
   }
-  default   { Write-Host "usage: hbs {start|stop|restart|status|logs|open|update|tray}" }
+  "uninstall" {
+    $un = Join-Path $ScriptsDir "uninstall.ps1"
+    if (-not (Test-Path $un)) { $un = Join-Path $AppDir "scripts\uninstall.ps1" }
+    if (-not (Test-Path $un)) { Write-Err "uninstaller not found; remove $InstallDir manually"; break }
+    if ($Purge) { & powershell -NoProfile -ExecutionPolicy Bypass -File $un -InstallDir $InstallDir -Purge -Yes }
+    else { & powershell -NoProfile -ExecutionPolicy Bypass -File $un -InstallDir $InstallDir }
+  }
+  default {
+    @"
+usage: hbs {start|stop|restart|status|logs|open|app|tray|install-app|autostart|update|uninstall}
+
+  start|stop|restart      control the dashboard server
+  status                  health summary
+  logs                    tail the server log
+  open                    open the dashboard in your browser
+  app                     open the HBS Console desktop app (browser fallback)
+  tray                    start the tray icon + background server
+  install-app             install the HBS Console desktop app
+  autostart on|off|status start HBS at login
+  update                  download the latest release and restart
+  uninstall [-Purge]      remove HBS (-Purge deletes the data too)
+"@ | Write-Host
+  }
 }

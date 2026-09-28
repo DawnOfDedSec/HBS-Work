@@ -27,7 +27,7 @@ const STEPS: Array<{ id: Step; label: string }> = [
   { id: 2, label: "Finish" },
 ];
 
-const MIN_PASSWORD = 8;
+const MIN_PASSWORD = 12;
 
 function passwordStrength(password: string): { score: number; label: string; tone: ProgressTone } {
   if (!password) return { score: 0, label: "No password yet", tone: "critical" };
@@ -206,6 +206,7 @@ export function Setup({ onAuthed }: Props) {
                     if (errors.password) setErrors((current) => ({ ...current, password: undefined }));
                   }}
                   error={errors.password}
+                  hint={`At least ${MIN_PASSWORD} characters; a 16+ character passphrase is even stronger.`}
                   required
                   trailing={
                     <Button

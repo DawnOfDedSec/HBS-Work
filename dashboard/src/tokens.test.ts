@@ -185,7 +185,7 @@ describe("token discipline", () => {
     const offenders: string[] = [];
     for (const file of readdirSync(import.meta.dir, { recursive: true })) {
       const path = `${import.meta.dir}/${file}`;
-      if (!file.endsWith(".tsx")) continue;
+      if (!String(file).endsWith(".tsx")) continue;
       readFileSync(path, "utf8")
         .split("\n")
         .forEach((line, index) => {
