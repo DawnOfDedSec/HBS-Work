@@ -163,11 +163,20 @@ Every question also has a flag (`--mode full|dashboard|desktop` /
 
 Both scripts print the console address when done. By default it is:
 
-- **http://127.0.0.1:3000** on the machine running the dashboard. To reach it
-  from your laptop instead of the server console, start it with `--host` (or
-  set `HOST`) and open `http://<dashboard-ip>:3000` from any browser on the
-  same network. Add TLS with `--tls-cert` / `--tls-key` for anything beyond
-  your LAN.
+- **http://127.0.0.1:3000** on the machine running the dashboard. The wizard
+  asks whether to publish it on your local network and whether to serve HTTPS
+  (it self-signs a certificate when `openssl` is available); the same is
+  available non-interactively with `--expose` and `--tls`. To reach it from
+  your laptop instead of the server console, open `https://<dashboard-ip>:3000`
+  from any browser on the same network. Every one of these choices can be
+  changed later in **Admin → Hosting** or in the desktop app's Settings panel.
+
+Hosting settings are stored **encrypted and tamper-evident**: the server seals
+them into `hbs.config` (AES-256-GCM, key in a `0600` `config.key` beside it, or
+`HBS_CONFIG_KEY` from a secret manager). A modified or transplanted config
+fails authentication and is ignored, never applied. Saving a change shows a
+restart banner across the console; the desktop app can restart the engine for
+you.
 
 **First sign-in:** nothing is pre-created - no generated password to copy. Open
 the console and its first-run wizard (Welcome → Administrator → Finish) asks you
@@ -188,6 +197,8 @@ every answer has a flag, so unattended installs stay possible:
 | What to install (full / dashboard / desktop app) | full | `--mode` / `-Mode` |
 | Install location | `~/.hbs` / `%LOCALAPPDATA%\HBS` | `--dir` / `-InstallDir` |
 | Dashboard port | `3000` | `--port` / `-Port` |
+| Publish the dashboard on your local network | no (loopback only) | `--expose` / `--host` / `--local` · `-Expose` / `-BindAddress` / `-Local` |
+| Serve HTTPS with TLS | no (self-signs if openssl is present) | `--tls` / `--tls-cert` / `--tls-key` · `-Tls` / `-TlsCert` / `-TlsKey` |
 | Create a desktop shortcut | yes (except desktop mode) | `--desktop-icon` / `--no-desktop-icon` |
 | Start HBS automatically at login | yes | `--autostart` / `--no-autostart` |
 | Install the tray icon | yes (except desktop mode) | `--tray` / `--no-tray` |
@@ -450,9 +461,14 @@ bun run build && bun server/index.ts
 | `--help` | - | Usage |
 | - | `HBS_DB_PATH` | SQLite path (default `server/data/hbs.sqlite`) |
 | - | `HBS_DATA_ROOT` | Keys/artifacts root (default `server/data`) |
+| - | `HBS_CONFIG_FILE` | Sealed config path (default `<data root>/hbs.config`) |
+| - | `HBS_CONFIG_KEY` | Config key as 64 hex chars (default: a `0600` `config.key` beside it) |
 
-CLI flags take precedence over env. Binding to a non-loopback address prints the
-interface URLs and a warning when TLS is not configured.
+Precedence is **CLI flag > sealed config > environment > default**. The
+installer writes `hbs.env`; the server seals that choice into the encrypted
+config on first run and mirrors the non-secret values back so the service
+manager, tray and CLI stay in agreement. Binding to a non-loopback address
+prints the interface URLs and a warning when TLS is not configured.
 
 ### Workflow
 
@@ -483,7 +499,8 @@ interface URLs and a warning when TLS is not configured.
 | **Telemetry** | analyst | Scan/ingest percentiles, coverage trend, adoption bars, freshness/SLA |
 | **Standards** | analyst/auditor | CIS / NIST 800-53 / ISO 27001 / PCI-DSS coverage matrix |
 | **Treatment** | auditor | State board (open/accepted_risk/false_positive/remediated) with history |
-| **Admin** | super_admin | Users, issuance keys, retention, audit log, encrypted backup/restore |
+| **Admin → Hosting** | super_admin | Bind address, port and TLS; saves to the sealed config and flags the restart |
+| **Admin** | super_admin | Users, hosting, issuance keys, retention, audit log, encrypted backup/restore |
 
 Cross-cutting: command palette (`Ctrl/⌘-K`), live SSE activity + notifications,
 light/dark theme, table twins for every chart, and a print stylesheet.
@@ -506,6 +523,7 @@ GET    /api/hosts | /api/hosts/:id | /api/checks/:checkId
 GET    /api/remediation | /api/telemetry | /api/standards | /api/treatment
 POST   /api/reports/:id/findings/:checkId/treatment
 GET/POST/PATCH/DELETE /api/saved-views
+GET    /api/admin/settings          PUT /api/admin/settings          (hosting; super_admin)
 GET    /api/admin/audit | /api/reports/:id/findings/:checkId/history
 POST   /api/admin/backup | /api/admin/backup/restore
 GET    /api/export/report/:id?format=xlsx|csv|pdf|docx[&template=executive|technical]
@@ -659,7 +677,12 @@ cd dashboard && bun run ../scripts/e2e-loop.ts
   - Windows: `windows-2022`, `windows-2025` (+ `windows-2019`, `windows-11-arm` tolerated) - build, tests, sealed scan.
   - Dashboard: `bun test`, `tsc`, `vite build`.
 - **`.github/workflows/release.yml`** (runs only after `validate` succeeds on main)
-  - Builds all targets + the dashboard bundle, emits `SHA256SUMS` and `manifest.json`.
+  - Builds all extractor targets, the 7 standalone `hbs-server` bundles the
+    installers download, the dashboard bundle, and the desktop app installers
+    (Windows NSIS/MSI, Linux deb/rpm/AppImage, macOS universal dmg), then emits
+    `SHA256SUMS` and `manifest.json`. The release publishes only when the
+    extractor, server, dashboard **and** desktop jobs all succeed, so an
+    installer can never point at a release that is missing its engine.
   - Publishes a release tagged `v<version>` from `extractor/Cargo.toml`:
     - **new version** → creates the release with the changelog (commits since the previous tag);
     - **same version** → overwrites the assets and **appends** the new changelog to the existing notes.
@@ -711,6 +734,11 @@ malicious, and it costs nothing because the logic is public anyway.
 - **Browser hardening** - strict Content-Security-Policy (the single inline
   theme-guard script is allowed by hash), `no-store` on every API response,
   cross-origin write rejection, and login rate limiting.
+- **Sealed configuration** - hosting settings are AES-256-GCM sealed with the
+  header as AAD (`hbs.config`, key in a `0600` `config.key` or `HBS_CONFIG_KEY`).
+  A tampered or transplanted file fails authentication and is ignored, never
+  applied. At-rest encryption and tamper detection, not protection from someone
+  who already owns the service account.
 
 ---
 
@@ -742,6 +770,16 @@ issuance.
 
 **Push fails but the scan succeeded.** The local report is kept; upload it
 manually. Tokens come only from `HBS_PUSH_TOKEN` or `--push-token-file`.
+
+**I changed the port or TLS but nothing happened.** Hosting settings apply on
+restart. The console shows a restart banner after saving; run `hbs restart`
+(Linux/macOS) or use Restart in the desktop app / tray. The change is already
+sealed in `hbs.config`, so nothing is lost.
+
+**"stored settings ignored" at startup.** `hbs.config` failed authentication
+(tampered, or sealed with a different key). The server keeps running from
+`hbs.env` and the console's Hosting page shows the error. Re-save the settings
+there to reseal them, or delete `hbs.config` to start from the environment.
 
 **No tray icon on Linux.** The tray helper needs `yad` (`sudo apt install yad`)
 and a notification-area aware desktop (GNOME needs the AppIndicator extension,
@@ -797,7 +835,10 @@ extractor/           Rust crate (lib + `hbs-extractor` binary)
   src/checks/        LIN-*, WIN-*, GEN-INV, GEN-SRV modules + registry
   src/{crypto,keyslot,model,report,context,evidence,metadata,platform}.rs
 dashboard/           Bun + Hono backend (`server/`) + Vite/React SPA (`src/`)
+  server/config-store.ts   sealed (AES-256-GCM) hosting settings + hbs.env mirror
+  src/pages/admin/Settings.tsx   Admin -> Hosting page
 desktop/             HBS Console desktop app (Tauri 2 shell: tray, window, icons)
+  ui/                shell page: engine controls, hosting settings, tray prefs
 fixtures/            Cross-language crypto/keyslot vectors
 scripts/             Build + validation harnesses, and the installers:
   install.sh|ps1       interactive setup wizard (service, tray, shortcuts, uninstall)

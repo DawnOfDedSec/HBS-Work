@@ -41,12 +41,18 @@ export const DOC_SECTIONS: DocSection[] = [
       {
         type: 'text',
         content:
-          'Open http://127.0.0.1:3000 on the machine running the dashboard. To reach it from another computer, start it with --host and open http://<dashboard-ip>:3000; add TLS (HBS_TLS_CERT / HBS_TLS_KEY) for anything beyond your LAN.',
+          'Open http://127.0.0.1:3000 on the machine running the dashboard. The default install is local-only. To reach the console from another computer, answer yes to "Publish the dashboard on your local network?" during install (or pass --expose / -Expose) and open https://<dashboard-ip>:3000 from any browser on that network.',
       },
       {
         type: 'text',
         content:
-          'The installer runs a short wizard first (arrow keys, Enter accepts each suggestion): what to install (full - engine + tray + shortcuts + desktop app; dashboard only; or desktop app only), install location, dashboard port, desktop shortcut, start at login, and tray icon. Every question has a flag (--mode full|dashboard|desktop, --desktop-icon, --autostart, --tray, --desktop-app, -y for non-interactive installs) and the same wizard runs on Windows, macOS and Linux. HBS then behaves like any installed application: application-menu / Start-menu entry, desktop icon, tray icon, launch-at-login. Uninstall with hbs uninstall (--purge also deletes data) or Settings > Apps on Windows.',
+          'The installer runs a short wizard first (arrow keys, Enter accepts each suggestion): what to install (full - engine + tray + shortcuts + desktop app; dashboard only; or desktop app only), install location, dashboard port, whether to publish on the local network, and whether to serve HTTPS with TLS (self-signed automatically when openssl is present). Then the desktop shortcut, start at login, and tray icon. Every question has a flag (--mode full|dashboard|desktop, --expose / --host, --tls / --tls-cert / --tls-key, --desktop-icon, --autostart, --tray, --desktop-app, -y for non-interactive installs) and the same wizard runs on Windows, macOS and Linux. HBS then behaves like any installed application: application-menu / Start-menu entry, desktop icon, tray icon, launch-at-login. Uninstall with hbs uninstall (--purge also deletes data) or Settings > Apps on Windows.',
+      },
+      {
+        type: 'note',
+        tone: 'tip',
+        content:
+          'Change hosting later without touching the installer: Admin → Hosting in the console, or the Settings panel in the HBS Console desktop app. Both write the same sealed configuration; the console tells you when a restart is required.',
       },
       {
         type: 'list',
@@ -144,7 +150,7 @@ hbs-extractor.exe --no-elevate --quiet`,
       {
         type: 'text',
         content:
-          'The installer finishes with the console address (http://127.0.0.1:3000 on this machine) and one-time superuser credentials. Open the address in a browser, sign in, and change the password under Admin → Users.',
+          'The installer finishes with the console address (http://127.0.0.1:3000 on this machine). Open it in a browser: the first-run wizard asks you to choose the superuser username and password, then signs you in. Nothing is generated for you, so there is no temporary password to copy.',
       },
       { type: 'h2', content: 'Step 2: campaign, location, extractor (2 minutes)' },
       {
@@ -303,7 +309,15 @@ bun run build && bun server/index.ts   # production single-process`,
           ['--tls-cert / --tls-key', 'HBS_TLS_CERT / HBS_TLS_KEY', 'Enable TLS (fingerprint printed at startup)'],
           ['-', 'HBS_DB_PATH', 'SQLite path (default server/data/hbs.sqlite)'],
           ['-', 'HBS_DATA_ROOT', 'Keys/artifacts root (default server/data)'],
+          ['-', 'HBS_CONFIG_FILE', 'Sealed config path (default <data root>/hbs.config)'],
+          ['-', 'HBS_CONFIG_KEY', 'Config encryption key as 64 hex chars (default: a 0600 config.key beside it)'],
         ],
+      },
+      {
+        type: 'note',
+        tone: 'info',
+        content:
+          'Precedence is CLI flag > sealed config > environment > default. The installer writes hbs.env; the server seals that choice into an encrypted, authenticated config file on first run. From then on, Admin → Hosting (or the desktop Settings panel) edits the sealed file, mirrors the non-secret values back into hbs.env for the service manager and tray, and reports when a restart is needed. An edited or transplanted config fails authentication and is ignored, never applied.',
       },
       { type: 'h2', content: 'First run & users' },
       {
@@ -351,8 +365,14 @@ bun run build && bun server/index.ts   # production single-process`,
           ['Telemetry', 'analyst', 'Scan/ingest percentiles, coverage trend, adoption bars, freshness/SLA'],
           ['Standards', 'analyst/auditor', 'CIS / NIST 800-53 / ISO 27001 / PCI-DSS coverage matrix'],
           ['Treatment', 'auditor', 'State board (open/accepted_risk/false_positive/remediated) with history'],
-          ['Admin', 'super_admin', 'Users, issuance keys, retention, audit log, encrypted backup/restore'],
+          ['Admin', 'super_admin', 'Users, hosting settings, issuance keys, retention, audit log, encrypted backup/restore'],
         ],
+      },
+      {
+        type: 'note',
+        tone: 'info',
+        content:
+          'Admin → Hosting edits the bind address, port and TLS. Saving seals the change immediately and shows a restart banner across the console; the HBS Console desktop app can restart the engine for you. The desktop Settings panel writes the same sealed file through the engine, so there is one source of truth.',
       },
       { type: 'h2', content: 'Key API endpoints' },
       {
@@ -367,6 +387,7 @@ POST   /api/ingest            (extractor push; Bearer push token)
 POST   /api/reports/upload    (multipart batch, ≤32 files; session)
 GET    /api/events            (SSE report-arrived)
 GET    /api/overview | /api/findings | /api/remediation | /api/telemetry | /api/standards | /api/treatment
+GET    /api/admin/settings         PUT /api/admin/settings        (hosting; super_admin)
 GET    /api/export/report/:id?format=xlsx|csv|pdf|docx[&template=executive|technical]
 GET    /api/export/campaign/:id?format=…`,
       },
@@ -420,6 +441,12 @@ GET    /api/export/campaign/:id?format=…`,
           'diagnostics - environment/hypervisor, catalog fingerprint, privilege, peak RSS, phase durations, missingData, and a bounded human-readable log.',
           'All strings are redacted and size-bounded before sealing.',
         ],
+      },
+      { type: 'h2', content: 'Sealed hosting configuration' },
+      {
+        type: 'text',
+        content:
+          'Hosting settings (bind address, port, TLS paths) live in an AES-256-GCM envelope with the header as AAD: hbs.config, keyed by a 0600 config.key beside it or HBS_CONFIG_KEY from a secret manager. The tag makes the file tamper-evident - a flipped byte, an edited port or a config copied from another install fails authentication and is ignored, never applied. This is at-rest encryption and tamper detection for anyone who can read or write the file without owning the service account; it is not a defence against an attacker who already runs as that account.',
       },
       { type: 'h2', content: 'Honest security statement' },
       {
