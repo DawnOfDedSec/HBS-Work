@@ -1393,6 +1393,28 @@ mod tests {
         assert!(engine_asset(&manifest, "bun-darwin-arm64").is_none());
     }
 
+    #[test]
+    fn pid_helpers_find_and_stop_a_process() {
+        #[cfg(target_os = "windows")]
+        let mut child = Command::new("cmd")
+            .args(["/C", "ping -n 30 127.0.0.1 >NUL"])
+            .spawn()
+            .expect("spawn child");
+        #[cfg(unix)]
+        let mut child = Command::new("sleep").arg("30").spawn().expect("spawn child");
+
+        let pid = child.id();
+        assert!(pid_alive(pid), "a freshly spawned process must look alive");
+        assert!(terminate_pid(pid), "terminate must be accepted by the OS");
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline && pid_alive(pid) {
+            thread::sleep(Duration::from_millis(100));
+        }
+        assert!(!pid_alive(pid), "the process must be gone after terminate");
+        let _ = child.wait();
+    }
+
     /// Proves the whole download -> SHA-256 -> gunzip -> install path against
     /// the published release. Network-bound, so opt in with
     /// `cargo test -- --ignored` when a release has just been cut.

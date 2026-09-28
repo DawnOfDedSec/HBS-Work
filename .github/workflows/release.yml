@@ -386,10 +386,18 @@ jobs:
           set -e
           TAG="${{ steps.changelog.outputs.tag }}"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "release $TAG exists -> overwrite assets and append changelog"
+            echo "release $TAG exists -> replace assets and append changelog"
             gh release view "$TAG" --json body -q .body > existing.md || true
             { cat existing.md; echo; echo "---"; echo; cat notes.md; } > combined.md
             gh release edit "$TAG" --notes-file combined.md
+            # Replace, not merge: --clobber alone would leave a renamed or
+            # dropped artifact behind as a stale download. Delete the old set
+            # first, then upload the fresh one.
+            gh release view "$TAG" --json assets --jq '.assets[].name' | while IFS= read -r name; do
+              if [ -n "$name" ]; then
+                gh release delete-asset "$TAG" "$name" --yes
+              fi
+            done
             gh release upload "$TAG" release-assets/* --clobber
           else
             echo "creating release $TAG"
