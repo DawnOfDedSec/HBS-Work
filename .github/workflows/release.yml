@@ -200,7 +200,9 @@ jobs:
       matrix:
         include:
           - { name: linux,       os: ubuntu-24.04,      targets: "",                         experimental: false }
-          - { name: linux-arm64, os: ubuntu-24.04-arm,  targets: "deb,rpm",                  experimental: false }
+          # arm64 deb/rpm is opportunistic: a missing arm runner must not block
+          # a release that every other platform needs.
+          - { name: linux-arm64, os: ubuntu-24.04-arm,  targets: "deb,rpm",                  experimental: true }
           - { name: windows,     os: windows-2022,      targets: "",                         experimental: false }
           - { name: macos,       os: macos-latest,      targets: "",                         experimental: false }
     runs-on: ${{ matrix.os }}
@@ -285,7 +287,8 @@ jobs:
         github.event.workflow_run.head_branch == 'main')) &&
       needs.build.result == 'success' &&
       needs.server-bundle.result == 'success' &&
-      needs.dashboard-bundle.result == 'success'
+      needs.dashboard-bundle.result == 'success' &&
+      needs.desktop-bundles.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
