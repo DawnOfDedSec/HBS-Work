@@ -203,6 +203,11 @@ impl AppState {
     fn log_file(&self) -> PathBuf {
         self.data_dir().join("server.log")
     }
+    /// PID of the engine, written by this app and by the installers' CLIs, so
+    /// any of them can stop or restart a server the others started.
+    fn pid_file(&self) -> PathBuf {
+        self.data_dir().join("server.pid")
+    }
     fn entry(&self) -> PathBuf {
         self.app_dir().join("dashboard").join("server").join("index.ts")
     }
@@ -319,6 +324,9 @@ impl AppState {
             .map_err(|e| format!("could not start the dashboard ({}): {e}", server.display()))?;
         let pid = child.id();
         *self.child.lock().unwrap() = Some(child);
+        // Publish the pid so the CLIs and the standalone tray can stop a
+        // server this app started (and vice versa).
+        let _ = std::fs::write(self.pid_file(), pid.to_string());
         self.log(&format!("started dashboard (pid {pid})"));
         if self.wait_up(30) {
             Ok(())
@@ -338,25 +346,53 @@ impl AppState {
         self.server_up()
     }
 
-    /// Stop the server if we own it, else the service unit.
+    /// Stop the engine, whoever started it: our own child, a systemd/launchd
+    /// unit, or a detached process the installer (or a previous shell) left
+    /// behind and recorded in server.pid. Windows has no service manager, so
+    /// adoption through the pid file is what makes tray Stop/Restart work.
     fn stop(&self) -> Result<(), String> {
         let owned = { self.child.lock().unwrap().take() };
         if let Some(mut child) = owned {
             let pid = child.id();
             let _ = child.kill();
             let _ = child.wait();
+            let _ = std::fs::remove_file(self.pid_file());
             self.log(&format!("stopped dashboard (pid {pid})"));
             return Ok(());
         }
         if self.service_exists() {
             return self.service_ctl("stop");
         }
+        if let Some(pid) = self.read_pid() {
+            if pid_alive(pid) {
+                if terminate_pid(pid) {
+                    let _ = std::fs::remove_file(self.pid_file());
+                    self.log(&format!("stopped dashboard (pid {pid})"));
+                    return Ok(());
+                }
+                return Err(format!("could not stop process {pid}"));
+            }
+            let _ = std::fs::remove_file(self.pid_file());
+        }
+        if self.server_up() {
+            return Err(
+                "a dashboard is answering but no pid file identifies it - stop it with `hbs stop`"
+                    .into(),
+            );
+        }
         Err("no HBS server is running".into())
+    }
+
+    /// Read the engine pid recorded in the data directory.
+    fn read_pid(&self) -> Option<u32> {
+        std::fs::read_to_string(self.pid_file())
+            .ok()
+            .and_then(|text| text.trim().parse::<u32>().ok())
     }
 
     fn restart(&self) -> Result<(), String> {
         if self.child.lock().unwrap().is_some() {
-            let _ = self.stop();
+            self.stop()?;
             thread::sleep(Duration::from_millis(400));
             return self.ensure_started();
         }
@@ -367,10 +403,11 @@ impl AppState {
             }
             return Err("service did not come back within 25s".into());
         }
-        if self.server_up() {
-            return Err(
-                "a dashboard is already running outside this app (stop it with `hbs stop`)".into(),
-            );
+        // Adopted or externally started: stop it, then bring it back under our
+        // own control. Without this, Restart was a silent no-op on Windows.
+        if self.server_up() || self.read_pid().map(pid_alive).unwrap_or(false) {
+            self.stop()?;
+            thread::sleep(Duration::from_millis(400));
         }
         self.ensure_started()
     }
@@ -462,6 +499,53 @@ impl AppState {
     #[cfg(target_os = "windows")]
     fn service_ctl(&self, _action: &str) -> Result<(), String> {
         Err("no service manager on Windows; use Start/Stop in this menu".into())
+    }
+}
+
+/// True while a process with this id exists.
+fn pid_alive(pid: u32) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        // tasklist rows are "image  pid  session  #  memory"; match the pid
+        // column exactly rather than substring-searching the whole row.
+        let needle = pid.to_string();
+        Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+            .output()
+            .map(|out| {
+                String::from_utf8_lossy(&out.stdout)
+                    .lines()
+                    .any(|line| line.split_whitespace().nth(1) == Some(needle.as_str()))
+            })
+            .unwrap_or(false)
+    }
+    #[cfg(unix)]
+    {
+        Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    }
+}
+
+/// Terminate a process we did not spawn. Returns true when the OS accepted it.
+fn terminate_pid(pid: u32) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    }
+    #[cfg(unix)]
+    {
+        Command::new("kill")
+            .arg(pid.to_string())
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
     }
 }
 
@@ -970,49 +1054,69 @@ fn set_tooltip(app: &AppHandle, text: String) {
     });
 }
 
-fn open_clicked(app: &AppHandle) {
-    if let Err(e) = open_console(app) {
-        let state = app.state::<AppState>();
-        state.log(&format!("open failed: {e}"));
-        show_shell(app);
-        let _ = app
-            .get_webview_window(MAIN_WINDOW)
-            .map(|w| w.eval(&format!(
-                "window.dispatchEvent(new CustomEvent('hbs-error', {{detail: {}}}))",
-                json!(e)
-            )));
+/// Surface a failure instead of only writing it to the log: show the fallback
+/// window with the message, so a tray click never fails silently.
+fn report(app: &AppHandle, context: &str, error: String) {
+    let state = app.state::<AppState>();
+    state.log(&format!("{context} failed: {error}"));
+    show_shell(app);
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        let _ = window.eval(&format!(
+            "window.dispatchEvent(new CustomEvent('hbs-error', {{detail: {}}}))",
+            json!(format!("{context}: {error}"))
+        ));
     }
 }
 
+fn open_clicked(app: &AppHandle) {
+    if let Err(e) = open_console(app) {
+        report(app, "open", e);
+    }
+}
+
+/// Run a lifecycle action off the UI thread. Starting or stopping can wait on
+/// a port for up to 30s; doing that on the tray's main thread froze the menu,
+/// which read as "the button does nothing".
+fn run_lifecycle(app: &AppHandle, label: &'static str, action: fn(&AppState) -> Result<(), String>) {
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        let state = handle.state::<AppState>();
+        match action(&state) {
+            Ok(()) => {
+                let text = if state.server_up() {
+                    format!("HBS Console - running (port {})", state.port())
+                } else {
+                    "HBS Console - stopped".into()
+                };
+                set_tooltip(&handle, text);
+                rebuild_tray(&handle);
+                state.log(&format!("{label} complete"));
+            }
+            Err(e) => report(&handle, label, e),
+        }
+    });
+}
+
 fn handle_menu(app: &AppHandle, id: &str) {
-    let state = app.state::<AppState>();
     match id {
         M_OPEN => open_clicked(app),
         M_BROWSER => {
-            if let Err(e) = state.ensure_started().and_then(|_| open_system_browser(&state.url())) {
-                state.log(&format!("open in browser failed: {e}"));
-                open_clicked(app);
-            }
+            let handle = app.clone();
+            std::thread::spawn(move || {
+                let state = handle.state::<AppState>();
+                if let Err(e) = state
+                    .ensure_started()
+                    .and_then(|_| open_system_browser(&state.url()))
+                {
+                    report(&handle, "open in browser", e);
+                }
+            });
         }
-        M_START => match state.ensure_started() {
-            Ok(()) => {
-                set_tooltip(app, format!("HBS Console - running (port {})", state.port()));
-                rebuild_tray(app);
-            }
-            Err(e) => state.log(&format!("start failed: {e}")),
-        },
-        M_STOP => match state.stop() {
-            Ok(()) => {
-                set_tooltip(app, "HBS Console - stopped".into());
-                rebuild_tray(app);
-            }
-            Err(e) => state.log(&format!("stop failed: {e}")),
-        },
-        M_RESTART => match state.restart() {
-            Ok(()) => state.log("restarted"),
-            Err(e) => state.log(&format!("restart failed: {e}")),
-        },
+        M_START => run_lifecycle(app, "start", AppState::ensure_started),
+        M_STOP => run_lifecycle(app, "stop", AppState::stop),
+        M_RESTART => run_lifecycle(app, "restart", AppState::restart),
         M_LOGS => {
+            let state = app.state::<AppState>();
             let log = state.log_file();
             if !log.exists() {
                 state.log("(log created)");
@@ -1020,21 +1124,36 @@ fn handle_menu(app: &AppHandle, id: &str) {
             let _ = open_system_path(&log);
         }
         M_DATA => {
+            let state = app.state::<AppState>();
             let dir = state.data_dir();
             let _ = std::fs::create_dir_all(&dir);
             let _ = open_system_path(&dir);
         }
-        M_UPDATE => match run_update(&state) {
-            Ok(()) => state.log("update complete"),
-            Err(e) => state.log(&format!("update failed: {e}")),
-        },
+        M_UPDATE => {
+            // Downloads and reinstalls the engine; never on the UI thread.
+            let handle = app.clone();
+            std::thread::spawn(move || {
+                let state = handle.state::<AppState>();
+                match run_update(&state) {
+                    Ok(()) => {
+                        state.log("update complete");
+                        set_tooltip(&handle, format!("HBS Console - running (port {})", state.port()));
+                        rebuild_tray(&handle);
+                    }
+                    Err(e) => report(&handle, "update", e),
+                }
+            });
+        }
         M_AUTOSTART => toggle_autostart(app),
         M_QUIT => {
-            state.detach();
+            app.state::<AppState>().detach();
             app.exit(0);
         }
         M_QUIT_STOP => {
-            let _ = state.stop();
+            let state = app.state::<AppState>();
+            if let Err(e) = state.stop() {
+                state.log(&format!("quit: {e}"));
+            }
             app.exit(0);
         }
         _ => {}
