@@ -281,10 +281,13 @@ jobs:
           # Restrict to bundle directories and to installer extensions, or the
           # scan also sweeps up target/release/build/*/build-script-build.exe
           # and the raw unbundled binaries.
+          # Spaces become dots: GitHub sanitizes release asset names that way,
+          # so the manifest and SHA256SUMS must use the name the asset will
+          # actually have ("HBS Console_..." -> "HBS.Console_...").
           find target -maxdepth 6 -type f -path '*/release/bundle/*' \
             \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \
                -o -name '*.dmg' -o -name '*.msi' -o -name '*-setup.exe' \) \
-            -exec cp {} "$GITHUB_WORKSPACE/release-assets/" \;
+            -exec sh -c 'for f do cp "$f" "$GITHUB_WORKSPACE/release-assets/$(basename "$f" | tr " " ".")"; done' sh {} +
           ls -l "$GITHUB_WORKSPACE/release-assets"
 
       - uses: actions/upload-artifact@v4
