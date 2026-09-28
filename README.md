@@ -169,14 +169,13 @@ Both scripts print the console address when done. By default it is:
   available non-interactively with `--expose` and `--tls`. To reach it from
   your laptop instead of the server console, open `https://<dashboard-ip>:3000`
   from any browser on the same network. Every one of these choices can be
-  changed later in **Admin → Hosting** or in the desktop app's Settings panel.
+  changed later in **Admin → Hosting** in the console.
 
 Hosting settings are stored **encrypted and tamper-evident**: the server seals
 them into `hbs.config` (AES-256-GCM, key in a `0600` `config.key` beside it, or
 `HBS_CONFIG_KEY` from a secret manager). A modified or transplanted config
 fails authentication and is ignored, never applied. Saving a change shows a
-restart banner across the console; the desktop app can restart the engine for
-you.
+restart banner across the console; restart with `hbs restart` or the tray.
 
 **First sign-in:** nothing is pre-created - no generated password to copy. Open
 the console and its first-run wizard (Welcome → Administrator → Finish) asks you
@@ -227,6 +226,12 @@ tray icon and launch-at-login (both optional).
   `.rpm` and `.AppImage` on Linux (x64 and arm64), and one universal `.dmg`
   for both Intel and Apple Silicon Macs - all published as release assets by
   the `release` workflow.
+- The window is the console itself. Lifecycle (start, stop, restart, update)
+  lives in the tray menu and the `hbs` command; a small fallback screen appears
+  only if the engine cannot start.
+- A standalone app install (NSIS/MSI/dmg/deb) is just the shell: on first
+  launch it fetches the matching `hbs-server` asset, verifies its SHA-256 and
+  unpacks it into the install's `bin/`. Nothing else to do.
 - No Electron: ~10 MB, uses the OS webview, and the same dashboard is still
   reachable at `http://127.0.0.1:3000` from any browser on the machine.
 - Install it later any time with `hbs install-app`.
@@ -771,10 +776,17 @@ issuance.
 **Push fails but the scan succeeded.** The local report is kept; upload it
 manually. Tokens come only from `HBS_PUSH_TOKEN` or `--push-token-file`.
 
+**The desktop app says the engine is not installed.** A standalone
+`HBS.Console_x64-setup.exe` / `.dmg` / `.deb` install is only the shell; on
+first launch it fetches the matching `hbs-server` asset, verifies its SHA-256
+and unpacks it into the install's `bin/`. If that machine cannot reach GitHub,
+run `scripts/install.ps1` / `install.sh` (or `hbs update`) with a local asset
+mirror instead, or copy `hbs-server` into `<install>/bin/` yourself.
+
 **I changed the port or TLS but nothing happened.** Hosting settings apply on
 restart. The console shows a restart banner after saving; run `hbs restart`
-(Linux/macOS) or use Restart in the desktop app / tray. The change is already
-sealed in `hbs.config`, so nothing is lost.
+or use Restart in the tray. The change is already sealed in `hbs.config`, so
+nothing is lost.
 
 **"stored settings ignored" at startup.** `hbs.config` failed authentication
 (tampered, or sealed with a different key). The server keeps running from

@@ -52,7 +52,7 @@ export const DOC_SECTIONS: DocSection[] = [
         type: 'note',
         tone: 'tip',
         content:
-          'Change hosting later without touching the installer: Admin → Hosting in the console, or the Settings panel in the HBS Console desktop app. Both write the same sealed configuration; the console tells you when a restart is required.',
+          'Change hosting later without touching the installer: Admin → Hosting in the console. It writes the sealed configuration and tells you when a restart is required; restart with hbs restart or the tray.',
       },
       {
         type: 'list',
@@ -317,7 +317,7 @@ bun run build && bun server/index.ts   # production single-process`,
         type: 'note',
         tone: 'info',
         content:
-          'Precedence is CLI flag > sealed config > environment > default. The installer writes hbs.env; the server seals that choice into an encrypted, authenticated config file on first run. From then on, Admin → Hosting (or the desktop Settings panel) edits the sealed file, mirrors the non-secret values back into hbs.env for the service manager and tray, and reports when a restart is needed. An edited or transplanted config fails authentication and is ignored, never applied.',
+          'Precedence is CLI flag > sealed config > environment > default. The installer writes hbs.env; the server seals that choice into an encrypted, authenticated config file on first run. From then on, Admin → Hosting edits the sealed file, mirrors the non-secret values back into hbs.env for the service manager and tray, and reports when a restart is needed. An edited or transplanted config fails authentication and is ignored, never applied.',
       },
       { type: 'h2', content: 'First run & users' },
       {
@@ -372,7 +372,7 @@ bun run build && bun server/index.ts   # production single-process`,
         type: 'note',
         tone: 'info',
         content:
-          'Admin → Hosting edits the bind address, port and TLS. Saving seals the change immediately and shows a restart banner across the console; the HBS Console desktop app can restart the engine for you. The desktop Settings panel writes the same sealed file through the engine, so there is one source of truth.',
+          'Admin → Hosting edits the bind address, port and TLS. Saving seals the change immediately and shows a restart banner across the console; restart with hbs restart or the tray (Start / Restart). The desktop app window is the console itself: lifecycle lives in the tray menu and the hbs command.',
       },
       { type: 'h2', content: 'Key API endpoints' },
       {
