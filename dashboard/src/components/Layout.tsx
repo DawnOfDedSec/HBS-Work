@@ -7,11 +7,13 @@ import {
   Menu,
   Moon,
   PanelLeft,
+  RefreshCw,
   Search,
   ShieldCheck,
   Sun,
   X,
 } from "lucide-react";
+import { api } from "../api";
 import { Navigation } from "./Navigation";
 import { CommandPalette } from "./CommandPalette";
 import { LiveActivity } from "./LiveActivity";
@@ -77,7 +79,30 @@ export function Layout({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [restartRequired, setRestartRequired] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // Hosting changes are sealed immediately but only bind on restart. Surface
+  // that as a console-wide bar so an operator is never left guessing why the
+  // port did not change. Super-admin only: the endpoint is role-gated.
+  useEffect(() => {
+    if (user.role !== "super_admin") {
+      setRestartRequired(false);
+      return;
+    }
+    let alive = true;
+    api
+      .raw<{ restartRequired: boolean }>("GET", "/api/admin/settings")
+      .then((response) => {
+        if (alive) setRestartRequired(response.restartRequired === true);
+      })
+      .catch(() => {
+        // Non-fatal: the banner is a convenience, not a gate.
+      });
+    return () => {
+      alive = false;
+    };
+  }, [user.role, route]);
 
   useEffect(() => {
     try {
@@ -272,6 +297,28 @@ export function Layout({
             </div>
           </div>
         </header>
+
+        {restartRequired ? (
+          <div
+            role="status"
+            className="flex flex-wrap items-center gap-2 border-b border-degraded/40 bg-degraded-soft/50 px-3 py-2 text-xs text-degraded sm:px-4"
+          >
+            <RefreshCw size={14} aria-hidden className="shrink-0" />
+            <span className="min-w-0 flex-1">
+              Hosting settings changed. Restart HBS to bind the new host, port or TLS.
+            </span>
+            <button
+              type="button"
+              onClick={() => onNavigate("admin")}
+              className={cn(
+                "rounded-control border border-degraded/50 px-2 py-1 font-medium hover:bg-degraded/10",
+                focusRing,
+              )}
+            >
+              Open settings
+            </button>
+          </div>
+        ) : null}
 
         <main className="min-w-0 flex-1 p-4 sm:p-6">{children}</main>
       </div>

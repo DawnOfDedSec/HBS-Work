@@ -3,17 +3,33 @@ import type { Hono, MiddlewareHandler } from "hono";
 import { createEncryptedBackup, restoreEncryptedBackup } from "./keys";
 import { getNotificationSettings, saveNotificationSettings, type MinSeverity } from "./notifications";
 import { redactDiagnosticText } from "./reports";
+import {
+  configPath,
+  effectiveFromEnv,
+  loadHostingSettings,
+  saveHostingSettings,
+  settingsFingerprint,
+  type HostingInput,
+} from "./config-store";
+import { isExposed } from "./options";
 
 // Admin-only endpoints backing the Admin workspace (plan Task 56): the
-// append-only audit trail, per-finding treatment history, and encrypted
-// backup/restore. All require super_admin.
+// append-only audit trail, per-finding treatment history, encrypted
+// backup/restore, and the sealed hosting settings. All require super_admin.
 
 export type AdminAuth = { requireRole: (...roles: string[]) => MiddlewareHandler };
+
+/** The settings the running process actually bound to, plus derived flags. */
+export type EffectiveSettings = HostingInput & { tls: boolean; exposed: boolean };
 
 export type AdminOptions = {
   dataRoot?: string;
   /** Live SQLite path; used only to stage a validated restore for the operator. */
   databasePath?: string;
+  /** Environment the config store reads (defaults to process.env). */
+  env?: Record<string, string | undefined>;
+  /** Runtime host/port/TLS, so the API can say whether a restart is pending. */
+  effective?: EffectiveSettings;
 };
 
 type AuditRow = {
@@ -35,6 +51,32 @@ function positiveInt(value: string | undefined, fallback: number, max: number): 
 function actorOf(c: { get(name: string): unknown }): string {
   const user = c.get("user") as { username?: string } | undefined;
   return user?.username ?? "unknown";
+}
+
+/** Runtime binding, derived from env when the caller did not supply it. */
+function effectiveOf(opts: AdminOptions): EffectiveSettings {
+  if (opts.effective) return opts.effective;
+  const base = effectiveFromEnv(opts.env ?? process.env);
+  return {
+    host: base.host,
+    port: base.port,
+    tlsCert: base.tlsCert,
+    tlsKey: base.tlsKey,
+    tls: !!base.tlsCert,
+    exposed: isExposed(base.host),
+  };
+}
+
+/** Sealed config status: a tampered file is surfaced, never applied. */
+function storageOf(env: Record<string, string | undefined>) {
+  const loaded = loadHostingSettings(env);
+  const storage: Record<string, unknown> = {
+    path: configPath(env),
+    encrypted: true,
+    status: loaded.status,
+  };
+  if (loaded.status === "tampered" || loaded.status === "error") storage.error = loaded.error;
+  return storage;
 }
 
 export function registerAdminRoutes(
@@ -166,6 +208,56 @@ export function registerAdminRoutes(
       new Date().toISOString(),
     );
     return c.json(saved);
+  });
+
+  // --- hosting settings (sealed config) ------------------------------------
+  // The installer writes hbs.env; from then on this sealed file is the source
+  // of truth. Changing host/port/TLS needs a restart, so the response says so
+  // and the UI shows the pending state until the process is restarted.
+  app.get("/api/admin/settings", superAdmin, (c) => {
+    const env = opts.env ?? process.env;
+    const effective = effectiveOf(opts);
+    const loaded = loadHostingSettings(env);
+    const hosting = loaded.status === "ok" ? loaded.settings : effectiveFromEnv(env);
+    return c.json({
+      hosting,
+      effective,
+      restartRequired: settingsFingerprint(hosting) !== settingsFingerprint(effective),
+      storage: storageOf(env),
+    });
+  });
+
+  app.put("/api/admin/settings", superAdmin, async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "expected JSON body" }, 400);
+    }
+    const env = opts.env ?? process.env;
+    const result = saveHostingSettings(body, env, actorOf(c));
+    if (!result.ok) return c.json({ error: result.error }, 400);
+    db.query(
+      `INSERT INTO audit_log (actor, actor_ip, action, resource, details, created_at)
+       VALUES (?, ?, 'settings.hosting.update', 'settings:hosting', ?, ?)`,
+    ).run(
+      actorOf(c),
+      c.req.header("x-forwarded-for") ?? null,
+      JSON.stringify({
+        host: result.settings.host,
+        port: result.settings.port,
+        tls: !!result.settings.tlsCert,
+      }),
+      new Date().toISOString(),
+    );
+    const effective = effectiveOf(opts);
+    return c.json({
+      hosting: result.settings,
+      effective,
+      restartRequired: settingsFingerprint(result.settings) !== settingsFingerprint(effective),
+      storage: { ...storageOf(env), envFile: result.envFile },
+      message: "Saved. Restart HBS for the new host, port or TLS settings to take effect.",
+    });
   });
 
   app.post("/api/admin/backup", superAdmin, async (c) => {

@@ -22,8 +22,66 @@ import { streamSSE } from "hono/streaming";
 import { networkInterfaces } from "node:os";
 import { USAGE, isExposed, parseServerOptions } from "./options";
 import { embeddedFile, embeddedIndexHtml, hasEmbeddedDist } from "./embedded-dist";
+import {
+  configPath,
+  effectiveFromEnv,
+  loadHostingSettings,
+  saveHostingSettings,
+  settingsFingerprint,
+  settingsToEnv,
+} from "./config-store";
 
-const parsed = parseServerOptions(process.argv, process.env);
+// --- headless config CLI (the desktop shell's settings editor) --------------
+// Runs before any database or network setup and exits. The desktop app has no
+// session cookie, so it edits the sealed config through this path instead of
+// duplicating the AEAD format in Rust. Output is one JSON object on stdout.
+function runConfigCli(argv: string[], env: NodeJS.ProcessEnv): { code: number; out: unknown } | null {
+  const applyIndex = argv.indexOf("--apply-config");
+  const print = argv.includes("--print-config");
+  if (applyIndex < 0 && !print) return null;
+  if (applyIndex >= 0) {
+    const file = argv[applyIndex + 1];
+    if (!file || file.startsWith("--")) {
+      return { code: 2, out: { ok: false, error: "--apply-config needs a JSON file path" } };
+    }
+    let body: unknown;
+    try {
+      body = JSON.parse(readFileSync(file, "utf8"));
+    } catch {
+      return { code: 1, out: { ok: false, error: `could not read a JSON config from ${file}` } };
+    }
+    const result = saveHostingSettings(body, env, "desktop");
+    if (!result.ok) return { code: 1, out: result };
+    // The caller's environment still describes the running binding, so a
+    // difference means the engine must restart before the change applies.
+    const effective = effectiveFromEnv(env);
+    return {
+      code: 0,
+      out: { ...result, restartRequired: settingsFingerprint(result.settings) !== settingsFingerprint(effective) },
+    };
+  }
+  const loaded = loadHostingSettings(env);
+  const settings = loaded.status === "ok" ? loaded.settings : effectiveFromEnv(env);
+  const storage: Record<string, unknown> = { path: configPath(env), encrypted: true };
+  if (loaded.status === "tampered" || loaded.status === "error") storage.error = loaded.error;
+  return { code: 0, out: { status: loaded.status, settings, storage } };
+}
+
+const configCli = runConfigCli(process.argv, process.env);
+if (configCli) {
+  console.log(JSON.stringify(configCli.out));
+  process.exit(configCli.code);
+}
+
+// The sealed config is authoritative; hbs.env is the installer's bootstrap and
+// a mirror the supervisors read. Precedence stays CLI flag > sealed config >
+// environment > default, so `--port` still wins for one-off dev runs.
+const stored = loadHostingSettings(process.env);
+if (stored.status === "tampered" || stored.status === "error") {
+  console.error(`hbs-dashboard: stored settings ignored - ${stored.error}`);
+}
+const storedEnv = stored.status === "ok" ? settingsToEnv(stored.settings) : {};
+const parsed = parseServerOptions(process.argv, { ...process.env, ...storedEnv });
 if (!parsed.ok) {
   console.error(`hbs-dashboard: ${parsed.error}\n\n${USAGE}`);
   process.exit(2);
@@ -236,6 +294,15 @@ registerNetworkRoutes(app, db, campaignAuth);
 registerAdminRoutes(app, db, campaignAuth, {
   databasePath: dbPath === ":memory:" ? undefined : dbPath,
   dataRoot: process.env.HBS_DATA_ROOT,
+  env: process.env,
+  effective: {
+    host,
+    port,
+    tls: !!tlsCertPath,
+    tlsCert: tlsCertPath,
+    tlsKey: tlsKeyPath,
+    exposed: isExposed(host),
+  },
 });
 registerExportRoutes(app, db, campaignAuth);
 

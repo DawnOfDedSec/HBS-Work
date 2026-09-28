@@ -39,20 +39,30 @@ err()  { printf '  %s✖%s %s\n' "$E" "$R" "$*" >&2; }
 cmd="${1:-status}"
 shift 2>/dev/null || true
 
+env_value() {
+  [[ -f "$DATA_DIR/hbs.env" ]] || return 0
+  grep -E "^$1=" "$DATA_DIR/hbs.env" | head -1 | cut -d= -f2- | tr -d '[:space:]'
+}
+
 port() {
-  if [[ -f "$DATA_DIR/hbs.env" ]]; then
-    local p; p="$(grep -E '^PORT=' "$DATA_DIR/hbs.env" | cut -d= -f2 | tr -d '[:space:]')"
-    [[ -n "$p" ]] && { printf '%s' "$p"; return; }
-  fi
+  local p; p="$(env_value PORT)"
+  [[ -n "$p" ]] && { printf '%s' "$p"; return; }
   printf '%s' "${PORT:-3000}"
 }
-url() { printf 'http://127.0.0.1:%s' "$(port)"; }
-server_up() { curl -fsS -o /dev/null --max-time 2 "$(url)" 2>/dev/null; }
+
+# https + bind address, so status/open work on an exposed or TLS install.
+scheme() { [[ -n "$(env_value HBS_TLS_CERT)" ]] && printf 'https' || printf 'http'; }
+bind_host() {
+  local h; h="$(env_value HOST)"
+  case "$h" in ""|0.0.0.0|"::"|"*") printf '127.0.0.1' ;; *) printf '%s' "$h" ;; esac
+}
+url() { printf '%s://%s:%s' "$(scheme)" "$(bind_host)" "$(port)"; }
+server_up() { curl -fsSk -o /dev/null --max-time 2 "$(url)" 2>/dev/null; }
 # True while the dashboard still has no administrator: the console then shows
 # its first-run setup wizard instead of a login form.
 setup_pending() {
   command -v curl >/dev/null 2>&1 || return 1
-  curl -fsS --max-time 2 "$(url)/api/auth/status" 2>/dev/null | grep -q '"initialized":false'
+  curl -fsSk --max-time 2 "$(url)/api/auth/status" 2>/dev/null | grep -q '"initialized":false'
 }
 has_systemd() { [[ $IS_LINUX -eq 1 ]] && command -v systemctl >/dev/null 2>&1 && systemctl --user status >/dev/null 2>&1; }
 has_launchd() { [[ $IS_MAC -eq 1 ]]; }
@@ -87,10 +97,13 @@ service_action() {
       start)
         if [[ -f "$pidfile" ]] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then echo "already running (pid $(cat "$pidfile"))"; return 0; fi
         mkdir -p "$DATA_DIR"
+        # Source hbs.env so HOST / TLS reach the engine on the no-service path.
         if [[ "$srv" == *hbs-server* ]]; then
-          (cd "$DATA_DIR" && HBS_DATA_ROOT="$DATA_DIR" PORT="$(port)" nohup "$srv" >> "$DATA_DIR/server.log" 2>&1 & echo $! > "$pidfile")
+          (cd "$DATA_DIR"; set -a; [[ -f "$DATA_DIR/hbs.env" ]] && . "$DATA_DIR/hbs.env"; set +a
+           HBS_DATA_ROOT="$DATA_DIR" nohup "$srv" >> "$DATA_DIR/server.log" 2>&1 & echo $! > "$pidfile")
         else
-          (cd "$APP_DIR/dashboard" && HBS_DATA_ROOT="$DATA_DIR" PORT="$(port)" nohup "$srv" run server/index.ts >> "$DATA_DIR/server.log" 2>&1 & echo $! > "$pidfile")
+          (cd "$APP_DIR/dashboard"; set -a; [[ -f "$DATA_DIR/hbs.env" ]] && . "$DATA_DIR/hbs.env"; set +a
+           HBS_DATA_ROOT="$DATA_DIR" nohup "$srv" run server/index.ts >> "$DATA_DIR/server.log" 2>&1 & echo $! > "$pidfile")
         fi
         sleep 1; echo "started (pid $(cat "$pidfile"))" ;;
       stop)

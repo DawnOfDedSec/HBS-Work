@@ -375,6 +375,13 @@ impl AppState {
         self.ensure_started()
     }
 
+    /// True when this shell can actually restart the engine: it either owns the
+    /// child process or a service unit manages it. When false, the user has to
+    /// restart via the tray, and the UI should say so instead of pretending.
+    fn can_restart(&self) -> bool {
+        self.child.lock().unwrap().is_some() || self.service_exists()
+    }
+
     /// Hand the child to the OS and return - used by "Quit (keep server)".
     fn detach(&self) {
         if let Some(child) = self.child.lock().unwrap().take() {
@@ -561,6 +568,105 @@ fn find_cli(state: &AppState) -> Option<PathBuf> {
         return Some(user_local);
     }
     None
+}
+
+// ------------------------------------------------------- settings (sealed)
+// The dashboard owns the AEAD config format, so the shell calls the engine's
+// headless config CLI instead of reimplementing the crypto in Rust.
+
+fn config_command(
+    state: &AppState,
+    extra: &[String],
+) -> Result<(PathBuf, Vec<String>, PathBuf), String> {
+    let server = find_server(state)
+        .ok_or_else(|| "dashboard not installed - run the HBS installer first".to_string())?;
+    let mut args: Vec<String> = Vec::new();
+    let cwd;
+    if server.ends_with("bun") || server.ends_with("bun.exe") {
+        args.push("run".into());
+        args.push("server/index.ts".into());
+        cwd = state.app_dir().join("dashboard");
+    } else {
+        cwd = state.data_dir();
+    }
+    args.extend(extra.iter().cloned());
+    Ok((server, args, cwd))
+}
+
+fn run_config_cli(state: &AppState, extra: &[String]) -> Result<serde_json::Value, String> {
+    let (server, args, cwd) = config_command(state, extra)?;
+    let mut cmd = Command::new(&server);
+    cmd.args(&args).current_dir(&cwd);
+    for (k, v) in state.server_env() {
+        cmd.env(k, v);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    let out = cmd
+        .output()
+        .map_err(|e| format!("could not run {}: {e}", server.display()))?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let payload = stdout
+        .lines()
+        .rev()
+        .find(|line| line.trim_start().starts_with('{'))
+        .unwrap_or("");
+    if payload.trim().is_empty() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        return Err(format!("the engine returned no settings ({})", stderr.trim()));
+    }
+    serde_json::from_str(payload.trim()).map_err(|e| format!("unreadable settings response: {e}"))
+}
+
+#[tauri::command]
+fn read_settings(state: tauri::State<AppState>) -> Result<serde_json::Value, String> {
+    run_config_cli(&state, &["--print-config".to_string()])
+}
+
+#[tauri::command]
+fn save_settings(
+    app: AppHandle,
+    state: tauri::State<AppState>,
+    settings: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    std::fs::create_dir_all(state.data_dir()).map_err(|e| e.to_string())?;
+    let request = state
+        .data_dir()
+        .join(format!("config-request-{}.json", std::process::id()));
+    std::fs::write(&request, settings.to_string()).map_err(|e| e.to_string())?;
+    let result = run_config_cli(
+        &state,
+        &["--apply-config".to_string(), request.to_string_lossy().into_owned()],
+    );
+    let _ = std::fs::remove_file(&request);
+    let value = result?;
+    if value.get("ok").and_then(|v| v.as_bool()) != Some(true) {
+        return Ok(value);
+    }
+    state.reload_port();
+    let can_restart = state.can_restart();
+    // Restart in the background so the command returns at once and the shell
+    // stays responsive while the engine rebinds.
+    if can_restart {
+        let handle = app.clone();
+        std::thread::spawn(move || {
+            let state = handle.state::<AppState>();
+            match state.restart() {
+                Ok(()) => state.log("settings applied - engine restarted"),
+                Err(e) => state.log(&format!("settings saved but restart failed: {e}")),
+            }
+        });
+    } else {
+        state.log("settings saved - waiting for an external restart");
+    }
+    let mut out = value;
+    if let Some(object) = out.as_object_mut() {
+        object.insert("restarting".into(), serde_json::Value::Bool(can_restart));
+    }
+    Ok(out)
 }
 
 // ------------------------------------------------------------------ actions
@@ -1078,6 +1184,8 @@ fn main() {
             open_path,
             autostart_state,
             set_autostart,
+            read_settings,
+            save_settings,
             app_info
         ])
         .run(tauri::generate_context!())

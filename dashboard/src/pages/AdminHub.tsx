@@ -4,6 +4,7 @@ import {
   DatabaseBackup,
   KeyRound,
   ScrollText,
+  ServerCog,
   Settings,
   ShieldAlert,
   Trash2,
@@ -17,13 +18,15 @@ import { Backup } from "./admin/Backup";
 import { Keys } from "./admin/Keys";
 import { Notifications } from "./admin/Notifications";
 import { Retention } from "./admin/Retention";
+import { Settings as HostingSettings } from "./admin/Settings";
 import { Users } from "./admin/Users";
 
-type Tab = "users" | "keys" | "notifications" | "retention" | "audit" | "backup";
+type Tab = "users" | "keys" | "settings" | "notifications" | "retention" | "audit" | "backup";
 
 const TAB_META: Array<{ value: Tab; label: string; icon: LucideIcon }> = [
   { value: "users", label: "Users", icon: UsersRound },
   { value: "keys", label: "Keys", icon: KeyRound },
+  { value: "settings", label: "Hosting", icon: ServerCog },
   { value: "notifications", label: "Notifications", icon: BellRing },
   { value: "retention", label: "Retention", icon: Trash2 },
   { value: "audit", label: "Audit", icon: ScrollText },
@@ -63,7 +66,7 @@ export function AdminHub({ role }: { role: AuthUser["role"] }) {
       <SectionHeader
         eyebrow="Govern"
         title="Admin"
-        description="Console administration: identity, issuance keys, retention, the append-only audit trail, and encrypted backup."
+        description="Console administration: identity, hosting, issuance keys, retention, the append-only audit trail, and encrypted backup."
         icon={Settings}
       />
 
@@ -74,6 +77,9 @@ export function AdminHub({ role }: { role: AuthUser["role"] }) {
       </TabPanel>
       <TabPanel id="keys" active={tab === "keys"} idBase="admin-tabs">
         <Keys role={role} />
+      </TabPanel>
+      <TabPanel id="settings" active={tab === "settings"} idBase="admin-tabs">
+        <HostingSettings role={role} />
       </TabPanel>
       <TabPanel id="notifications" active={tab === "notifications"} idBase="admin-tabs">
         <Notifications role={role} />

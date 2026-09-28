@@ -28,6 +28,12 @@
 #   --autostart / --no-autostart          start HBS at login
 #   --tray / --no-tray                    tray icon (dashboard mode)
 #   --desktop-app / --no-desktop-app      HBS Console desktop app
+#   --expose              bind ALL interfaces (0.0.0.0) so the LAN can reach it
+#   --host ADDR           bind one address (use --host alone for 0.0.0.0)
+#   --local               loopback only, remove any previous exposure (default)
+#   --tls-cert PATH       TLS certificate (with --tls-key)
+#   --tls-key PATH        TLS private key
+#   --tls                 enable HTTPS, self-signing a cert when none exists
 #   -y, --yes             accept defaults, never prompt
 #   --no-start            install but do not start anything
 #   --tag vX.Y.Z          install a specific release   (default: latest)
@@ -69,6 +75,14 @@ DO_START=1
 UNINSTALL=0
 PURGE=0
 FROM_SOURCE=0
+# Network exposure is opt-in and only rewritten when the user answers for it,
+# so `hbs update` (install.sh --yes with no flags) never clobbers a configured
+# LAN/TLS setup. NETWORK_SET becomes 1 once a flag or the wizard decides it.
+HOST_ADDR="${HBS_HOST:-}"     # empty = loopback only
+TLS_CERT="${HBS_TLS_CERT:-}"
+TLS_KEY="${HBS_TLS_KEY:-}"
+TLS_AUTO=0          # 1 = self-sign a certificate if none is provided
+NETWORK_SET=0
 
 usage() { sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; }
 
@@ -85,6 +99,12 @@ while [[ $# -gt 0 ]]; do
     --no-tray) WANT_TRAY=0; shift ;;
     --desktop-app) WANT_APP=1; shift ;;
     --no-desktop-app) WANT_APP=0; shift ;;
+    --expose) HOST_ADDR=0.0.0.0; NETWORK_SET=1; shift ;;
+    --host) HOST_ADDR="${2:-0.0.0.0}"; [[ "$HOST_ADDR" == --* ]] && HOST_ADDR=0.0.0.0; NETWORK_SET=1; shift; [[ "${1:-}" != --* ]] && shift ;;
+    --local|--no-expose) HOST_ADDR=""; TLS_CERT=""; TLS_KEY=""; NETWORK_SET=1; shift ;;
+    --tls-cert) TLS_CERT="$2"; NETWORK_SET=1; shift 2 ;;
+    --tls-key) TLS_KEY="$2"; NETWORK_SET=1; shift 2 ;;
+    --tls) TLS_CERT="${TLS_CERT:-}"; TLS_AUTO=1; NETWORK_SET=1; shift ;;
     --yes|-y) ASSUME_YES=1; shift ;;
     --no-start) DO_START=0; shift ;;
     --tag) TAG="$2"; shift 2 ;;
@@ -211,6 +231,55 @@ hash_file() {
   if command_exists sha256sum; then sha256sum "$1" | cut -d' ' -f1
   elif command_exists shasum; then shasum -a 256 "$1" | cut -d' ' -f1
   else return 127; fi
+}
+
+# Set/replace or remove a single KEY= line in the data/hbs.env file. Used so
+# re-running the installer can turn LAN exposure or TLS on or off, instead of
+# only writing the file on the very first install.
+env_set() {
+  local key="$1" val="$2" f="$DATA_DIR/hbs.env" tmp
+  [[ -f "$f" ]] || : > "$f"
+  tmp="$(mktemp 2>/dev/null || mktemp -t hbs-env)"
+  grep -vE "^${key}=" "$f" > "$tmp" 2>/dev/null || true
+  printf '%s=%s\n' "$key" "$val" >> "$tmp"
+  mv "$tmp" "$f"
+}
+env_unset() {
+  local key="$1" f="$DATA_DIR/hbs.env" tmp
+  [[ -f "$f" ]] || return 0
+  tmp="$(mktemp 2>/dev/null || mktemp -t hbs-env)"
+  grep -vE "^${key}=" "$f" > "$tmp" 2>/dev/null || true
+  mv "$tmp" "$f"
+}
+
+# Apply this run's network decision to hbs.env. Only called when the user (or
+# a flag) actually chose, so unattended updates leave the file untouched.
+apply_network_env() {
+  if [[ -n "$HOST_ADDR" ]]; then env_set HOST "$HOST_ADDR"; else env_unset HOST; fi
+  if [[ -n "$TLS_CERT" && -n "$TLS_KEY" ]]; then
+    env_set HBS_TLS_CERT "$TLS_CERT"
+    env_set HBS_TLS_KEY "$TLS_KEY"
+  else
+    env_unset HBS_TLS_CERT
+    env_unset HBS_TLS_KEY
+  fi
+}
+
+# http/https scheme and the address the console is reachable on for status and
+# health checks (0.0.0.0 is not dialable, so probe loopback for it).
+console_scheme() { [[ -n "$TLS_CERT" ]] && printf 'https' || printf 'http'; }
+console_host() {
+  case "${HOST_ADDR:-}" in ""|0.0.0.0|"::"|"*") printf '127.0.0.1' ;; *) printf '%s' "$HOST_ADDR" ;; esac
+}
+probe_url()  { printf '%s://%s:%s' "$(console_scheme)" "$(console_host)" "$PORT"; }
+probe() {
+  local url; url="$(probe_url)"
+  if command_exists curl; then
+    [[ "$(console_scheme)" == https ]] && curl -fsSk -o /dev/null --max-time 2 "$url" 2>/dev/null \
+      || curl -fsS -o /dev/null --max-time 2 "$url" 2>/dev/null
+  else
+    wget -q -O /dev/null -T 2 "$url" 2>/dev/null
+  fi
 }
 
 OS="$(uname -s)"
@@ -375,6 +444,23 @@ if [[ $INTERACTIVE -eq 1 ]]; then
   HBS_HOME="$(ask 'Install location' "$HBS_HOME")"
   DATA_DIR="$HBS_HOME/data"; BIN_DIR="$HBS_HOME/bin"; INSTALLER_DIR="$HBS_HOME/installer"
   PORT="$(ask 'Dashboard port' "$PORT")"
+  # Network hosting is optional and off by default: the console is local-only
+  # unless the operator opts in. --expose/--host/--tls skip these prompts.
+  if [[ -n "$HOST_ADDR" ]]; then
+    NETWORK_SET=1
+  elif ask_yn 'Publish the dashboard on your local network?' n; then
+    NETWORK_SET=1
+    HOST_ADDR="$(ask 'Bind address (0.0.0.0 = every interface)' '0.0.0.0')"
+  fi
+  if [[ -n "$HOST_ADDR" || "$TLS_AUTO" -eq 1 ]]; then
+    if [[ -n "$TLS_CERT" ]]; then
+      :
+    elif [[ "$TLS_AUTO" -eq 1 ]] || ask_yn 'Serve HTTPS with TLS? (recommended on an untrusted network)' n; then
+      TLS_AUTO=1
+      TLS_CERT="$(ask 'TLS certificate path' "$DATA_DIR/tls/hbs.crt")"
+      TLS_KEY="$(ask 'TLS private key path' "$DATA_DIR/tls/hbs.key")"
+    fi
+  fi
   if has_gui; then
     ask_yn 'Create a desktop shortcut?' "$([[ $WANT_ICON -eq 1 ]] && echo y || echo n)" && WANT_ICON=1 || WANT_ICON=0
     [[ $MODE != desktop ]] && { ask_yn 'Install the tray icon?' "$([[ $WANT_TRAY -eq 1 ]] && echo y || echo n)" && WANT_TRAY=1 || WANT_TRAY=0; }
@@ -387,6 +473,36 @@ if [[ $INTERACTIVE -eq 1 ]]; then
 fi
 : "${WANT_ICON:=0}"; : "${WANT_AUTOSTART:=0}"; : "${WANT_TRAY:=0}"; : "${WANT_APP:=0}"
 [[ "$PORT" =~ ^[0-9]+$ ]] || die "port must be a number, got: $PORT"
+
+# --------------------------------------------------------------- network/TLS
+# `--tls` with no path self-signs under the data dir; anything else is used
+# as-is. Both a certificate and a key are required together.
+if [[ "$TLS_AUTO" -eq 1 && -z "$TLS_CERT" ]]; then
+  TLS_CERT="$DATA_DIR/tls/hbs.crt"
+  TLS_KEY="$DATA_DIR/tls/hbs.key"
+fi
+if [[ -n "$TLS_CERT" || -n "$TLS_KEY" ]]; then
+  [[ -n "$TLS_CERT" && -n "$TLS_KEY" ]] || die "TLS needs both a certificate and a key (--tls-cert and --tls-key)"
+  if [[ ! -f "$TLS_CERT" || ! -f "$TLS_KEY" ]]; then
+    command_exists openssl || die "certificate $TLS_CERT not found and openssl is unavailable - pass existing --tls-cert/--tls-key paths"
+    step "Generating a self-signed TLS certificate…"
+    mkdir -p "$(dirname "$TLS_CERT")" "$(dirname "$TLS_KEY")"
+    SAN="DNS:localhost,IP:127.0.0.1"
+    _ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    [[ -n "$_ip" ]] && SAN="$SAN,IP:$_ip"
+    _hn="$(hostname 2>/dev/null || true)"
+    [[ -n "$_hn" ]] && SAN="$SAN,DNS:$_hn"
+    if openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 825 \
+        -keyout "$TLS_KEY" -out "$TLS_CERT" -subj "/CN=hbs-console" \
+        -addext "subjectAltName=$SAN" >/dev/null 2>&1; then
+      chmod 600 "$TLS_KEY" 2>/dev/null || true
+      ok "Self-signed certificate: $TLS_CERT"
+      note "Browsers warn until it is trusted; LAN traffic is still encrypted."
+    else
+      die "could not generate a certificate at $TLS_CERT"
+    fi
+  fi
+fi
 
 blank
 step "Checking your system…"
@@ -467,6 +583,16 @@ if [[ ! -f "$DATA_DIR/hbs.env" ]]; then
 else
   ok "Keeping existing $DATA_DIR/hbs.env"
   FIRST_RUN=0
+fi
+
+# Persist this run's hosting choice (only when the operator actually chose).
+if [[ $NETWORK_SET -eq 1 ]]; then
+  apply_network_env
+  if [[ -n "$HOST_ADDR" ]]; then
+    ok "Dashboard listens on ${HOST_ADDR}:$PORT${TLS_CERT:+ over HTTPS}"
+  else
+    ok "Dashboard is loopback-only (127.0.0.1)"
+  fi
 fi
 
 # Keep copies of the installer + companion scripts so `hbs update` and
@@ -555,6 +681,9 @@ EOF
   ok "systemd user service: systemctl --user {start|stop|restart|status} $SERVICE"
 elif [[ $IS_MAC -eq 1 ]]; then
   mkdir -p "$HOME/Library/LaunchAgents"
+  # launchd has no EnvironmentFile. Rather than baking HOST/TLS into the plist
+  # (which goes stale when the console settings page rewrites hbs.env), run the
+  # engine through a shell that sources hbs.env first, exactly like systemd.
   cat > "$HOME/Library/LaunchAgents/$PLIST_LABEL.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -562,7 +691,9 @@ elif [[ $IS_MAC -eq 1 ]]; then
   <key>Label</key><string>$PLIST_LABEL</string>
   <key>WorkingDirectory</key><string>$DATA_DIR</string>
   <key>ProgramArguments</key><array>
-    <string>$BIN_DIR/hbs-server</string>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>set -a; [ -f "$DATA_DIR/hbs.env" ] &amp;&amp; . "$DATA_DIR/hbs.env"; set +a; exec "$BIN_DIR/hbs-server"</string>
   </array>
   <key>EnvironmentVariables</key><dict>
     <key>HBS_DATA_ROOT</key><string>$DATA_DIR</string>
@@ -718,15 +849,17 @@ if [[ $DO_START -eq 1 && $MODE != desktop ]]; then
         || launchctl kickstart -k "gui/$(id -u)/$PLIST_LABEL" 2>/dev/null || true
     fi
   else
-    ( cd "$DATA_DIR" && HBS_DATA_ROOT="$DATA_DIR" PORT="$PORT" nohup "$BIN_DIR/hbs-server" >> "$DATA_DIR/server.log" 2>&1 & echo $! > "$DATA_DIR/server.pid" )
+    # Source hbs.env so HOST / TLS reach the engine in the no-service path too.
+    ( cd "$DATA_DIR" \
+        && set -a && [[ -f "$DATA_DIR/hbs.env" ]] && . "$DATA_DIR/hbs.env" && set +a \
+        && HBS_DATA_ROOT="$DATA_DIR" nohup "$BIN_DIR/hbs-server" >> "$DATA_DIR/server.log" 2>&1 & echo $! > "$DATA_DIR/server.pid" )
   fi
   started=0
   for _ in $(seq 1 40); do
-    if command_exists curl; then curl -fsS -o /dev/null --max-time 1 "http://127.0.0.1:$PORT" 2>/dev/null && { started=1; break; }
-    else wget -q -O /dev/null -T 1 "http://127.0.0.1:$PORT" 2>/dev/null && { started=1; break; }; fi
+    if probe; then started=1; break; fi
     sleep 0.25
   done
-  if [[ $started -eq 1 ]]; then ok "Dashboard answering on http://127.0.0.1:$PORT"; else warn "not answering yet - check 'hbs logs'"; fi
+  if [[ $started -eq 1 ]]; then ok "Dashboard answering on $(probe_url)"; else warn "not answering yet - check 'hbs logs'"; fi
 
   # Surface the tray right away - launch-at-login only takes effect next login.
   if [[ $TRAY_INSTALLED -eq 1 && $WANT_APP -ne 1 && -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]] || [[ $TRAY_INSTALLED -eq 1 && $IS_MAC -eq 1 && $WANT_APP -ne 1 ]]; then
@@ -754,18 +887,34 @@ blank
 printf '  %s%s┌──────────────────────────────────────────────────────────────┐%s\n' "$B" "$V" "$R"
 printf '  %s%s│%s  %s✔ HBS Console installed%s                                  %s%s│%s\n' "$B" "$V" "$R" "$G" "$R" "$B" "$V" "$R"
 printf '  %s%s└──────────────────────────────────────────────────────────────┘%s\n' "$B" "$V" "$R"
+# Reflect the on-disk hosting config in the summary even when this run did not
+# change it (`hbs update` re-runs with --yes and no network flags).
+if [[ $NETWORK_SET -eq 0 && -f "$DATA_DIR/hbs.env" ]]; then
+  HOST_ADDR="$(grep -E '^HOST=' "$DATA_DIR/hbs.env" | head -1 | cut -d= -f2- | tr -d '[:space:]')"
+  TLS_CERT="$(grep -E '^HBS_TLS_CERT=' "$DATA_DIR/hbs.env" | head -1 | cut -d= -f2- | tr -d '[:space:]')"
+fi
+CONSOLE_URL="$(probe_url)"
+
 blank
-printf '    %sConsole%s     http://127.0.0.1:%s\n' "$B" "$R" "$PORT"
+printf '    %sConsole%s     %s\n' "$B" "$R" "$CONSOLE_URL"
 if [[ $APP_INSTALLED -eq 1 ]]; then
   printf '    %sOpen it%s     HBS Console app (desktop + tray) or any browser\n' "$B" "$R"
 else
-  printf '    %sOpen it%s     hbs app   %s(or just open http://127.0.0.1:%s)%s\n' "$B" "$R" "$D" "$PORT" "$R"
+  printf '    %sOpen it%s     hbs app   %s(or just open %s)%s\n' "$B" "$R" "$D" "$CONSOLE_URL" "$R"
 fi
 printf '    %sControls%s    hbs {start|stop|restart|status|logs|open|app|tray|autostart|update|uninstall}\n' "$B" "$R"
 printf '    %sInstall%s     %s   %s(data kept separately)%s\n' "$B" "$R" "$HBS_HOME" "$D" "$R"
 printf '    %sSecurity%s    no default admin - the setup wizard creates it; Argon2id + peppered hashes\n' "$B" "$R"
 printf '    %sAV/EDR%s      read-only scans, no admin required - docs/security/edr-compatibility.md\n' "$B" "$R"
 blank
+if [[ -n "$HOST_ADDR" ]]; then
+  case "$HOST_ADDR" in 0.0.0.0|"::"|"*")
+    note "Listening on every interface on port $PORT${TLS_CERT:+ (HTTPS; self-signed cert)}." ;;
+  *)
+    note "Listening on $HOST_ADDR:$PORT${TLS_CERT:+ (HTTPS; self-signed cert)}." ;;
+  esac
+  note "Open the port in your firewall, and prefer HTTPS plus a trusted certificate beyond a LAN."
+fi
 if [[ "${FIRST_RUN:-0}" -eq 1 ]]; then
   note "First launch opens the setup wizard in the console - you choose the admin account."
 else

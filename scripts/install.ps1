@@ -26,6 +26,12 @@
 #   -Autostart / -NoAutostart       start at login
 #   -Tray / -NoTray                 tray icon (dashboard mode)
 #   -DesktopApp / -NoDesktopApp     HBS Console desktop app
+#   -Expose             bind ALL interfaces (0.0.0.0) so the LAN can reach it
+#   -BindAddress ADDR   bind one address (implies exposure for that address)
+#   -Local              loopback only, remove any previous exposure (default)
+#   -TlsCert PATH       TLS certificate (with -TlsKey)
+#   -TlsKey PATH        TLS private key
+#   -Tls                enable HTTPS (self-signs when openssl is available)
 #   -Yes                accept defaults, never prompt
 #   -NoStart            install but do not start anything
 #   -Tag vX.Y.Z         install a specific release (default: latest)
@@ -44,6 +50,12 @@ param(
   [switch]$NoTray,
   [switch]$DesktopApp,
   [switch]$NoDesktopApp,
+  [string]$BindAddress = $env:HBS_HOST,
+  [switch]$Expose,
+  [switch]$Local,
+  [string]$TlsCert = $env:HBS_TLS_CERT,
+  [string]$TlsKey = $env:HBS_TLS_KEY,
+  [switch]$Tls,
   [switch]$Yes,
   [switch]$NoStart,
   [switch]$Uninstall,
@@ -213,6 +225,27 @@ function Get-AssetSha($manifest, [string]$name) {
   return $null
 }
 
+# Set/replace or remove one KEY= line in hbs.env. Comments and unknown keys
+# survive, so the settings page, the tray and the engine stay in agreement.
+function Set-EnvLine([string]$file, [string]$key, [string]$value) {
+  $lines = @()
+  if (Test-Path $file) { $lines = @(Get-Content $file) }
+  $lines = @($lines | Where-Object { $_ -notmatch ("^" + [regex]::Escape($key) + "=") })
+  if ($null -ne $value) { $lines += "$key=$value" }
+  if ($lines.Count -gt 0) { Set-Content -Path $file -Value $lines -Encoding ASCII }
+  else { Set-Content -Path $file -Value "" -Encoding ASCII }
+}
+function Apply-NetworkEnv([string]$file, [string]$bindHost, [string]$cert, [string]$key) {
+  Set-EnvLine $file "HOST" $(if ($bindHost) { $bindHost } else { $null })
+  if ($cert -and $key) {
+    Set-EnvLine $file "HBS_TLS_CERT" $cert
+    Set-EnvLine $file "HBS_TLS_KEY" $key
+  } else {
+    Set-EnvLine $file "HBS_TLS_CERT" $null
+    Set-EnvLine $file "HBS_TLS_KEY" $null
+  }
+}
+
 # ---------------------------------------------------------------- uninstall
 function Remove-Integration {
   $pidFile = Join-Path $DataDir "server.pid"
@@ -354,6 +387,48 @@ if ($null -eq $wantApp) { $wantApp = $defApp }
 if ($null -eq $wantAutostart) { $wantAutostart = $defAuto }
 $env:HBS_INSTALL_DIR = $InstallDir
 
+# ---------------------------------------------------------- network / TLS
+# Optional and off by default. hbs.env is only rewritten when the operator
+# actually decided, so an unattended update never clobbers a LAN/TLS setup.
+$networkChosen = $false
+if ($Local) { $BindAddress = ""; $TlsCert = ""; $TlsKey = ""; $networkChosen = $true }
+if ($Expose) { $BindAddress = "0.0.0.0"; $networkChosen = $true }
+if ($BindAddress) { $networkChosen = $true }
+if ($Tls) { $networkChosen = $true }
+
+if ($Interactive) {
+  $networkChosen = $true
+  if (-not $BindAddress) {
+    if (AskYn "Publish the dashboard on your local network?" $false) {
+      $BindAddress = Ask "Bind address (0.0.0.0 = every interface)" "0.0.0.0"
+    }
+  }
+  if ($BindAddress -or $Tls) {
+    if (-not $TlsCert -and ($Tls -or (AskYn "Serve HTTPS with TLS? (recommended on an untrusted network)" $false))) {
+      $TlsCert = Ask "TLS certificate path" (Join-Path $DataDir "tls\hbs.crt")
+      $TlsKey = Ask "TLS private key path" (Join-Path $DataDir "tls\hbs.key")
+    }
+  }
+}
+if ($Tls -and -not $TlsCert) {
+  $TlsCert = Join-Path $DataDir "tls\hbs.crt"
+  $TlsKey = Join-Path $DataDir "tls\hbs.key"
+}
+if ($TlsCert -or $TlsKey) {
+  if (-not ($TlsCert -and $TlsKey)) { Die "TLS needs both -TlsCert and -TlsKey" }
+  if (-not (Test-Path $TlsCert) -or -not (Test-Path $TlsKey)) {
+    if (-not (Get-Command openssl -ErrorAction SilentlyContinue)) {
+      Die "certificate $TlsCert not found and openssl is unavailable - pass existing -TlsCert/-TlsKey paths"
+    }
+    Step "Generating a self-signed TLS certificate..."
+    New-Item -ItemType Directory -Force -Path (Split-Path $TlsCert -Parent), (Split-Path $TlsKey -Parent) | Out-Null
+    & openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 825 -keyout $TlsKey -out $TlsCert `
+      -subj "/CN=hbs-console" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" 2>$null
+    if ($LASTEXITCODE -ne 0) { Die "could not generate a certificate at $TlsCert" }
+    Ok "Self-signed certificate: $TlsCert"
+  }
+}
+
 Blank
 Step "Installing into $InstallDir (port $Port, mode: $Mode)"
 Blank
@@ -438,6 +513,30 @@ if (-not (Test-Path $envFile)) {
 } else {
   Ok "Keeping existing $envFile"
   $firstRun = $false
+}
+
+# Persist this run's hosting choice, or read back the previous one for the
+# summary and the health probe.
+if ($networkChosen) {
+  Apply-NetworkEnv $envFile $(if ($BindAddress) { $BindAddress } else { $null }) $TlsCert $TlsKey
+  if ($BindAddress) {
+    Ok "Dashboard listens on ${BindAddress}:$Port$(if ($TlsCert) { ' over HTTPS' })"
+  } else {
+    Ok "Dashboard is loopback-only (127.0.0.1)"
+  }
+} elseif (Test-Path $envFile) {
+  $envLines = @(Get-Content $envFile)
+  $hostLine = $envLines | Where-Object { $_ -match "^HOST=" } | Select-Object -First 1
+  if ($hostLine) { $BindAddress = ($hostLine -replace "^HOST=", "").Trim() }
+  $certLine = $envLines | Where-Object { $_ -match "^HBS_TLS_CERT=" } | Select-Object -First 1
+  if ($certLine) { $TlsCert = ($certLine -replace "^HBS_TLS_CERT=", "").Trim() }
+}
+$consoleScheme = if ($TlsCert) { "https" } else { "http" }
+$probeHost = if ($BindAddress -and $BindAddress -notin @("0.0.0.0", "::", "*")) { $BindAddress } else { "127.0.0.1" }
+$consoleUrl = "${consoleScheme}://${probeHost}:$Port"
+if ($consoleScheme -eq "https") {
+  # Local self-check only: the certificate may be self-signed.
+  [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
 }
 
 # ------------------------------------------------------------- CLI + PATH
@@ -532,11 +631,11 @@ if (-not $NoStart -and $Mode -ne "desktop") {
   $started = $false
   for ($i = 0; $i -lt 40; $i++) {
     try {
-      $r = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$Port" -TimeoutSec 2 -ErrorAction Stop
+      $r = Invoke-WebRequest -UseBasicParsing -Uri $consoleUrl -TimeoutSec 2 -ErrorAction Stop
       if ($r.StatusCode -eq 200) { $started = $true; break }
     } catch { Start-Sleep -Milliseconds 250 }
   }
-  if ($started) { Ok "Dashboard answering on http://127.0.0.1:$Port" } else { Warn "not answering yet - check 'hbs logs'" }
+  if ($started) { Ok "Dashboard answering on $consoleUrl" } else { Warn "not answering yet - check 'hbs logs'" }
 }
 
 # -------------------------------------------------------------- desktop app
@@ -591,11 +690,11 @@ Write-Host ("  " + (C "1;38;5;141" "+-------------------------------------------
 Write-Host ("  " + (C "1;38;5;141" "|") + "  " + (C "1;38;5;114" "v HBS Console installed") + "                                       " + (C "1;38;5;141" "|"))
 Write-Host ("  " + (C "1;38;5;141" "+--------------------------------------------------------------+"))
 Blank
-Write-Host ("    " + (C "1" "Console") + "     http://127.0.0.1:$Port")
+Write-Host ("    " + (C "1" "Console") + "     $consoleUrl")
 if ($appInstalled) {
   Write-Host ("    " + (C "1" "Open it") + "     HBS Console app (desktop + tray) or any browser")
 } else {
-  Write-Host ("    " + (C "1" "Open it") + "     hbs app   " + (C "2" "(or just open http://127.0.0.1:$Port)"))
+  Write-Host ("    " + (C "1" "Open it") + "     hbs app   " + (C "2" "(or just open $consoleUrl)"))
 }
 Write-Host ("    " + (C "1" "Controls") + "    hbs {start|stop|restart|status|logs|open|app|tray|autostart|update|uninstall}")
 Write-Host ("    " + (C "1" "Install") + "     $InstallDir   " + (C "2" "(data kept separately)"))
@@ -603,6 +702,9 @@ Write-Host ("    " + (C "1" "Uninstall") + "   Settings > Apps > HBS Console (da
 Write-Host ("    " + (C "1" "Security") + "    no default admin - the setup wizard creates it; Argon2id + peppered hashes")
 Write-Host ("    " + (C "1" "AV/EDR") + "      read-only scans, no admin required - docs/security/edr-compatibility.md")
 Blank
+if ($BindAddress) {
+  Note "Listening on ${BindAddress}:$Port$(if ($TlsCert) { ' (HTTPS; self-signed certificate)' }). Open the port in your firewall."
+}
 if ($firstRun) {
   Note "First launch opens the setup wizard in the console - you choose the admin account."
 } else {

@@ -174,3 +174,81 @@ describe("encrypted backup and restore routes", () => {
     db.close();
   });
 });
+
+describe("hosting settings routes", () => {
+  function settingsHarness(dataRoot: string, effectivePort = 3000) {
+    const db = openDb(":memory:");
+    runMigrations(db);
+    const app = new Hono();
+    registerAdminRoutes(app, db, superAdminAuth(), {
+      dataRoot,
+      env: { HBS_DATA_ROOT: dataRoot },
+      effective: { host: "127.0.0.1", port: effectivePort, tls: false, exposed: false },
+    });
+    return { db, app };
+  }
+
+  it("returns the effective binding when nothing is sealed yet", async () => {
+    const dataRoot = root();
+    const { db, app } = settingsHarness(dataRoot);
+    const response = await app.request("/api/admin/settings");
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      hosting: { host: string; port: number };
+      restartRequired: boolean;
+      storage: { encrypted: boolean; status: string };
+    };
+    expect(body.hosting).toMatchObject({ host: "127.0.0.1", port: 3000 });
+    expect(body.restartRequired).toBeFalse();
+    expect(body.storage.encrypted).toBeTrue();
+    expect(body.storage.status).toBe("missing");
+    db.close();
+  });
+
+  it("seals a new binding, asks for a restart and audits the change", async () => {
+    const dataRoot = root();
+    const { db, app } = settingsHarness(dataRoot);
+    const response = await app.request("/api/admin/settings", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ host: "0.0.0.0", port: 8443 }),
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      hosting: { host: string; port: number };
+      restartRequired: boolean;
+    };
+    expect(body.hosting).toMatchObject({ host: "0.0.0.0", port: 8443 });
+    expect(body.restartRequired).toBeTrue();
+
+    // The sealed file exists and the change is in the audit trail.
+    expect(statSync(join(dataRoot, "hbs.config")).isFile()).toBeTrue();
+    const audit = db
+      .query("SELECT action, details FROM audit_log ORDER BY id DESC LIMIT 1")
+      .get() as { action: string; details: string };
+    expect(audit.action).toBe("settings.hosting.update");
+    expect(audit.details).toContain("8443");
+
+    // A second read now reports the sealed settings and a pending restart.
+    const reread = (await (await app.request("/api/admin/settings")).json()) as {
+      hosting: { port: number };
+      restartRequired: boolean;
+    };
+    expect(reread.hosting.port).toBe(8443);
+    expect(reread.restartRequired).toBeTrue();
+    db.close();
+  });
+
+  it("rejects invalid settings with 400", async () => {
+    const { db, app } = settingsHarness(root());
+    const response = await app.request("/api/admin/settings", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ host: "0.0.0.0", port: 99999 }),
+    });
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toContain("port");
+    db.close();
+  });
+});

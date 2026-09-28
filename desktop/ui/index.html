@@ -3,74 +3,135 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
   <title>HBS Console</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="glow" aria-hidden="true"></div>
+  <div class="rail" aria-hidden="true"></div>
 
   <main class="shell">
-    <header class="brand">
-      <img class="logo" src="icon.png" alt="" width="56" height="56" />
-      <div>
-        <h1>HBS Console</h1>
-        <p class="tagline">Host baseline security reviews · read-only scans · sealed reports</p>
+    <header class="topbar">
+      <img class="mark" src="icon.png" alt="" width="32" height="32" />
+      <div class="wordmark">
+        <span class="name">HBS Console</span>
+        <span class="kicker">host baseline security reviews</span>
       </div>
+      <span class="topbar-meta" id="metaVersion">…</span>
     </header>
 
-    <section class="card status-card" aria-live="polite">
-      <div class="status-row">
-        <span class="dot" id="dot" data-state="unknown"></span>
-        <div>
+    <section class="status" aria-live="polite">
+      <div class="status-main">
+        <span class="led" id="dot" data-state="unknown" aria-hidden="true"></span>
+        <div class="status-copy">
           <strong id="statusLabel">Checking the dashboard…</strong>
-          <span class="muted" id="statusDetail">one moment</span>
+          <span class="addr" id="statusDetail">probing the local engine</span>
         </div>
       </div>
-      <div class="actions">
-        <button class="primary" id="btnOpen">
-          <span>Open HBS Console</span>
+      <div class="status-actions">
+        <button class="btn btn-primary" id="btnOpen">
+          <span id="btnOpenLabel">Open console</span>
         </button>
-        <button class="ghost" id="btnBrowser">Open in browser</button>
+        <button class="btn" id="btnBrowser">Browser</button>
       </div>
     </section>
 
-    <section class="grid">
-      <button class="tile" id="btnStart">
-        <span class="tile-title">Start dashboard</span>
-        <span class="tile-sub">run the local server</span>
-      </button>
-      <button class="tile" id="btnRestart">
-        <span class="tile-title">Restart</span>
-        <span class="tile-sub">reload after an update</span>
-      </button>
-      <button class="tile" id="btnLogs">
-        <span class="tile-title">View logs</span>
-        <span class="tile-sub">server.log, first-run credentials</span>
-      </button>
-      <button class="tile" id="btnData">
-        <span class="tile-title">Open data folder</span>
-        <span class="tile-sub">database &amp; sealed reports</span>
-      </button>
+    <section class="panel" aria-labelledby="controls-title">
+      <div class="panel-head">
+        <h2 id="controls-title">Engine</h2>
+        <span class="panel-note">read-only scans · sealed reports</span>
+      </div>
+      <div class="controls">
+        <button class="tile" id="btnStart">
+          <span class="tile-key">S</span>
+          <span class="tile-title">Start</span>
+          <span class="tile-sub">run the local server</span>
+        </button>
+        <button class="tile" id="btnRestart">
+          <span class="tile-key">R</span>
+          <span class="tile-title">Restart</span>
+          <span class="tile-sub">reload after an update</span>
+        </button>
+        <button class="tile" id="btnLogs">
+          <span class="tile-key">L</span>
+          <span class="tile-title">Logs</span>
+          <span class="tile-sub">server.log</span>
+        </button>
+        <button class="tile" id="btnData">
+          <span class="tile-key">D</span>
+          <span class="tile-title">Data</span>
+          <span class="tile-sub">database &amp; reports</span>
+        </button>
+      </div>
     </section>
 
-    <section class="card pref-row">
-      <label class="switch">
-        <input type="checkbox" id="autostart" />
-        <span class="track" aria-hidden="true"><span class="knob"></span></span>
-        <span>
-          <strong>Launch at login</strong>
-          <span class="muted">keeps HBS one click away in the tray</span>
-        </span>
-      </label>
-      <button class="ghost small" id="btnQuit">Quit HBS</button>
+    <section class="panel" aria-labelledby="settings-title">
+      <div class="panel-head">
+        <h2 id="settings-title">Hosting</h2>
+        <span class="panel-note" id="settingsNote">sealed config · restart to apply</span>
+      </div>
+
+      <form id="settingsForm" class="form" novalidate>
+        <div class="field">
+          <label for="setBind">Bind address</label>
+          <select id="setBind" name="bind">
+            <option value="local">Local only (127.0.0.1)</option>
+            <option value="all">All interfaces (0.0.0.0)</option>
+            <option value="custom">One address…</option>
+          </select>
+        </div>
+
+        <div class="field" id="addressField" hidden>
+          <label for="setAddress">Address</label>
+          <input id="setAddress" name="address" autocomplete="off" spellcheck="false" placeholder="10.20.0.5" />
+        </div>
+
+        <div class="field">
+          <label for="setPort">Port</label>
+          <input id="setPort" name="port" type="number" min="1" max="65535" inputmode="numeric" autocomplete="off" />
+        </div>
+
+        <label class="check" for="setTls">
+          <input type="checkbox" id="setTls" />
+          <span>Serve HTTPS (TLS)</span>
+        </label>
+
+        <div class="field" id="certField" hidden>
+          <label for="setCert">Certificate path</label>
+          <input id="setCert" name="cert" autocomplete="off" spellcheck="false" placeholder="/etc/hbs/tls/hbs.crt" />
+        </div>
+        <div class="field" id="keyField" hidden>
+          <label for="setKey">Private key path</label>
+          <input id="setKey" name="key" autocomplete="off" spellcheck="false" placeholder="/etc/hbs/tls/hbs.key" />
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" id="btnSaveSettings">Save &amp; restart</button>
+          <span class="form-hint" id="settingsHint">Changes are encrypted before they touch disk.</span>
+        </div>
+      </form>
+
+      <p class="sealed" id="settingsSealed"></p>
     </section>
 
-    <p class="note" id="note" hidden></p>
+    <section class="panel" aria-labelledby="prefs-title">
+      <div class="panel-head">
+        <h2 id="prefs-title">Preferences</h2>
+      </div>
+      <div class="prefs">
+        <label class="check" for="autostart">
+          <input type="checkbox" id="autostart" />
+          <span>Launch at login<em>keeps HBS one click away in the tray</em></span>
+        </label>
+        <button class="btn btn-quiet" id="btnQuit">Quit HBS</button>
+      </div>
+    </section>
+
+    <p class="alert" id="note" role="alert" hidden></p>
 
     <footer class="meta">
-      <span id="metaVersion">HBS Console</span>
-      <span id="metaRoot" class="muted"></span>
-      <span id="metaBun" class="muted"></span>
+      <span id="metaRoot"></span>
+      <span id="metaServer"></span>
     </footer>
   </main>
 

@@ -34,18 +34,30 @@ $PidFile = Join-Path $DataDir "server.pid"
 $LogFile = Join-Path $DataDir "server.log"
 $AutostartLnk = Join-Path ([Environment]::GetFolderPath("Startup")) "HBS Console Tray.lnk"
 
-function Get-EnvPort {
+function Get-EnvValue([string]$key) {
   $envFile = Join-Path $DataDir "hbs.env"
   if (Test-Path $envFile) {
-    $line = Get-Content $envFile | Select-String "^PORT=" | Select-Object -First 1
-    if ($line) { return (($line -replace "^PORT=", "").Trim()) }
+    $line = Get-Content $envFile | Select-String ("^" + [regex]::Escape($key) + "=") | Select-Object -First 1
+    if ($line) { return (($line -replace ("^" + [regex]::Escape($key) + "="), "").Trim()) }
   }
-  return "3000"
+  return ""
 }
+function Get-EnvPort { $p = Get-EnvValue "PORT"; if ($p) { return $p } else { return "3000" } }
+function Get-ConsoleScheme { if (Get-EnvValue "HBS_TLS_CERT") { return "https" } else { return "http" } }
+function Get-ConsoleHost {
+  $h = Get-EnvValue "HOST"
+  if (-not $h -or $h -eq "0.0.0.0" -or $h -eq "::" -or $h -eq "*") { return "127.0.0.1" }
+  return $h
+}
+function Get-ConsoleUrl { return "$(Get-ConsoleScheme)://$(Get-ConsoleHost):$(Get-EnvPort)" }
 function Server-Running { return (Test-Path $PidFile) -and (Get-Process -Id (Get-Content $PidFile) -ErrorAction SilentlyContinue) }
 function Server-Up {
   try {
-    $r = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$(Get-EnvPort)" -TimeoutSec 2 -ErrorAction Stop
+    if ((Get-ConsoleScheme) -eq "https") {
+      # Local self-check only: the certificate may be self-signed.
+      [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+    }
+    $r = Invoke-WebRequest -UseBasicParsing -Uri (Get-ConsoleUrl) -TimeoutSec 2 -ErrorAction Stop
     return $r.StatusCode -eq 200
   } catch { return $false }
 }
@@ -53,7 +65,10 @@ function Server-Up {
 # its first-run setup wizard instead of a login form.
 function Setup-Pending {
   try {
-    $status = Invoke-RestMethod -Uri "http://127.0.0.1:$(Get-EnvPort)/api/auth/status" -TimeoutSec 2 -ErrorAction Stop
+    if ((Get-ConsoleScheme) -eq "https") {
+      [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+    }
+    $status = Invoke-RestMethod -Uri "$(Get-ConsoleUrl)/api/auth/status" -TimeoutSec 2 -ErrorAction Stop
     return ($status.initialized -eq $false)
   } catch { return $false }
 }
@@ -93,10 +108,21 @@ function Start-Server {
     $workdir = Join-Path $AppDir "dashboard"
     $argList = @("run", "server/index.ts")
   }
-  # The server reads PORT from its environment (or --port); without this the
-  # configured port would be ignored and it would bind 3000 instead.
+  # The server reads PORT/HOST/TLS from its environment (or flags); without
+  # this the configured binding would be ignored and it would bind 3000 on
+  # loopback instead.
   $env:HBS_DATA_ROOT = $DataDir
   $env:PORT = Get-EnvPort
+  $bindHost = Get-EnvValue "HOST"
+  if ($bindHost) { $env:HOST = $bindHost } else { Remove-Item Env:HOST -ErrorAction SilentlyContinue }
+  $tlsCert = Get-EnvValue "HBS_TLS_CERT"
+  if ($tlsCert) {
+    $env:HBS_TLS_CERT = $tlsCert
+    $env:HBS_TLS_KEY = Get-EnvValue "HBS_TLS_KEY"
+  } else {
+    Remove-Item Env:HBS_TLS_CERT -ErrorAction SilentlyContinue
+    Remove-Item Env:HBS_TLS_KEY -ErrorAction SilentlyContinue
+  }
   # Start-Process rejects an empty -ArgumentList ("contains a null value"),
   # so only pass it when the engine actually needs arguments.
   $startArgs = @{ FilePath = $serverExe; WorkingDirectory = $workdir; WindowStyle = "Hidden";
@@ -105,7 +131,7 @@ function Start-Server {
   $proc = Start-Process @startArgs
   Set-Content -Encoding ASCII $PidFile $proc.Id
   for ($i = 0; $i -lt 40; $i++) { if (Server-Up) { break }; Start-Sleep -Milliseconds 250 }
-  Write-Ok "started (pid $($proc.Id)): http://127.0.0.1:$(Get-EnvPort)"
+  Write-Ok "started (pid $($proc.Id)): $(Get-ConsoleUrl)"
 }
 
 function Stop-Server {
@@ -130,7 +156,7 @@ function Get-DesktopApp {
   return $null
 }
 
-function Open-Dashboard { Start-Process "http://127.0.0.1:$(Get-EnvPort)" }
+function Open-Dashboard { Start-Process (Get-ConsoleUrl) }
 
 switch ($Command.ToLower()) {
   "start"   { Start-Server }
@@ -138,14 +164,14 @@ switch ($Command.ToLower()) {
   "restart" { Stop-Server; Start-Server }
   "status"  {
     if (Server-Up) {
-      Write-Ok "running - http://127.0.0.1:$(Get-EnvPort)"
+      Write-Ok "running - $(Get-ConsoleUrl)"
       Write-Host "    install $InstallDir" -ForegroundColor DarkGray
       Write-Host "    data    $DataDir" -ForegroundColor DarkGray
       $app = Get-DesktopApp
       if ($app) { Write-Host "    desktop app: $app" -ForegroundColor DarkGray }
       if (Setup-Pending) { Write-Warn "setup pending - create the administrator account in the console" }
     } elseif (Server-Running) {
-      Write-Warn "process running but not answering on http://127.0.0.1:$(Get-EnvPort)"
+      Write-Warn "process running but not answering on $(Get-ConsoleUrl)"
     } else {
       Write-Warn "not running - start it with 'hbs start'"
     }

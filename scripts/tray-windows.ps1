@@ -26,13 +26,20 @@ $PidFile = Join-Path $DataDir "server.pid"
 $LogFile = Join-Path $DataDir "server.log"
 $AutostartLnk = Join-Path ([Environment]::GetFolderPath("Startup")) "HBS Console Tray.lnk"
 
-function Get-Port {
+function Get-EnvValue([string]$key) {
   $envFile = Join-Path $DataDir "hbs.env"
   if (Test-Path $envFile) {
-    $line = Get-Content $envFile | Select-String "^PORT=" | Select-Object -First 1
-    if ($line) { return (($line -replace "^PORT=", "").Trim()) }
+    $line = Get-Content $envFile | Select-String ("^" + [regex]::Escape($key) + "=") | Select-Object -First 1
+    if ($line) { return (($line -replace ("^" + [regex]::Escape($key) + "="), "").Trim()) }
   }
-  return "3000"
+  return ""
+}
+function Get-Port { $p = Get-EnvValue "PORT"; if ($p) { return $p } else { return "3000" } }
+function Get-ConsoleUrl {
+  $scheme = if (Get-EnvValue "HBS_TLS_CERT") { "https" } else { "http" }
+  $h = Get-EnvValue "HOST"
+  if (-not $h -or $h -eq "0.0.0.0" -or $h -eq "::" -or $h -eq "*") { $h = "127.0.0.1" }
+  return "${scheme}://${h}:$(Get-Port)"
 }
 function Server-Running { return (Test-Path $PidFile) -and (Get-Process -Id (Get-Content $PidFile) -ErrorAction SilentlyContinue) }
 function Hbs([string]$action) {
@@ -64,7 +71,7 @@ function Open-Hbs {
   if (-not (Server-Running)) { Hbs "start" | Out-Null }
   $app = Desktop-App
   if ($app) { Start-Process $app }
-  else { Start-Process "http://127.0.0.1:$(Get-Port)" }
+  else { Start-Process (Get-ConsoleUrl) }
 }
 function Show-Balloon([string]$text, [string]$title = "HBS Console") {
   $notify.BalloonTipTitle = $title
@@ -93,7 +100,7 @@ $menu = New-Object System.Windows.Forms.ContextMenuStrip
 $itemOpen = $menu.Items.Add("Open HBS Console")
 $itemOpen.Add_Click({ Open-Hbs }.GetNewClosure())
 $itemBrowser = $menu.Items.Add("Open in browser")
-$itemBrowser.Add_Click({ Hbs "start" | Out-Null; Start-Process "http://127.0.0.1:$(Get-Port)" })
+$itemBrowser.Add_Click({ Hbs "start" | Out-Null; Start-Process (Get-ConsoleUrl) })
 
 $menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator)) | Out-Null
 $itemStart = $menu.Items.Add("Start server")

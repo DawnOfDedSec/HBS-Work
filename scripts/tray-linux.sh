@@ -11,12 +11,24 @@ DATA_DIR="${HBS_DATA_DIR:-$HBS_HOME/data}"
 ICON="${ICON:-}"
 STATE="stopped"
 
+env_value() {
+  [[ -f "$DATA_DIR/hbs.env" ]] || return 0
+  grep -E "^$1=" "$DATA_DIR/hbs.env" | head -1 | cut -d= -f2- | tr -d '[:space:]'
+}
+
 port() {
-  if [[ -f "$DATA_DIR/hbs.env" ]]; then
-    local p; p="$(grep -E '^PORT=' "$DATA_DIR/hbs.env" | cut -d= -f2 | tr -d '[:space:]')"
-    [[ -n "$p" ]] && { printf '%s' "$p"; return; }
-  fi
+  local p; p="$(env_value PORT)"
+  [[ -n "$p" ]] && { printf '%s' "$p"; return; }
   printf '%s' "${PORT:-3000}"
+}
+
+# https + bind address, so the health probe works on an exposed/TLS install.
+console_url() {
+  local scheme="http" host
+  [[ -n "$(env_value HBS_TLS_CERT)" ]] && scheme="https"
+  host="$(env_value HOST)"
+  case "$host" in ""|0.0.0.0|"::"|"*") host="127.0.0.1" ;; esac
+  printf '%s://%s:%s' "$scheme" "$host" "$(port)"
 }
 
 hbs() {
@@ -50,7 +62,7 @@ if command -v hbs-console >/dev/null 2>&1 || [[ -x "$HOME/.local/bin/HBS-Console
 fi
 
 while true; do
-  if curl -fsS -o /dev/null --max-time 2 "http://127.0.0.1:$(port)" 2>/dev/null; then STATE="running"; else STATE="stopped"; fi
+  if curl -fsSk -o /dev/null --max-time 2 "$(console_url)" 2>/dev/null; then STATE="running"; else STATE="stopped"; fi
   yad --notification "$ICON" --text="HBS Console ($STATE)" \
     --command="hbs app" \
     --menu="Open HBS Console!hbs app|\
