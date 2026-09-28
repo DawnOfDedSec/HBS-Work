@@ -1090,6 +1090,11 @@ fn run_lifecycle(app: &AppHandle, label: &'static str, action: fn(&AppState) -> 
                 };
                 set_tooltip(&handle, text);
                 rebuild_tray(&handle);
+                // Point an open console window at the (re)started engine so a
+                // restart is visible instead of leaving a stale error page.
+                if let Some(window) = handle.get_webview_window(CONSOLE_WINDOW) {
+                    let _ = window.eval(&format!("window.location.replace({:?})", state.url()));
+                }
                 state.log(&format!("{label} complete"));
             }
             Err(e) => report(&handle, label, e),
