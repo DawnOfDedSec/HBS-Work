@@ -276,8 +276,10 @@ jobs:
         run: |
           set -e
           mkdir -p "$GITHUB_WORKSPACE/release-assets"
-          # find -exec keeps the arm64 deb/rpm filenames distinct on collection.
-          find target/release/bundle -maxdepth 4 -type f \
+          # Search all of target: a --target build (the macOS universal dmg)
+          # lands in target/<triple>/release/bundle, not target/release/bundle.
+          # The extension filter keeps the scan precise.
+          find target -maxdepth 6 -type f \
             \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \
                -o -name '*.dmg' -o -name '*.exe' -o -name '*.msi' \) \
             -exec cp {} "$GITHUB_WORKSPACE/release-assets/" \;
