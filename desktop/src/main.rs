@@ -577,10 +577,11 @@ fn release_base() -> String {
 }
 
 fn http_client() -> Result<reqwest::blocking::Client, String> {
+    // Redirects are followed: GitHub serves release assets through one, and
+    // /latest is one too. resolve_tag() reads the final URL, so this needs no
+    // API call and hits no rate limit.
     reqwest::blocking::Client::builder()
-        // We read the releases/latest redirect ourselves; no API, no rate limit.
-        .redirect(reqwest::redirect::Policy::none())
-        .timeout(Duration::from_secs(180))
+        .timeout(Duration::from_secs(300))
         .user_agent("hbs-console-desktop")
         .build()
         .map_err(|e| format!("http client: {e}"))
@@ -622,13 +623,12 @@ fn resolve_tag(client: &reqwest::blocking::Client, base: &str) -> Result<String,
     let response = client
         .get(format!("{base}/latest"))
         .send()
+        .and_then(|response| response.error_for_status())
         .map_err(|e| format!("could not reach {base}: {e}"))?;
-    let location = response
-        .headers()
-        .get("location")
-        .and_then(|value| value.to_str().ok())
-        .ok_or_else(|| "the release redirect carried no location".to_string())?;
-    location
+    // After following redirects the URL is .../releases/tag/<tag>.
+    response
+        .url()
+        .path()
         .trim_end_matches('/')
         .rsplit('/')
         .next()
