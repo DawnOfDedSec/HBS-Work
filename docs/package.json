@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "bun scripts/check-design.ts && vite build && bun scripts/prerender.ts",
     "check": "bun scripts/check-design.ts",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "og:image": "bun scripts/og/build-og.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.48.0",
